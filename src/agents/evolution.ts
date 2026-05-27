@@ -159,10 +159,9 @@ export class EvolutionAgent extends BaseAgent {
       .map((h) => `- ${h.title}: ${h.summary}`)
       .join("\n");
 
-    const { system, userPrompt } = this.loadPrompt("evolution", "combination", {
+    const { system, userPrompt } = this.loadPrompt("evolution", "cross_pollination", {
       primaryHypothesis: `${target.title}: ${target.content}`,
       inspirations,
-      strategy: "cross_pollination",
     });
 
     return this.callLLMForJSON<EvolvedHypothesis>(system, userPrompt, {

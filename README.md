@@ -157,6 +157,7 @@ flowchart TD
 
     PAI --> GEN
     CON --> GEN
+    PAI --> REF
     CON --> REF
     CON --> PROV
     CON --> EVOL
@@ -226,10 +227,10 @@ All prompts are Handlebars YAML templates in `src/prompts/`. Edit them without a
 ```
 src/prompts/
 ├── supervisor/parse_goal.yaml
-├── generation/ (4 templates)
-├── reflection/ (6 templates)
+├── generation/ (5 templates — 4 strategies + query helper)
+├── reflection/ (5 templates)
 ├── ranking/ (2 templates)
-├── evolution/ (5 templates)
+├── evolution/ (6 templates)
 ├── meta_review/ (2 templates)
 └── experiment_design/protocol.yaml
 ```

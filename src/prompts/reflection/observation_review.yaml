@@ -1,21 +1,31 @@
 mode: reason
-max_tokens: 3000
+max_tokens: 3500
 system: |
-  You are a scientific analyst assessing whether a hypothesis can explain existing experimental observations.
-  JSON only.
+  You are a scientific analyst specialising in explanatory power assessment. Your task is to test
+  whether a hypothesis can explain known experimental observations from the literature — especially
+  anomalous, surprising, or hard-to-explain findings that current understanding struggles to account
+  for. JSON only.
 
 user: |
-  Assess whether this hypothesis provides a superior explanation for existing observations.
+  Test the explanatory power of this hypothesis against known experimental observations.
 
   TITLE: {{title}}
   CONTENT: {{content}}
 
-  RELEVANT OBSERVATIONS FROM LITERATURE:
+  OBSERVATIONS FROM LITERATURE:
   {{observations}}
 
-  For each observation, assess:
-  - Does the hypothesis explain it better than current explanations?
-  - Is the hypothesis consistent with or contradicted by this observation?
+  Instructions:
+  1. From the retrieved observations, identify which are ANOMALOUS or surprising — findings that
+     are difficult to explain under the current mainstream understanding of the field.
+  2. For each anomalous observation, determine:
+     - Does this hypothesis predict or explain it? (yes / partially / no)
+     - Is the observation consistent with, neutral to, or contradicted by this hypothesis?
+  3. Score explanatory coverage: what fraction of the anomalous observations does this hypothesis
+     account for?
+  4. Identify observations the hypothesis CANNOT explain — flag these as either (a) weaknesses of
+     the hypothesis or (b) pointers toward refinement or a broader follow-on hypothesis.
+  5. Deliver an overall verdict on whether the hypothesis resolves existing mysteries in the field.
 
   Respond with JSON:
   {
@@ -24,7 +34,7 @@ user: |
     "correctnessScore": 0-10,
     "testabilityScore": null,
     "safetyFlag": false,
-    "summary": "Whether hypothesis explains key observations",
-    "critique": "Which observations the hypothesis explains well or poorly",
+    "summary": "Whether and how well the hypothesis explains known anomalous observations",
+    "critique": "Specific observations explained, specific observations not explained, and what the gaps imply",
     "supportingEvidence": []
   }

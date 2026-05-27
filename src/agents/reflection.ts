@@ -71,7 +71,7 @@ export class ReflectionAgent extends BaseAgent {
     // Provenance: anchor claims to literature before entering tournament
     await this.provenance.execute(sessionId, hyp);
 
-    // Step 3: Pick one additional deep review type
+    // Step 3: Deep verification — each sub-claim holds independently?
     const deepReview = await this._deepVerificationReview(hyp);
     this.memory.saveReview({
       hypothesisId: hyp.id,
@@ -81,13 +81,34 @@ export class ReflectionAgent extends BaseAgent {
       safetyFlag: deepReview.safetyFlag ?? false,
     });
 
+    // Step 4: Simulation — at which mechanistic step does it break?
+    const simReview = await this._simulationReview(hyp);
+    this.memory.saveReview({
+      hypothesisId: hyp.id,
+      sessionId,
+      type: "simulation",
+      ...simReview,
+      safetyFlag: simReview.safetyFlag ?? false,
+    });
+
+    // Step 5: Observation — does it explain known anomalous observations?
+    // fail/uncertain here does NOT auto-reject: these are nuanced reviews that
+    // contribute to the seeded Glicko-2 rating but the hypothesis still enters
+    // the tournament so debates can surface the weaknesses.
+    const obsReview = await this._observationReview(hyp);
+    this.memory.saveReview({
+      hypothesisId: hyp.id,
+      sessionId,
+      type: "observation",
+      ...obsReview,
+      safetyFlag: obsReview.safetyFlag ?? false,
+    });
+
     // Mark as active (enters tournament)
     this.memory.updateHypothesisStatus(hyp.id, "active");
 
-    // ── Glicko-2 Bootstrap: seed initial rating from review scores ──────────
-    // Aggregate the best score for each dimension across all three review stages.
-    // This gives the hypothesis a meaningful starting point instead of flat 1200.
-    const reviews = [initial, full, deepReview];
+    // ── Glicko-2 Bootstrap: seed initial rating from all five review stages ──
+    const reviews = [initial, full, deepReview, simReview, obsReview];
     const bestNovelty     = this._bestScore(reviews.map(r => r.noveltyScore));
     const bestCorrectness = this._bestScore(reviews.map(r => r.correctnessScore));
     const bestTestability = this._bestScore(reviews.map(r => r.testabilityScore));
@@ -191,12 +212,12 @@ export class ReflectionAgent extends BaseAgent {
   }
 
   // ─── Observation Review ────────────────────────────────────────────────────
-  async runObservationReview(sessionId: string, hyp: Hypothesis): Promise<void> {
-    const results = await this.search.search(
-      `unexplained phenomena ${hyp.title}`,
-      "web",
-      { maxResults: 5 }
-    );
+  private async _observationReview(hyp: Hypothesis): Promise<ReviewResult> {
+    const queries = [
+      `${hyp.title} experimental observations results`,
+      ...(hyp.keyAssumptions[0] ? [`${hyp.keyAssumptions[0]} anomalous findings`] : []),
+    ];
+    const results = await this.search.multiSearch(queries, "web");
     const context = this.formatSearchContext(results);
 
     const { system, userPrompt } = this.loadPrompt("reflection", "observation_review", {
@@ -207,24 +228,32 @@ export class ReflectionAgent extends BaseAgent {
 
     const response = await this.callLLM(system, userPrompt, {
       mode: "reason",
-      maxTokens: 3000,
+      maxTokens: 3500,
       jsonMode: true,
     });
 
-    const parsed = this.extractJSON<ReviewResult>(response.content);
-    if (parsed) {
-      this.memory.saveReview({
-        hypothesisId: hyp.id,
-        sessionId,
-        type: "observation",
-        ...parsed,
-        safetyFlag: parsed.safetyFlag ?? false,
-      });
-    }
+    return this.extractJSON<ReviewResult>(response.content) ?? {
+      verdict: "uncertain",
+      summary: "Observation review inconclusive",
+      critique: response.content.slice(0, 500),
+      supportingEvidence: [],
+    };
+  }
+
+  /** Public on-demand entry point (CLI / external callers). */
+  async runObservationReview(sessionId: string, hyp: Hypothesis): Promise<void> {
+    const result = await this._observationReview(hyp);
+    this.memory.saveReview({
+      hypothesisId: hyp.id,
+      sessionId,
+      type: "observation",
+      ...result,
+      safetyFlag: result.safetyFlag ?? false,
+    });
   }
 
   // ─── Simulation Review ────────────────────────────────────────────────────
-  async runSimulationReview(sessionId: string, hyp: Hypothesis): Promise<void> {
+  private async _simulationReview(hyp: Hypothesis): Promise<ReviewResult> {
     const { system, userPrompt } = this.loadPrompt("reflection", "simulation_review", {
       title: hyp.title,
       content: hyp.content,
@@ -237,16 +266,24 @@ export class ReflectionAgent extends BaseAgent {
       jsonMode: true,
     });
 
-    const parsed = this.extractJSON<ReviewResult>(response.content);
-    if (parsed) {
-      this.memory.saveReview({
-        hypothesisId: hyp.id,
-        sessionId,
-        type: "simulation",
-        ...parsed,
-        safetyFlag: parsed.safetyFlag ?? false,
-      });
-    }
+    return this.extractJSON<ReviewResult>(response.content) ?? {
+      verdict: "uncertain",
+      summary: "Simulation review inconclusive",
+      critique: response.content.slice(0, 500),
+      supportingEvidence: [],
+    };
+  }
+
+  /** Public on-demand entry point (CLI / external callers). */
+  async runSimulationReview(sessionId: string, hyp: Hypothesis): Promise<void> {
+    const result = await this._simulationReview(hyp);
+    this.memory.saveReview({
+      hypothesisId: hyp.id,
+      sessionId,
+      type: "simulation",
+      ...result,
+      safetyFlag: result.safetyFlag ?? false,
+    });
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────

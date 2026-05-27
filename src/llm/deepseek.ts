@@ -56,13 +56,11 @@ export class DeepSeekClient {
   }
 
   /**
-   * Reasoning call — thinking is DISABLED; delegates to chat() for lower latency and cost.
-   * Good for: reflection reviews, ranking debates, meta-review.
-   * Pass jsonMode: true to force valid JSON output in the content field.
+   * Alias for `chat()`. Thinking is intentionally disabled for cost/latency —
+   * both methods call `_call()` identically.
+   * To re-enable DeepSeek reasoning, remove `thinking: { type: 'disabled' }` from `_call()`.
    */
   async reason(params: DeepSeekChatParams): Promise<LLMResponse> {
-    // Thinking disabled: forward to chat() so no reasoning_effort / thinking
-    // params are sent to the DeepSeek API.
     return this.chat(params);
   }
 
