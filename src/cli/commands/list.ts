@@ -340,7 +340,7 @@ export async function feedbackCommand(
 
     const answers = await inquirer.prompt([
       { type: "input",  name: "hypothesisId", message: "Hypothesis ID:" },
-      { type: "input",  name: "feedbackText",  message: "Empirical feedback (paste or type, then press Enter):" },
+      { type: "input",  name: "feedbackText",  message: "Empirical feedback:" },
       { type: "number", name: "noveltyScore",      message: "Novelty score (0-10, blank=skip):", default: undefined },
       { type: "number", name: "correctnessScore",  message: "Correctness score (0-10, blank=skip):", default: undefined },
       { type: "number", name: "testabilityScore",  message: "Testability score (0-10, blank=skip):", default: undefined },
@@ -420,7 +420,7 @@ export async function feedbackCommand(
     // Submit a new expert hypothesis
     const answers = await inquirer.prompt([
       { type: "input", name: "title", message: "Hypothesis title:" },
-      { type: "input", name: "content", message: "Hypothesis content (paste or type, then press Enter):" },
+      { type: "input", name: "content", message: "Hypothesis content:" },
       { type: "input", name: "rationale", message: "Scientific rationale:" },
     ]);
 
@@ -465,9 +465,10 @@ export async function feedbackCommand(
       },
       { type: "number", name: "noveltyScore", message: "Novelty (0-10):" },
       { type: "number", name: "correctnessScore", message: "Correctness (0-10):" },
-      { type: "input", name: "summary", message: "Summary:" },
-      { type: "input", name: "critique", message: "Detailed critique (paste or type, then press Enter):" },
+      { type: "input", name: "critique", message: "Detailed critique:" },
     ]);
+
+    const critique = answers.critique as string;
 
     memory.saveReview({
       hypothesisId: options.review,
@@ -478,8 +479,8 @@ export async function feedbackCommand(
       correctnessScore: answers.correctnessScore as number,
       testabilityScore: undefined,
       safetyFlag: false,
-      summary: answers.summary as string,
-      critique: answers.critique as string,
+      summary: critique.split(/[.!?]+/)[0].trim().slice(0, 200) || critique.slice(0, 200),
+      critique,
       supportingEvidence: [],
     });
 
