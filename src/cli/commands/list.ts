@@ -420,7 +420,7 @@ export async function feedbackCommand(
     // Submit a new expert hypothesis
     const answers = await inquirer.prompt([
       { type: "input", name: "title", message: "Hypothesis title:" },
-      { type: "editor", name: "content", message: "Hypothesis content:" },
+      { type: "input", name: "content", message: "Hypothesis content (paste or type, then press Enter):" },
       { type: "input", name: "rationale", message: "Scientific rationale:" },
     ]);
 
@@ -466,7 +466,7 @@ export async function feedbackCommand(
       { type: "number", name: "noveltyScore", message: "Novelty (0-10):" },
       { type: "number", name: "correctnessScore", message: "Correctness (0-10):" },
       { type: "input", name: "summary", message: "Summary:" },
-      { type: "editor", name: "critique", message: "Detailed critique:" },
+      { type: "input", name: "critique", message: "Detailed critique (paste or type, then press Enter):" },
     ]);
 
     memory.saveReview({
