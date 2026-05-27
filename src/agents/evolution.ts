@@ -1,5 +1,6 @@
 import { BaseAgent } from "./base.js";
 import type { Hypothesis } from "../models/hypothesis.js";
+import { buildRLEFMetaReviewBlock } from "../rlef/prompt-injection.js";
 
 type EvolutionStrategy =
   | "grounding"
@@ -34,13 +35,17 @@ export class EvolutionAgent extends BaseAgent {
     this.log("info", `Running evolution strategy: ${strategy}`);
 
     const metaCritique = this.memory.getMetaReviewCritique(sessionId);
+    const rlefBlock = buildRLEFMetaReviewBlock(
+      this.memory.getAllFeedbackForSession(sessionId)
+    );
+    const metaCritiqueWithRLEF = (metaCritique ?? "") + rlefBlock;
     let evolved: EvolvedHypothesis | null = null;
     let parentIds: string[] = [];
 
     switch (strategy) {
       case "grounding": {
         const target = topHypotheses[0];
-        evolved = await this._groundingEnhancement(target, metaCritique);
+        evolved = await this._groundingEnhancement(target, metaCritiqueWithRLEF);
         parentIds = [target.id];
         break;
       }
@@ -71,7 +76,7 @@ export class EvolutionAgent extends BaseAgent {
       case "out_of_box": {
         const seed = topHypotheses[Math.floor(Math.random() * topHypotheses.length)];
         const planConfig = this.memory.getPlanConfig(sessionId);
-        evolved = await this._outOfBox(seed, planConfig?.parsedTitle ?? "");
+        evolved = await this._outOfBox(seed, planConfig?.parsedTitle ?? "", metaCritiqueWithRLEF);
         parentIds = [seed.id];
         break;
       }
@@ -202,14 +207,15 @@ export class EvolutionAgent extends BaseAgent {
 
   private async _outOfBox(
     seed: Hypothesis,
-    researchGoal: string
+    researchGoal: string,
+    metaCritique = ""
   ): Promise<EvolvedHypothesis | null> {
     const { system, userPrompt } = this.loadPrompt("evolution", "out_of_box", {
       seedHypothesis: `${seed.title}: ${seed.summary}`,
       researchGoal,
     });
 
-    return this.callLLMForJSON<EvolvedHypothesis>(system, userPrompt, {
+    return this.callLLMForJSON<EvolvedHypothesis>(system, userPrompt + metaCritique, {
       mode: "reason",
       maxTokens: 5000,
     });

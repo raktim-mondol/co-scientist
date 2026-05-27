@@ -1,6 +1,7 @@
 import { BaseAgent } from "./base.js";
 import { KnowledgeGraphAgent } from "./knowledgeGraph.js";
 import type { Hypothesis } from "../models/hypothesis.js";
+import { buildRLEFMetaReviewBlock } from "../rlef/prompt-injection.js";
 
 type Strategy =
   | "literature_exploration"
@@ -62,6 +63,10 @@ export class GenerationAgent extends BaseAgent {
     }
 
     const metaCritique = this.memory.getMetaReviewCritique(sessionId);
+    const rlefBlock = buildRLEFMetaReviewBlock(
+      this.memory.getAllFeedbackForSession(sessionId)
+    );
+    const metaCritiqueWithRLEF = (metaCritique ?? "") + rlefBlock;
     const existingHypotheses = this.memory.getTopHypotheses(sessionId, 5);
 
     // Weight strategies based on what's underrepresented
@@ -72,16 +77,16 @@ export class GenerationAgent extends BaseAgent {
 
     switch (strategy) {
       case "literature_exploration":
-        hypothesis = await this._literatureExploration(planConfig, metaCritique, sessionId, existingHypotheses);
+        hypothesis = await this._literatureExploration(planConfig, metaCritiqueWithRLEF, sessionId, existingHypotheses);
         break;
       case "scientific_debate":
-        hypothesis = await this._scientificDebate(planConfig, metaCritique);
+        hypothesis = await this._scientificDebate(planConfig, metaCritiqueWithRLEF);
         break;
       case "assumption_chaining":
-        hypothesis = await this._assumptionChaining(planConfig, metaCritique);
+        hypothesis = await this._assumptionChaining(planConfig, metaCritiqueWithRLEF);
         break;
       case "research_expansion":
-        hypothesis = await this._researchExpansion(planConfig, existingHypotheses, metaCritique, sessionId);
+        hypothesis = await this._researchExpansion(planConfig, existingHypotheses, metaCritiqueWithRLEF, sessionId);
         break;
     }
 

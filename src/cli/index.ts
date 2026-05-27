@@ -51,6 +51,7 @@ program
   .description("Display ranked hypotheses for a session")
   .option("-n, --top <n>", "Show top N hypotheses", "10")
   .option("--all", "Show all hypotheses including rejected")
+  .option("--show-feedback", "Show full experimental feedback details per hypothesis")
   .action(resultsCommand);
 
 program
@@ -60,9 +61,10 @@ program
 
 program
   .command("feedback <sessionId>")
-  .description("Submit expert review or hypothesis to a running session")
+  .description("Submit expert review, hypothesis, or experimental feedback to a session")
   .option("--hypothesis", "Submit a new hypothesis")
   .option("--review <hypothesisId>", "Submit a review for a specific hypothesis")
+  .option("--experimental", "Submit empirical/experimental feedback (RLEF)")
   .action(feedbackCommand);
 
 program

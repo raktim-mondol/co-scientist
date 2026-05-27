@@ -3,6 +3,7 @@ import type { Hypothesis } from "../models/hypothesis.js";
 import type { ReviewVerdict } from "../models/hypothesis.js";
 import { seededGlicko2Rating } from "../models/tournament.js";
 import { ProvenanceAgent } from "./provenance.js";
+import { buildRLEFMetaReviewBlock } from "../rlef/prompt-injection.js";
 
 interface ReviewResult {
   verdict: ReviewVerdict;
@@ -28,16 +29,22 @@ export class ReflectionAgent extends BaseAgent {
       return;
     }
 
+    // Append RLEF block to each hypothesis review so the LLM is aware of
+    // empirically validated/refuted hypotheses in this session.
+    const rlefBlock = buildRLEFMetaReviewBlock(
+      this.memory.getAllFeedbackForSession(sessionId)
+    );
+
     for (const hyp of pending) {
-      await this._reviewHypothesis(sessionId, hyp);
+      await this._reviewHypothesis(sessionId, hyp, rlefBlock);
     }
   }
 
-  private async _reviewHypothesis(sessionId: string, hyp: Hypothesis): Promise<void> {
+  private async _reviewHypothesis(sessionId: string, hyp: Hypothesis, rlefBlock = ""): Promise<void> {
     this.memory.updateHypothesisStatus(hyp.id, "reviewing");
 
     // Step 1: Quick initial review (no search)
-    const initial = await this._initialReview(hyp);
+    const initial = await this._initialReview(hyp, rlefBlock);
     this.memory.saveReview({
       hypothesisId: hyp.id,
       sessionId,
@@ -128,7 +135,7 @@ export class ReflectionAgent extends BaseAgent {
   }
 
   // ─── Initial Review (no search) ───────────────────────────────────────────
-  private async _initialReview(hyp: Hypothesis): Promise<ReviewResult> {
+  private async _initialReview(hyp: Hypothesis, rlefBlock = ""): Promise<ReviewResult> {
     const { system, userPrompt } = this.loadPrompt("reflection", "initial_review", {
       title: hyp.title,
       content: hyp.content,
@@ -136,7 +143,7 @@ export class ReflectionAgent extends BaseAgent {
       keyAssumptions: hyp.keyAssumptions.join("; "),
     });
 
-    const response = await this.callLLM(system, userPrompt, {
+    const response = await this.callLLM(system, userPrompt + rlefBlock, {
       mode: "chat",
       maxTokens: 2048,
       jsonMode: true,

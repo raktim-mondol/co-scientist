@@ -11,6 +11,7 @@ import { ExperimentDesignAgent } from "./experimentDesign.js";
 import { KnowledgeGraphAgent } from "./knowledgeGraph.js";
 import { runMigrations } from "../db/migrate.js";
 import { getMCPManager } from "../tools/mcpClient.js";
+import { getRewardStore } from "../rlef/reward-store.js";
 import type { ResearchGoal } from "../models/researchGoal.js";
 import type { SessionStats } from "../models/session.js";
 import type { EventEmitter } from "events";
@@ -154,6 +155,14 @@ export class SupervisorAgent extends BaseAgent {
       this.log("warn", `Experiment design failed: ${(err as Error).message}`);
     }
 
+    // Build knowledge graph from all session data
+    this.log("info", "Building knowledge graph...");
+    try {
+      await this.knowledgeGraph.execute(sessionId);
+    } catch (err) {
+      this.log("warn", `Knowledge graph build failed: ${(err as Error).message}`);
+    }
+
     // Generate final research overview
     this.log("info", "Generating final research overview...");
     await this._generateFinalOverview(sessionId);
@@ -176,7 +185,32 @@ export class SupervisorAgent extends BaseAgent {
       constraints: JSON.stringify(goal.constraints),
     });
 
-    const response = await this.callLLM(system, userPrompt, { mode: "reason" });
+    // Seed with cross-session reward memory: retrieve relevant priors and
+    // append them so the supervisor is aware of past empirical validations /
+    // refutations before generating the initial plan.
+    let priorsBlock = "";
+    try {
+      const rewardStore = getRewardStore();
+      const priors = await rewardStore.getRelevantPriors(goal.rawGoal, 5);
+      if (priors.length > 0) {
+        const lines = [
+          "\n\n## RELEVANT PRIOR EXPERIMENTAL FEEDBACK (Cross-Session Memory)",
+        ];
+        for (const p of priors) {
+          const sign = p.computedReward >= 0 ? `+${p.computedReward.toFixed(2)}` : p.computedReward.toFixed(2);
+          lines.push(`- [reward: ${sign}] ${p.feedbackSummary}`);
+          if (p.mechanisticKeywords.length > 0) {
+            lines.push(`  Keywords: ${p.mechanisticKeywords.slice(0, 8).join(", ")}`);
+          }
+        }
+        priorsBlock = lines.join("\n");
+        this.log("info", `Seeded supervisor with ${priors.length} cross-session prior(s)`);
+      }
+    } catch (err) {
+      this.log("warn", `Could not load cross-session priors: ${(err as Error).message}`);
+    }
+
+    const response = await this.callLLM(system, userPrompt + priorsBlock, { mode: "reason" });
 
     const parsed = this.extractJSON<{
       title: string;

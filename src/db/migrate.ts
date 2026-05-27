@@ -189,6 +189,50 @@ export async function runMigrations() {
 
   db.run(sql`CREATE INDEX IF NOT EXISTS idx_claim_citations_hypothesis ON claim_citations(hypothesis_id)`);
 
+  // ── Experimental Feedback (RLEF) ─────────────────────────────────────────────
+  // Stores wet-lab / user-study / ML-experiment feedback on hypotheses, plus the
+  // derived reward signal that is later applied to the hypothesis Elo rating.
+  db.run(sql`
+    CREATE TABLE IF NOT EXISTS experimental_feedback (
+      id TEXT PRIMARY KEY,
+      hypothesis_id TEXT NOT NULL REFERENCES hypotheses(id),
+      session_id TEXT NOT NULL REFERENCES sessions(id),
+      feedback_text TEXT NOT NULL,
+      novelty_score REAL,
+      correctness_score REAL,
+      testability_score REAL,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      computed_reward REAL NOT NULL,
+      recorded_by TEXT NOT NULL DEFAULT 'human',
+      created_at INTEGER NOT NULL
+    )
+  `);
+
+  db.run(sql`CREATE INDEX IF NOT EXISTS idx_experimental_feedback_hypothesis ON experimental_feedback(hypothesis_id)`);
+  db.run(sql`CREATE INDEX IF NOT EXISTS idx_experimental_feedback_session ON experimental_feedback(session_id)`);
+  db.run(sql`CREATE INDEX IF NOT EXISTS idx_experimental_feedback_reward ON experimental_feedback(session_id, computed_reward DESC)`);
+
+  // ── Reward Memory (Cross-Session Semantic Recall) ────────────────────────────
+  // Persistent index of strong-signal feedback. Queried by new sessions via
+  // semantic similarity over `vec_embeddings` (embedding_id = hypothesis_id key).
+  db.run(sql`
+    CREATE TABLE IF NOT EXISTS reward_memory (
+      id TEXT PRIMARY KEY,
+      hypothesis_id TEXT NOT NULL REFERENCES hypotheses(id),
+      session_id TEXT NOT NULL REFERENCES sessions(id),
+      feedback_summary TEXT NOT NULL,
+      mechanistic_keywords TEXT NOT NULL DEFAULT '[]',
+      computed_reward REAL NOT NULL,
+      embedding_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    )
+  `);
+
+  db.run(sql`CREATE INDEX IF NOT EXISTS idx_reward_memory_hypothesis ON reward_memory(hypothesis_id)`);
+  db.run(sql`CREATE INDEX IF NOT EXISTS idx_reward_memory_session ON reward_memory(session_id)`);
+  db.run(sql`CREATE INDEX IF NOT EXISTS idx_reward_memory_embedding ON reward_memory(embedding_id)`);
+  db.run(sql`CREATE INDEX IF NOT EXISTS idx_reward_memory_reward ON reward_memory(computed_reward DESC)`);
+
   // ── Unique index on proximity_edges(hypothesis_a_id, hypothesis_b_id) ────────
   // Pairs are stored in canonical sorted order so (A,B) == (B,A).
   // The ON CONFLICT DO UPDATE in saveProximityEdge relies on this constraint.

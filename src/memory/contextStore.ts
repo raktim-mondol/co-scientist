@@ -7,6 +7,7 @@ import type { TournamentMatch } from "../models/tournament.js";
 import type { CoScientistSession, SessionStats } from "../models/session.js";
 import type { ResearchGoal, ResearchPlanConfig } from "../models/researchGoal.js";
 import type { AgentTask } from "../models/agentTask.js";
+import type { ExperimentalFeedback } from "../models/feedback.js";
 import { logger } from "../config.js";
 
 export class ContextStore {
@@ -132,7 +133,7 @@ export class ContextStore {
     this.db
       .update(schema.sessions)
       .set({
-        researchOverview: overview,
+        researchOverview: overview.trim().replace(/\n{3,}/g, "\n\n"),
         status: "completed",
         completedAt: new Date(),
         updatedAt: new Date(),
@@ -695,6 +696,48 @@ export class ContextStore {
     return Number(row?.count ?? 0);
   }
 
+  // ─── Experimental Feedback (RLEF) ────────────────────────────────────────
+
+  saveExperimentalFeedback(feedback: ExperimentalFeedback): void {
+    this.sqlite.query(`
+      INSERT INTO experimental_feedback
+        (id, hypothesis_id, session_id, feedback_text,
+         novelty_score, correctness_score, testability_score,
+         metadata_json, computed_reward, recorded_by, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      feedback.id,
+      feedback.hypothesisId,
+      feedback.sessionId,
+      feedback.feedbackText,
+      feedback.noveltyScore      ?? null,
+      feedback.correctnessScore  ?? null,
+      feedback.testabilityScore  ?? null,
+      JSON.stringify(feedback.metadata ?? {}),
+      feedback.computedReward,
+      feedback.recordedBy,
+      feedback.createdAt.getTime(),
+    );
+  }
+
+  getExperimentalFeedback(hypothesisId: string): ExperimentalFeedback[] {
+    const rows = this.sqlite.query(`
+      SELECT * FROM experimental_feedback
+      WHERE hypothesis_id = ?
+      ORDER BY created_at DESC
+    `).all(hypothesisId) as Array<Record<string, unknown>>;
+    return rows.map(this._rowToFeedback);
+  }
+
+  getAllFeedbackForSession(sessionId: string): ExperimentalFeedback[] {
+    const rows = this.sqlite.query(`
+      SELECT * FROM experimental_feedback
+      WHERE session_id = ?
+      ORDER BY created_at DESC
+    `).all(sessionId) as Array<Record<string, unknown>>;
+    return rows.map(this._rowToFeedback);
+  }
+
   // ─── Private helpers ──────────────────────────────────────────────────────
 
   private _rowToSession(row: typeof schema.sessions.$inferSelect): CoScientistSession {
@@ -712,7 +755,26 @@ export class ContextStore {
     };
   }
 
+  private _rowToFeedback(row: Record<string, unknown>): ExperimentalFeedback {
+    return {
+      id:               row.id as string,
+      hypothesisId:     row.hypothesis_id as string,
+      sessionId:        row.session_id as string,
+      feedbackText:     row.feedback_text as string,
+      noveltyScore:     row.novelty_score != null ? (row.novelty_score as number) : undefined,
+      correctnessScore: row.correctness_score != null ? (row.correctness_score as number) : undefined,
+      testabilityScore: row.testability_score != null ? (row.testability_score as number) : undefined,
+      metadata:         JSON.parse((row.metadata_json as string) ?? "{}"),
+      computedReward:   row.computed_reward as number,
+      recordedBy:       (row.recorded_by as "human" | "automated") ?? "human",
+      createdAt:        new Date(row.created_at as number),
+    };
+  }
+
   private _rowToHypothesis(row: typeof schema.hypotheses.$inferSelect): Hypothesis {
+    const countRow = this.sqlite
+      .query(`SELECT count(*) as n FROM experimental_feedback WHERE hypothesis_id = ?`)
+      .get(row.id) as { n: number } | undefined;
     return {
       id: row.id,
       sessionId: row.sessionId,
@@ -734,6 +796,7 @@ export class ContextStore {
       status: row.status as Hypothesis["status"],
       parentIds: JSON.parse(row.parentIdsJson),
       generationRound: row.generationRound,
+      feedbackCount: Number(countRow?.n ?? 0),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

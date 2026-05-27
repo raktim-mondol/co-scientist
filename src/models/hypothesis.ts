@@ -65,6 +65,7 @@ export const HypothesisSchema = z.object({
   status: HypothesisStatusSchema.default("pending_review"),
   parentIds: z.array(z.string()).default([]), // For evolved hypotheses
   generationRound: z.number().int().default(0),
+  feedbackCount: z.number().int().default(0).optional(), // RLEF: # experimental feedback entries
   createdAt: z.date(),
   updatedAt: z.date(),
 });

@@ -92,14 +92,99 @@ co-scientist run --goal "..." --max-hypotheses 20 --budget 100000
 | `co-scientist resume <id>` | Resume a paused session |
 | `co-scientist list` | List all sessions |
 | `co-scientist results <id>` | Show ranked hypotheses |
+| `co-scientist results <id> --show-feedback` | Show ranked hypotheses with full RLEF feedback details |
 | `co-scientist overview <id>` | Show final research overview |
 | `co-scientist design <id>` | Generate experimental protocol for a hypothesis |
 | `co-scientist graph <id>` | Visualise the knowledge graph (text / DOT / JSON) |
 | `co-scientist compare <id> <hyp-id-1> <hyp-id-2>` | Run a manual head-to-head match between two hypotheses |
 | `co-scientist diff <id> <hyp-id>` | Show lineage tree and field-level diff vs parent |
 | `co-scientist feedback <id>` | Submit expert review or hypothesis |
+| `co-scientist feedback <id> --experimental` | Submit empirical/experimental feedback (RLEF) |
 | `co-scientist export <id>` | Export to Markdown or JSON |
 | `co-scientist delete <id>` | Delete a session and all its data |
+
+---
+
+## RLEF — Reinforcement Learning from Experimental Feedback
+
+Co-Scientist can close the loop with real-world empirical results. After running a wet-lab experiment, ML training run, or user study, submit the outcome as feedback. The system automatically:
+
+1. **Extracts a reward signal** (−1 to +1) from free-text + optional N/C/T scores
+2. **Updates the hypothesis Elo rating** using K=48 (higher weight than LLM debates)
+3. **Injects validated/refuted hypotheses** into generation, reflection, and evolution prompts for in-session learning
+4. **Stores strong-signal feedback** in a cross-session semantic memory so future sessions on related goals benefit from past experiments
+
+### Submitting feedback
+
+```bash
+co-scientist feedback <session-id> --experimental
+```
+
+You will be prompted for:
+- **Hypothesis ID** — from `co-scientist results <session-id>`
+- **Feedback text** — free-text empirical observation (opens editor)
+- **Novelty / Correctness / Testability scores** — 0–10, optional (press Enter to skip)
+- **Metadata JSON** — optional domain-specific payload (press Enter to skip)
+
+The computed reward and new Elo are displayed immediately.
+
+### Viewing feedback
+
+```bash
+# Summary line per hypothesis (count + avg reward + latest snippet)
+co-scientist results <session-id>
+
+# Full per-entry detail (reward, N/C/T scores, recorder, date)
+co-scientist results <session-id> --show-feedback
+```
+
+### Domain examples
+
+**Biology — IC₅₀ / wet-lab result**
+```
+Feedback text : Drug X reduces MDA-MB-231 tumor volume by 47% (p<0.01) at 10 nM.
+                IC50 confirmed at 8.3 nM. Apoptosis confirmed via Annexin V staining.
+Novelty       : 8
+Correctness   : 9
+Testability   : 8
+Metadata JSON : {"cellLine":"MDA-MB-231","IC50_nM":8.3,"assay":"Annexin-V"}
+```
+
+**Machine Learning — model performance**
+```
+Feedback text : ResNet-50 fine-tuned with proposed augmentation strategy achieves
+                94.2% top-1 accuracy on CIFAR-10, +3.1pp over baseline.
+Novelty       : 7
+Correctness   : 9
+Testability   : 9
+Metadata JSON : {"model":"ResNet-50","dataset":"CIFAR-10","accuracy":0.942,"baseline":0.911}
+```
+
+**User Studies — interview insights**
+```
+Feedback text : 12/15 participants found the proposed onboarding flow significantly
+                clearer. Task completion time reduced by 34%. Hypothesis confirmed.
+Novelty       : 6
+Correctness   : 8
+Testability   : 7
+Metadata JSON : {"n":15,"task_completion_improvement_pct":34,"method":"think-aloud"}
+```
+
+### How reward extraction works
+
+```
+sentiment  = keyword-based sentiment score of feedback text   // −1 to +1
+scoreAvg   = (novelty + correctness + testability) / 30 − 1  // normalise to [−1, +1]
+reward     = 0.4 × sentiment + 0.6 × scoreAvg                // scores weighted higher
+```
+
+When N/C/T scores are omitted, reward falls back to pure sentiment. The reward is then applied to the hypothesis Elo:
+
+```
+newElo = currentElo + 48 × ((reward + 1) / 2 − 0.5)
+```
+
+K=48 is intentionally higher than tournament debate K=16–32 because empirical results outweigh LLM-simulated debates.
 
 ---
 

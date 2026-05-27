@@ -157,3 +157,48 @@ export const embeddingCache = sqliteTable("embedding_cache", {
   embeddingBlob: blob("embedding_blob").notNull(), // Float32Array as buffer
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
+
+// ─── Experimental Feedback (RLEF) ────────────────────────────────────────────
+// Real-world / wet-lab / user-study feedback on a hypothesis. The user supplies
+// free-text + optional structured N/C/T scores (0-10); the system derives a
+// `computedReward` in [-1, +1] which is then applied to the hypothesis Elo
+// rating with a higher K-factor than tournament debate matches.
+//
+// `metadataJson` is a free-form JSON blob for domain-specific data (cell lines,
+// hyperparameters, demographics, IC50 values, etc.) that does not fit the
+// generic schema. `recordedBy` distinguishes human-submitted feedback from
+// automated ingestion (e.g. via API in future).
+export const experimentalFeedback = sqliteTable("experimental_feedback", {
+  id: text("id").primaryKey(),
+  hypothesisId: text("hypothesis_id").notNull().references(() => hypotheses.id),
+  sessionId: text("session_id").notNull().references(() => sessions.id),
+  feedbackText: text("feedback_text").notNull(),         // free-text empirical feedback
+  noveltyScore: real("novelty_score"),                   // 0-10, optional
+  correctnessScore: real("correctness_score"),           // 0-10, optional
+  testabilityScore: real("testability_score"),           // 0-10, optional
+  metadataJson: text("metadata_json").notNull().default("{}"), // domain-specific payload
+  computedReward: real("computed_reward").notNull(),     // [-1, +1] derived signal
+  recordedBy: text("recorded_by").notNull().default("human"), // 'human' | 'automated'
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});
+
+// ─── Reward Memory (Cross-Session Semantic Recall) ───────────────────────────
+// Persistent, *cross-session* index of validated/refuted hypotheses + their
+// derived reward signals. New sessions query this table by semantic similarity
+// (research-goal embedding ↔ hypothesis embedding via the `vec_embeddings`
+// virtual table) so that prior wet-lab knowledge can prime the supervisor and
+// generation agents in a fresh research session.
+//
+// `embeddingId` references the same key space as `embedding_cache.hypothesisId`
+// / `vec_embeddings.hypothesis_id`, so similarity search reuses the existing
+// vec0 index without duplicating embeddings.
+export const rewardMemory = sqliteTable("reward_memory", {
+  id: text("id").primaryKey(),
+  hypothesisId: text("hypothesis_id").notNull().references(() => hypotheses.id),
+  sessionId: text("session_id").notNull().references(() => sessions.id),
+  feedbackSummary: text("feedback_summary").notNull(),   // distilled summary of feedbackText
+  mechanisticKeywords: text("mechanistic_keywords").notNull().default("[]"), // JSON string[]
+  computedReward: real("computed_reward").notNull(),     // [-1, +1]
+  embeddingId: text("embedding_id").notNull(),           // -> vec_embeddings.hypothesis_id
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});

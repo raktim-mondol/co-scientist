@@ -50,7 +50,7 @@ export async function listCommand(): Promise<void> {
 // ─── Results command ──────────────────────────────────────────────────────────
 export async function resultsCommand(
   sessionId: string,
-  options: { top?: string; all?: boolean }
+  options: { top?: string; all?: boolean; showFeedback?: boolean }
 ): Promise<void> {
   await runMigrations();
   const memory = getContextStore();
@@ -101,6 +101,7 @@ export async function resultsCommand(
       `${memory.hasProvenanceFlag(h.id) ? chalk.red("⚠ provenance") + " " : ""}` +
       `${chalk.bold.white(h.title)}`
     );
+    console.log(chalk.gray(`   ID: ${h.id}`));
     console.log(chalk.gray(`   Strategy: ${h.generationStrategy} | W:${h.wins} L:${h.losses} | Round: ${h.generationRound}`));
     console.log(chalk.white(`   ${h.summary}`));
 
@@ -138,6 +139,29 @@ export async function resultsCommand(
         const icon = c.support === "contradicts" ? chalk.red("✗") : chalk.yellow("?");
         console.log(`     ${icon} ${chalk.gray(c.claimText.slice(0, 80))}${c.claimText.length > 80 ? "…" : ""}`);
         if (c.paperTitle) console.log(`       ${chalk.gray("→")} ${chalk.dim(c.paperTitle.slice(0, 70))}`);
+      }
+    }
+
+    // RLEF: feedback summary
+    const feedbacks = memory.getExperimentalFeedback(h.id);
+    if (feedbacks.length > 0) {
+      const avgReward = feedbacks.reduce((s, f) => s + f.computedReward, 0) / feedbacks.length;
+      const rewardColor = avgReward > 0.3 ? chalk.green : avgReward < -0.3 ? chalk.red : chalk.yellow;
+      const latest = feedbacks[0]; // ordered newest-first
+      console.log(
+        chalk.magenta(`   🧪 Feedback: `) +
+        chalk.white(`${feedbacks.length} entr${feedbacks.length === 1 ? "y" : "ies"}`) +
+        `  avg reward: ${rewardColor(avgReward >= 0 ? `+${avgReward.toFixed(2)}` : avgReward.toFixed(2))}` +
+        chalk.gray(`  latest: "${latest.feedbackText.slice(0, 60)}${latest.feedbackText.length > 60 ? "…" : ""}"`)
+      );
+      if (options.showFeedback) {
+        for (const f of feedbacks) {
+          const sign = f.computedReward >= 0 ? chalk.green(`+${f.computedReward.toFixed(3)}`) : chalk.red(f.computedReward.toFixed(3));
+          console.log(`     ${sign}  ${chalk.white(f.feedbackText.slice(0, 100))}${f.feedbackText.length > 100 ? "…" : ""}`);
+          if (f.noveltyScore !== undefined || f.correctnessScore !== undefined || f.testabilityScore !== undefined) {
+            console.log(chalk.gray(`           N:${f.noveltyScore ?? "—"}  C:${f.correctnessScore ?? "—"}  T:${f.testabilityScore ?? "—"}  by:${f.recordedBy}  ${f.createdAt.toLocaleDateString()}`));
+          }
+        }
       }
     }
 
@@ -188,8 +212,9 @@ export async function overviewCommand(sessionId: string): Promise<void> {
 
   console.log(chalk.bold.cyan(`\n📄 Research Overview: ${session.name}\n`));
   console.log(chalk.gray("─".repeat(80)));
-  console.log(session.researchOverview);
-  console.log(chalk.gray("\n─".repeat(80)));
+  const cleaned = session.researchOverview.trim().replace(/\n{3,}/g, "\n\n");
+  console.log(cleaned);
+  console.log(chalk.gray("\n" + "─".repeat(80)));
   console.log(chalk.cyan(`\nExport: co-scientist export ${sessionId}`));
 }
 
@@ -295,7 +320,7 @@ export async function resumeCommand(sessionId: string): Promise<void> {
 // ─── Feedback command ─────────────────────────────────────────────────────────
 export async function feedbackCommand(
   sessionId: string,
-  options: { hypothesis?: boolean; review?: string }
+  options: { hypothesis?: boolean; review?: string; experimental?: boolean }
 ): Promise<void> {
   await runMigrations();
   const { default: inquirer } = await import("inquirer");
@@ -305,6 +330,90 @@ export async function feedbackCommand(
   if (!session) {
     console.error(chalk.red(`Session not found: ${sessionId}`));
     process.exit(1);
+  }
+
+  // ── Experimental feedback (RLEF) ──────────────────────────────────────────
+  if (options.experimental) {
+    const { extractRewardFromFeedback, applyRewardToElo } = await import("../../rlef/reward-signal.js");
+    const { getSqlite } = await import("../../db/index.js");
+    const { v4: uuidv4 } = await import("uuid");
+
+    const answers = await inquirer.prompt([
+      { type: "input",  name: "hypothesisId", message: "Hypothesis ID:" },
+      { type: "input",  name: "feedbackText",  message: "Empirical feedback (paste or type, then press Enter):" },
+      { type: "number", name: "noveltyScore",      message: "Novelty score (0-10, blank=skip):", default: undefined },
+      { type: "number", name: "correctnessScore",  message: "Correctness score (0-10, blank=skip):", default: undefined },
+      { type: "number", name: "testabilityScore",  message: "Testability score (0-10, blank=skip):", default: undefined },
+      { type: "input",  name: "metadataJson", message: "Optional metadata JSON (blank=skip):", default: "" },
+    ]);
+
+    const hypId = (answers.hypothesisId as string).trim();
+    const hyp = memory.getHypothesis(hypId);
+    if (!hyp) {
+      console.error(chalk.red(`Hypothesis not found: ${hypId}`));
+      return;
+    }
+
+    const novelty      = isFinite(answers.noveltyScore as number)      ? (answers.noveltyScore as number)      : undefined;
+    const correctness  = isFinite(answers.correctnessScore as number)  ? (answers.correctnessScore as number)  : undefined;
+    const testability  = isFinite(answers.testabilityScore as number)  ? (answers.testabilityScore as number)  : undefined;
+
+    const computedReward = extractRewardFromFeedback(
+      answers.feedbackText as string,
+      novelty,
+      correctness,
+      testability,
+    );
+
+    let metadata: Record<string, unknown> = {};
+    const rawMeta = (answers.metadataJson as string).trim();
+    if (rawMeta) {
+      try { metadata = JSON.parse(rawMeta); }
+      catch { console.warn(chalk.yellow("Invalid metadata JSON — stored as empty object.")); }
+    }
+
+    // Persist to experimental_feedback
+    getSqlite().query(`
+      INSERT INTO experimental_feedback
+        (id, hypothesis_id, session_id, feedback_text,
+         novelty_score, correctness_score, testability_score,
+         metadata_json, computed_reward, recorded_by, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'human', ?)
+    `).run(
+      uuidv4(),
+      hypId,
+      sessionId,
+      answers.feedbackText as string,
+      novelty  ?? null,
+      correctness ?? null,
+      testability ?? null,
+      JSON.stringify(metadata),
+      computedReward,
+      Date.now(),
+    );
+
+    // Update hypothesis Elo (K=48 for empirical feedback)
+    const newElo = applyRewardToElo(hyp.eloRating, computedReward);
+    memory.updateHypothesisRating(
+      hypId,
+      newElo,
+      hyp.ratingDeviation ?? 350,
+      hyp.volatility ?? 0.06,
+      hyp.wins,
+      hyp.losses,
+      hyp.matchesPlayed,
+    );
+
+    const rewardSign = computedReward >= 0 ? chalk.green(`+${computedReward.toFixed(3)}`) : chalk.red(computedReward.toFixed(3));
+    const eloChange  = newElo - hyp.eloRating;
+    const eloSign    = eloChange >= 0 ? chalk.green(`+${eloChange.toFixed(1)}`) : chalk.red(eloChange.toFixed(1));
+
+    console.log(chalk.bold.cyan("\n✓ Experimental feedback recorded\n"));
+    console.log(`  Hypothesis : ${chalk.white(hyp.title)}`);
+    console.log(`  Reward     : ${rewardSign}`);
+    console.log(`  Elo        : ${Math.round(hyp.eloRating)} → ${chalk.bold(Math.round(newElo))} (${eloSign})`);
+    console.log();
+    return;
   }
 
   if (options.hypothesis) {

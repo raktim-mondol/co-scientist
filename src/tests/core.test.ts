@@ -2,6 +2,7 @@ import { describe, it, expect } from "bun:test";
 import { computeEloUpdate, computeGlicko2Update, seededGlicko2FromReviewScores, type Glicko2State } from "../models/tournament.js";
 import { TaskScheduler } from "../taskQueue/queue.js";
 import { z } from "zod";
+import { extractRewardFromFeedback, applyRewardToElo } from "../rlef/reward-signal.js";
 import {
   HypothesisSchema,
   HypothesisStatusSchema,
@@ -9,6 +10,14 @@ import {
 } from "../models/hypothesis.js";
 import { SessionStatusSchema, SessionStatsSchema } from "../models/session.js";
 import { ResearchGoalSchema, ResearchConstraintsSchema } from "../models/researchGoal.js";
+import {
+  ExperimentalFeedbackSchema,
+  ExperimentalFeedbackInputSchema,
+  RewardMemorySchema,
+  validateExperimentalFeedback,
+  safeValidateExperimentalFeedback,
+  validateRewardMemory,
+} from "../models/feedback.js";
 
 // ─── Elo Tournament Logic ─────────────────────────────────────────────────────
 
@@ -465,5 +474,191 @@ describe("Model Schemas", () => {
       expect(result.noveltyRequired).toBe(true);
       expect(result.allowedMethodologies).toEqual([]);
     });
+  });
+
+  // ─── RLEF (Task 2 demo): import and validate feedback objects ──────────────
+  describe("ExperimentalFeedbackSchema", () => {
+    const valid = {
+      id: "550e8400-e29b-41d4-a716-446655440010",
+      hypothesisId: "550e8400-e29b-41d4-a716-446655440011",
+      sessionId: "550e8400-e29b-41d4-a716-446655440012",
+      feedbackText:
+        "Wet-lab confirms drug X reduces tumor volume by 47% (p<0.01); MDA-MB-231 cells.",
+      noveltyScore: 8,
+      correctnessScore: 9,
+      testabilityScore: 8,
+      metadata: { cellLine: "MDA-MB-231", IC50_nM: 42 },
+      computedReward: 0.78,
+      recordedBy: "human" as const,
+      createdAt: new Date(),
+    };
+
+    it("validates a complete experimental feedback object", () => {
+      const result = ExperimentalFeedbackSchema.safeParse(valid);
+      expect(result.success).toBe(true);
+    });
+
+    it("validateExperimentalFeedback throws on bad input", () => {
+      expect(() => validateExperimentalFeedback({ feedbackText: "x" })).toThrow();
+    });
+
+    it("safeValidateExperimentalFeedback returns success=false on bad input", () => {
+      const r = safeValidateExperimentalFeedback({ feedbackText: "x" });
+      expect(r.success).toBe(false);
+    });
+
+    it("rejects out-of-range N/C/T scores", () => {
+      const bad = { ...valid, noveltyScore: 11 };
+      expect(ExperimentalFeedbackSchema.safeParse(bad).success).toBe(false);
+    });
+
+    it("rejects computedReward outside [-1, +1]", () => {
+      expect(
+        ExperimentalFeedbackSchema.safeParse({ ...valid, computedReward: 1.5 }).success,
+      ).toBe(false);
+      expect(
+        ExperimentalFeedbackSchema.safeParse({ ...valid, computedReward: -2 }).success,
+      ).toBe(false);
+    });
+
+    it("makes N/C/T scores optional (purely qualitative feedback is allowed)", () => {
+      const qualitative = {
+        ...valid,
+        noveltyScore: undefined,
+        correctnessScore: undefined,
+        testabilityScore: undefined,
+      };
+      const result = ExperimentalFeedbackSchema.safeParse(qualitative);
+      expect(result.success).toBe(true);
+    });
+
+    it("defaults metadata to {} and recordedBy to 'human'", () => {
+      const { metadata: _m, recordedBy: _r, ...rest } = valid;
+      const parsed = ExperimentalFeedbackSchema.parse(rest);
+      expect(parsed.metadata).toEqual({});
+      expect(parsed.recordedBy).toBe("human");
+    });
+
+    it("ExperimentalFeedbackInputSchema accepts user-supplied input without derived fields", () => {
+      const userInput = {
+        hypothesisId: valid.hypothesisId,
+        sessionId: valid.sessionId,
+        feedbackText: valid.feedbackText,
+        noveltyScore: 7,
+        correctnessScore: 8,
+        testabilityScore: 6,
+        metadata: { domain: "biology" },
+      };
+      const result = ExperimentalFeedbackInputSchema.safeParse(userInput);
+      expect(result.success).toBe(true);
+    });
+  });
+
+  describe("RewardMemorySchema", () => {
+    const valid = {
+      id: "550e8400-e29b-41d4-a716-446655440020",
+      hypothesisId: "550e8400-e29b-41d4-a716-446655440021",
+      sessionId: "550e8400-e29b-41d4-a716-446655440022",
+      feedbackSummary: "Validated: Drug X reduces tumor volume in TNBC cell lines.",
+      mechanisticKeywords: ["drug-x", "tumor", "apoptosis", "MDA-MB-231"],
+      computedReward: 0.78,
+      embeddingId: "550e8400-e29b-41d4-a716-446655440021",
+      createdAt: new Date(),
+    };
+
+    it("validates a complete reward memory object", () => {
+      const result = RewardMemorySchema.safeParse(valid);
+      expect(result.success).toBe(true);
+    });
+
+    it("validateRewardMemory throws on bad input", () => {
+      expect(() => validateRewardMemory({ feedbackSummary: "x" })).toThrow();
+    });
+
+    it("defaults mechanisticKeywords to []", () => {
+      const { mechanisticKeywords: _k, ...rest } = valid;
+      const parsed = RewardMemorySchema.parse(rest);
+      expect(parsed.mechanisticKeywords).toEqual([]);
+    });
+
+    it("rejects empty embeddingId", () => {
+      const bad = { ...valid, embeddingId: "" };
+      expect(RewardMemorySchema.safeParse(bad).success).toBe(false);
+    });
+
+    it("rejects computedReward outside [-1, +1]", () => {
+      expect(
+        RewardMemorySchema.safeParse({ ...valid, computedReward: 2 }).success,
+      ).toBe(false);
+    });
+  });
+});
+
+// ─── RLEF Task 3: Reward Signal Extraction ───────────────────────────────────
+
+describe("extractRewardFromFeedback", () => {
+  it("positive text + high scores → reward near +1", () => {
+    const r = extractRewardFromFeedback("confirmed and validated", 9, 9, 9);
+    // scoreAvg = (9+9+9)/30 - 1 = -0.2; sentiment ≈ +1 → 0.4*1 + 0.6*(-0.2) = 0.28
+    expect(r).toBeGreaterThan(0.2);
+  });
+
+  it("negative text + low scores → reward near -1", () => {
+    const r = extractRewardFromFeedback("failed and refuted", 1, 1, 1);
+    expect(r).toBeLessThan(-0.5);
+  });
+
+  it("neutral text + mid scores (5,5,5) → reward ≈ -0.3 (scores pull below zero)", () => {
+    // scoreAvg = (5+5+5)/30 - 1 = -0.5; sentiment = 0 → reward = -0.3
+    const r = extractRewardFromFeedback("experiment completed", 5, 5, 5);
+    expect(r).toBeCloseTo(-0.3, 5);
+  });
+
+  it("no scores → falls back to pure sentiment", () => {
+    const pos = extractRewardFromFeedback("confirmed and validated");
+    const neg = extractRewardFromFeedback("failed and refuted");
+    expect(pos).toBeGreaterThan(0);
+    expect(neg).toBeLessThan(0);
+  });
+
+  it("no scores, neutral text → 0", () => {
+    expect(extractRewardFromFeedback("experiment ran")).toBe(0);
+  });
+
+  it("result is always clamped to [-1, +1]", () => {
+    const r1 = extractRewardFromFeedback("confirmed validated success excellent", 10, 10, 10);
+    const r2 = extractRewardFromFeedback("failed refuted rejected toxic harmful", 0, 0, 0);
+    expect(r1).toBeLessThanOrEqual(1);
+    expect(r2).toBeGreaterThanOrEqual(-1);
+  });
+
+  it("scores dominate over sentiment (weight 0.6 vs 0.4)", () => {
+    // Positive text but very low scores → net negative
+    const r = extractRewardFromFeedback("confirmed validated", 1, 1, 1);
+    expect(r).toBeLessThan(0);
+  });
+});
+
+describe("applyRewardToElo", () => {
+  it("reward=+1 → gains K/2 points", () => {
+    expect(applyRewardToElo(1200, 1, 48)).toBeCloseTo(1224);
+  });
+
+  it("reward=-1 → loses K/2 points", () => {
+    expect(applyRewardToElo(1200, -1, 48)).toBeCloseTo(1176);
+  });
+
+  it("reward=0 → no change", () => {
+    expect(applyRewardToElo(1200, 0, 48)).toBeCloseTo(1200);
+  });
+
+  it("default K=48 is higher than tournament K=32", () => {
+    const k48 = applyRewardToElo(1200, 0.5, 48) - 1200;
+    const k32 = applyRewardToElo(1200, 0.5, 32) - 1200;
+    expect(k48).toBeGreaterThan(k32);
+  });
+
+  it("respects custom kFactor", () => {
+    expect(applyRewardToElo(1200, 1, 64)).toBeCloseTo(1232);
   });
 });
