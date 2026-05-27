@@ -1,28 +1,12 @@
-# Co-Scientist (Bun)
+# Co-Scientist
 
 > **Open-source multi-agent AI system for automated scientific hypothesis generation, ranking, and experiment design**  
-> Inspired by: *"Accelerating scientific discovery with Co-Scientist"* — Gottweis et al., Nature (2026)  
-> This is the **Bun-native port** of [co-scientist](../co-scientist). It runs directly on [Bun](https://bun.sh) with no build step, using `bun:sqlite` as the database driver and `@huggingface/transformers` for local embeddings.
+> Inspired by: *"Accelerating scientific discovery with Co-Scientist"* — Gottweis et al., Nature (2026)
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5-blue)](https://www.typescriptlang.org/)
 [![Bun](https://img.shields.io/badge/Bun-≥1.0-black)](https://bun.sh/)
 [![DeepSeek](https://img.shields.io/badge/LLM-DeepSeek--v4--pro-purple)](https://api.deepseek.com)
 [![sqlite-vec](https://img.shields.io/badge/VectorStore-sqlite--vec-orange)](https://github.com/asg017/sqlite-vec)
-
----
-
-## Differences from the Node.js version
-
-| Concern | Node.js (`co-scientist`) | Bun (`co-scientist-bun`) |
-|---------|--------------------------|--------------------------|
-| Runtime | Node.js ≥ 20 + `tsx` | Bun ≥ 1.0 (native TS) |
-| SQLite driver | `better-sqlite3` | `bun:sqlite` (built-in) |
-| Drizzle adapter | `drizzle-orm/better-sqlite3` | `drizzle-orm/bun-sqlite` |
-| Embeddings | `@xenova/transformers` | `@huggingface/transformers` |
-| Test runner | Vitest | `bun test` (built-in) |
-| Build step | `tsc` → `dist/` | None — run `.ts` directly |
-
-Everything else — agents, prompts, CLI commands, Glicko-2 ranking, sqlite-vec vector search, knowledge graph, provenance tracking — is identical.
 
 ---
 
@@ -52,7 +36,7 @@ curl -fsSL https://bun.sh/install | bash
 
 ```bash
 git clone https://github.com/raktim-mondol/co-scientist.git
-cd co-scientist-bun
+cd co-scientist
 bun install
 ```
 
@@ -124,7 +108,7 @@ co-scientist run --goal "..."
 
 ```bash
 bun run src/cli/index.ts   # Run directly — no build step needed
-bun test                   # Run tests with bun:test
+bun test                   # Run tests
 bun run src/db/migrate.ts  # Initialise / migrate the database
 ```
 
@@ -251,4 +235,4 @@ src/prompts/
 
 ## License
 
-MIT License — see [LICENSE](../co-scientist/LICENSE)
+MIT License — see [LICENSE](LICENSE)
