@@ -61,7 +61,12 @@ program
 
 program
   .command("feedback <sessionId>")
-  .description("Submit expert review, hypothesis, or experimental feedback to a session")
+  .description(
+    "Submit feedback to a session\n" +
+    "  --experimental   Real-world experiment result (RLEF: updates Elo, injects into agents)\n" +
+    "  --hypothesis     Submit a new expert hypothesis into the tournament\n" +
+    "  --review <id>    Expert opinion review on an existing hypothesis"
+  )
   .option("--hypothesis", "Submit a new hypothesis")
   .option("--review <hypothesisId>", "Submit a review for a specific hypothesis")
   .option("--experimental", "Submit empirical/experimental feedback (RLEF)")
