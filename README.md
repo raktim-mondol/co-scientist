@@ -152,29 +152,56 @@ flowchart TD
     META["⑨ Meta-Review<br/>(every 25 rounds)"]
     DESIGN["⑩ Experiment Design<br/>(post-plateau)"]
 
+    %% ── Main flow ────────────────────────────────────────────────
     GOAL --> SUP --> GEN
+
     PAI --> GEN
     CON --> GEN
     CON --> REF
     CON --> PROV
     CON --> EVOL
     CON --> DESIGN
+
     DS -.->|powers all agents| SUP & GEN & REF & PROV & RANK & EVOL & META & DESIGN
+
     GEN -->|hypothesis| REF
     REF -->|passes| PROV
     PROV -->|ClaimCitations injected| RANK
     REF -->|passes| RANK
     RANK -->|top hypotheses| EVOL
     EVOL -->|evolved hypothesis| REF
+
     RANK -->|active hypotheses| PROX
     VEC2 -->|dedup + edges| KG
     KG -->|unexplored concepts| GEN
+
     RANK -->|reviews + rationales| META
     META -->|metaCritique| GEN
     META -->|metaCritique| EVOL
+
     RANK -->|top-1| DESIGN
+
     META --> OUT
     DESIGN --> OUT
+
+    %% ── Colors ───────────────────────────────────────────────────
+    style GOAL     fill:#546E7A,color:#fff,stroke:#37474F
+    style OUT      fill:#546E7A,color:#fff,stroke:#37474F
+    style DS       fill:#1565C0,color:#fff,stroke:#0D47A1
+    style PAI      fill:#00695C,color:#fff,stroke:#004D40
+    style CON      fill:#00695C,color:#fff,stroke:#004D40
+    style SUP      fill:#6A1B9A,color:#fff,stroke:#4A148C
+    style META     fill:#6A1B9A,color:#fff,stroke:#4A148C
+    style GEN      fill:#E65100,color:#fff,stroke:#BF360C
+    style EVOL     fill:#E65100,color:#fff,stroke:#BF360C
+    style REF      fill:#C62828,color:#fff,stroke:#B71C1C
+    style PROV     fill:#C62828,color:#fff,stroke:#B71C1C
+    style RANK     fill:#F9A825,color:#333,stroke:#F57F17
+    style PROX     fill:#37474F,color:#fff,stroke:#263238
+    style VEC2     fill:#37474F,color:#fff,stroke:#263238
+    style KG       fill:#37474F,color:#fff,stroke:#263238
+    style DESIGN   fill:#2E7D32,color:#fff,stroke:#1B5E20
+    style PROXVEC  fill:#ECEFF1,stroke:#37474F,color:#263238
 ```
 
 ---
