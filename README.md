@@ -63,24 +63,23 @@ MAX_TOURNAMENT_ROUNDS=100
 COMPUTE_BUDGET_TOKENS=500000
 ```
 
-### 4. Run
-
-```bash
-# Interactive mode (prompts for research goal)
-bun run src/cli/index.ts run
-
-# Or pass goal directly
-bun run src/cli/index.ts run --goal "What are novel epigenetic mechanisms underlying ALS pathogenesis?"
-
-# With custom budget
-bun run src/cli/index.ts run --goal "..." --max-hypotheses 20 --budget 100000
-```
-
-### 5. Link globally (optional)
+### 4. Link globally
 
 ```bash
 bun link
-co-scientist run --goal "..."
+```
+
+### 5. Run
+
+```bash
+# Interactive mode (prompts for research goal)
+co-scientist run
+
+# Or pass goal directly
+co-scientist run --goal "What are novel epigenetic mechanisms underlying ALS pathogenesis?"
+
+# With custom budget
+co-scientist run --goal "..." --max-hypotheses 20 --budget 100000
 ```
 
 ---
