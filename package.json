@@ -1,5 +1,5 @@
 {
-  "name": "co-scientist-bun",
+  "name": "co-scientist",
   "version": "1.0.0",
   "description": "Multi-agent AI system for automated scientific hypothesis generation and ranking — inspired by the Co-Scientist paper (Gottweis et al., Nature 2026), with significant extensions including Glicko-2 ranking, provenance tracking, knowledge graph, experiment design, and local vector search",
   "type": "module",
