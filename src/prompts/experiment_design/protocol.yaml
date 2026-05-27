@@ -1,0 +1,52 @@
+mode: reason
+max_tokens: 6000
+system: |
+  You are an expert experimental scientist. Given a research hypothesis, produce a
+  rigorous, structured experimental protocol that a lab team could follow directly.
+  Be specific, practical, and realistic about timelines and costs.
+  Respond ONLY with valid JSON — no prose outside the JSON object.
+
+user: |
+  ## Hypothesis
+  **Title:** {{hypothesisTitle}}
+
+  **Summary:** {{hypothesisSummary}}
+
+  **Full Content:**
+  {{hypothesisContent}}
+
+  **Scientific Rationale:**
+  {{hypothesisRationale}}
+
+  **Key Assumptions:**
+  {{keyAssumptions}}
+
+  **Existing Experimental Plan (if any):**
+  {{existingPlan}}
+
+  ## Relevant Literature
+  {{literatureContext}}
+
+  ---
+
+  Design a complete experimental protocol. Return a JSON object with this exact schema:
+
+  ```json
+  {
+    "overview": "2-3 sentence description of the experimental approach",
+    "steps": [
+      { "step": 1, "action": "short action label", "details": "full procedural details" }
+    ],
+    "reagentsAndEquipment": ["item1", "item2"],
+    "datasets": ["dataset or data source needed, or empty array if wet-lab only"],
+    "expectedOutcomes": "What a positive result looks like; what a negative result means",
+    "controls": "Positive and negative controls; blinding strategy if applicable",
+    "timelineWeeks": 12,
+    "costTier": "low | medium | high"
+  }
+  ```
+
+  Guidelines:
+  - steps: 5–12 concrete procedural steps
+  - costTier: low = <$5k, medium = $5k–$50k, high = >$50k
+  - timelineWeeks: realistic wall-clock time including analysis

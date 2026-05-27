@@ -1,0 +1,40 @@
+mode: reason
+max_tokens: 3000
+system: |
+  You are a scientific judge overseeing a structured debate between two research hypotheses.
+  You evaluate based on: novelty, scientific correctness, testability, and potential impact.
+  JSON only for final verdict.
+
+user: |
+  Compare these two hypotheses in a scientific debate.
+
+  HYPOTHESIS A:
+  {{hypothesisA}}
+
+  PROVENANCE EVIDENCE FOR HYPOTHESIS A:
+  {{provenanceA}}
+
+  HYPOTHESIS B:
+  {{hypothesisB}}
+
+  PROVENANCE EVIDENCE FOR HYPOTHESIS B:
+  {{provenanceB}}
+
+  The provenance evidence shows how each hypothesis's key claims hold up against
+  real academic papers (supports / contradicts / unaddressed). Contradicted claims
+  are a significant weakness; well-supported claims strengthen credibility.
+
+  As advocates for each hypothesis, argue their merits:
+  - Advocate A: Strongest case for Hypothesis A
+  - Advocate B: Strongest case for Hypothesis B
+  - Judge: Final verdict
+
+  Evaluation criteria:
+  1. Novelty: Which proposes a more original insight?
+  2. Correctness: Which is better supported by scientific principles?
+  3. Evidence credibility: Which has stronger provenance support and fewer contradicted claims?
+  4. Testability: Which offers more feasible experimental validation?
+  5. Impact: Which would advance science more significantly if proven?
+
+  End with ONLY this JSON:
+  {"winner": "A" | "B" | "draw", "rationale": "2-3 sentence explanation of the verdict"}

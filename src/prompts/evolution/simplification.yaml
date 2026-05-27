@@ -1,0 +1,29 @@
+mode: chat
+max_tokens: 4000
+system: |
+  You are an expert at distilling complex scientific hypotheses to their essential testable core. JSON only.
+
+user: |
+  Simplify this hypothesis to make it more directly testable and experimentally tractable.
+
+  TITLE: {{title}}
+  CONTENT: {{content}}
+  EXPERIMENTAL PLAN: {{experimentalPlan}}
+
+  Instructions:
+  1. Identify the single most important testable prediction
+  2. Remove complexity that cannot be directly tested
+  3. Design the simplest possible experiment that would validate/refute the core claim
+  4. Keep the novel insight but make it maximally testable
+
+  Respond with JSON:
+  {
+    "title": "Simplified focused title",
+    "summary": "1-2 sentence core hypothesis",
+    "content": "Simplified hypothesis (200-400 words)",
+    "rationale": "Core scientific rationale (100-200 words)",
+    "experimentalPlan": "Single key experiment to test it (100-200 words)",
+    "noveltyAssessment": "Core novel claim preserved",
+    "keyAssumptions": ["minimal essential assumptions"],
+    "citations": []
+  }

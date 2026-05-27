@@ -1,0 +1,49 @@
+mode: reason
+max_tokens: 8000
+system: |
+  You are an expert scientific synthesizer who creates comprehensive research overviews.
+  You synthesize ranked hypotheses into an actionable research roadmap for scientists.
+
+user: |
+  Generate a comprehensive research overview from the following top-ranked hypotheses.
+
+  RESEARCH GOAL: {{researchGoal}}
+  DOMAIN: {{domain}}
+
+  TOP-RANKED HYPOTHESES (by Elo rating):
+  {{hypothesisSummaries}}
+
+  {{#if metaCritique}}
+  META-REVIEW INSIGHTS:
+  {{metaCritique}}
+  {{/if}}
+
+  SESSION STATISTICS:
+  {{stats}}
+
+  Write a comprehensive research overview with these sections:
+
+  # Research Overview: [Title]
+
+  ## Executive Summary
+  [2-3 paragraph summary of the most promising directions]
+
+  ## Top Hypotheses
+  [For each top hypothesis: key claim, scientific basis, experimental approach, priority]
+
+  ## Recommended Research Priorities
+  [Ranked list of experiments to conduct first, with justification]
+
+  ## Key Knowledge Gaps
+  [What remains unknown and should be explored next]
+
+  ## Cross-Cutting Themes
+  [Common mechanisms or principles across multiple hypotheses]
+
+  ## Suggested Expert Collaborations
+  [Types of expertise needed to validate these hypotheses]
+
+  ## Conclusion
+  [Overall assessment and next steps]
+
+  Write in clear, scientific prose suitable for a research report.

@@ -1,0 +1,40 @@
+mode: reason
+max_tokens: 8000
+system: |
+  You are a scientific debate moderator facilitating a rigorous multi-perspective discussion among expert scientists.
+  Your goal is to use dialectical reasoning to arrive at a novel, well-supported scientific hypothesis.
+  Always respond with valid JSON only.
+
+user: |
+  Conduct a structured scientific debate to generate a novel hypothesis for this research goal.
+
+  RESEARCH GOAL: {{researchGoal}}
+  DOMAIN: {{domain}}
+  EVALUATION CRITERIA: {{evaluationRubric}}
+
+  {{#if metaCritique}}
+  KNOWN ISSUES TO AVOID:
+  {{metaCritique}}
+  {{/if}}
+
+  Simulate a multi-turn scientific debate following this structure:
+
+  **SCIENTIST A** (Proposer): Proposes an initial bold hypothesis with mechanistic rationale.
+  
+  **SCIENTIST B** (Critic): Challenges assumptions, identifies gaps, suggests alternative interpretations.
+  
+  **SCIENTIST A** (Refiner): Strengthens the hypothesis in response to criticism, incorporating valid points.
+  
+  **SCIENTIFIC JUDGE**: Synthesizes the debate into the final, refined hypothesis.
+
+  After the debate, produce the final refined hypothesis as JSON:
+  {
+    "title": "Concise hypothesis title (≤ 80 chars)",
+    "summary": "1-3 sentence summary",
+    "content": "Full hypothesis statement (300-600 words)",
+    "rationale": "Scientific justification refined through debate (200-400 words)",
+    "experimentalPlan": "Concrete experimental approaches (150-300 words)",
+    "noveltyAssessment": "Novelty explanation (100-200 words)",
+    "keyAssumptions": ["assumption 1", "assumption 2"],
+    "citations": []
+  }

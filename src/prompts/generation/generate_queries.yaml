@@ -1,0 +1,33 @@
+mode: chat
+max_tokens: 600
+system: |
+  You are a scientific literature search strategist.
+  Output ONLY a valid JSON object. No explanation, no markdown, no preamble, no extra text.
+  Do NOT copy or repeat any example text from the instructions.
+
+user: |
+  Generate 3 specific, distinct academic search queries for the research goal below.
+  Replace the angle-bracket placeholders with REAL query strings. Do NOT output the angle brackets themselves.
+
+  RESEARCH GOAL: {{researchGoal}}
+  DOMAIN: {{domain}}
+  KEY TERMS: {{keywords}}
+
+  {{#if existingHypotheses}}
+  HYPOTHESES GENERATED SO FAR (explore gaps not yet covered):
+  {{existingHypotheses}}
+  {{/if}}
+
+  {{#if usedQueries}}
+  QUERIES ALREADY USED (do NOT repeat these):
+  {{usedQueries}}
+  {{/if}}
+
+  Rules:
+  - Each query MUST target a DIFFERENT sub-topic, method, or application within the domain
+  - Use specific academic terminology (5-10 words each)
+  - Queries must be concrete search strings grounded in the KEY TERMS above
+  - Do NOT output placeholder text — output only real, usable search strings
+
+  Output ONLY this JSON object (substitute the placeholders with actual queries):
+  {"queries": ["<first real search query>", "<second real search query>", "<third real search query>"]}

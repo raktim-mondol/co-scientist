@@ -1,0 +1,29 @@
+mode: chat
+max_tokens: 1500
+system: |
+  You are a scientific evaluator comparing two research hypotheses. JSON only.
+
+user: |
+  Which hypothesis is scientifically superior?
+
+  HYPOTHESIS A:
+  {{hypothesisA}}
+
+  PROVENANCE EVIDENCE FOR HYPOTHESIS A:
+  {{provenanceA}}
+
+  HYPOTHESIS B:
+  {{hypothesisB}}
+
+  PROVENANCE EVIDENCE FOR HYPOTHESIS B:
+  {{provenanceB}}
+
+  The provenance evidence shows how each hypothesis's key claims hold up against
+  real academic papers (supports / contradicts / unaddressed). Contradicted claims
+  are a significant weakness; well-supported claims strengthen credibility.
+
+  Evaluate both on: novelty, scientific soundness, evidence credibility (provenance), testability, and potential impact.
+  Give a concise verdict.
+
+  Respond with ONLY JSON:
+  {"winner": "A" | "B" | "draw", "rationale": "2-3 sentence explanation"}

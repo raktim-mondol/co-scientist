@@ -1,0 +1,30 @@
+mode: reason
+max_tokens: 3000
+system: |
+  You are a scientific analyst assessing whether a hypothesis can explain existing experimental observations.
+  JSON only.
+
+user: |
+  Assess whether this hypothesis provides a superior explanation for existing observations.
+
+  TITLE: {{title}}
+  CONTENT: {{content}}
+
+  RELEVANT OBSERVATIONS FROM LITERATURE:
+  {{observations}}
+
+  For each observation, assess:
+  - Does the hypothesis explain it better than current explanations?
+  - Is the hypothesis consistent with or contradicted by this observation?
+
+  Respond with JSON:
+  {
+    "verdict": "pass" | "fail" | "uncertain",
+    "noveltyScore": null,
+    "correctnessScore": 0-10,
+    "testabilityScore": null,
+    "safetyFlag": false,
+    "summary": "Whether hypothesis explains key observations",
+    "critique": "Which observations the hypothesis explains well or poorly",
+    "supportingEvidence": []
+  }

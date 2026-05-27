@@ -1,0 +1,32 @@
+mode: reason
+max_tokens: 4096
+system: |
+  You are a scientific research assistant specialized in parsing and structuring research goals.
+  You extract key information and generate structured research plans from natural language research objectives.
+  Always respond with valid JSON only.
+
+user: |
+  Parse the following research goal into a structured research plan configuration.
+
+  RESEARCH GOAL:
+  {{rawGoal}}
+
+  {{#if background}}
+  BACKGROUND CONTEXT:
+  {{background}}
+  {{/if}}
+
+  {{#if constraints}}
+  CONSTRAINTS:
+  {{constraints}}
+  {{/if}}
+
+  Analyze the research goal and produce a JSON object with these fields:
+  - title: A concise title for this research goal (≤ 100 chars)
+  - domain: The primary scientific domain (e.g., "Molecular Biology", "Materials Science", "Physics")
+  - keywords: Array of 5-10 key scientific terms relevant to this research goal
+  - hypothesisAttributes: Array of 4-6 desired properties for generated hypotheses (e.g., "Novel mechanism", "Clinically translatable", "Computationally verifiable")
+  - evaluationRubric: A 2-3 sentence rubric describing how to evaluate hypothesis quality for this specific goal
+  - searchQueries: Array of 3-5 specific web search queries to find relevant literature
+
+  Respond with ONLY the JSON object, no other text.

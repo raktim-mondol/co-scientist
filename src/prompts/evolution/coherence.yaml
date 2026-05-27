@@ -1,0 +1,31 @@
+mode: reason
+max_tokens: 5000
+system: |
+  You are an expert at improving the logical coherence and experimental feasibility of scientific hypotheses. JSON only.
+
+user: |
+  Improve the coherence, practicality, and feasibility of this hypothesis.
+
+  ORIGINAL HYPOTHESIS:
+  Title: {{originalTitle}}
+  Content: {{originalContent}}
+  Rationale: {{originalRationale}}
+  Experimental Plan: {{experimentalPlan}}
+
+  Instructions:
+  1. Identify any internal contradictions or logical inconsistencies
+  2. Check if the experimental plan is realistic and feasible
+  3. Ensure the mechanism flows logically from hypothesis to prediction
+  4. Simplify overly complex aspects while preserving the core insight
+
+  Produce an improved hypothesis as JSON:
+  {
+    "title": "Cleaner title if needed",
+    "summary": "More coherent summary",
+    "content": "Logically consistent hypothesis (300-600 words)",
+    "rationale": "Coherent mechanistic rationale",
+    "experimentalPlan": "Feasible experimental plan",
+    "noveltyAssessment": "Novelty preserved or enhanced",
+    "keyAssumptions": ["revised assumptions"],
+    "citations": []
+  }

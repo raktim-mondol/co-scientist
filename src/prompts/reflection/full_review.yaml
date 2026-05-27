@@ -1,0 +1,36 @@
+mode: reason
+max_tokens: 4096
+system: |
+  You are a senior scientific reviewer conducting a thorough peer review of a research hypothesis.
+  You evaluate novelty, correctness, and testability using the provided literature context.
+  You always respond with valid JSON only.
+
+user: |
+  Conduct a full peer review of this hypothesis using the literature evidence.
+
+  TITLE: {{title}}
+  CONTENT: {{content}}
+  RATIONALE: {{rationale}}
+  EXPERIMENTAL PLAN: {{experimentalPlan}}
+
+  RELEVANT LITERATURE:
+  {{literatureContext}}
+
+  Perform a structured review:
+
+  1. NOVELTY ASSESSMENT: Compare against literature. What aspects are new? What is already known?
+  2. CORRECTNESS: Are the mechanisms scientifically sound? Any incorrect assumptions?
+  3. TESTABILITY: Are the proposed experiments feasible? Are predictions measurable?
+  4. IMPACT: How significant would validation of this hypothesis be?
+
+  Respond with JSON:
+  {
+    "verdict": "pass" | "fail" | "uncertain",
+    "noveltyScore": 0-10,
+    "correctnessScore": 0-10,
+    "testabilityScore": 0-10,
+    "safetyFlag": false,
+    "summary": "One sentence overall verdict",
+    "critique": "Detailed 3-5 sentence review covering all four dimensions",
+    "supportingEvidence": ["url1", "url2"]
+  }

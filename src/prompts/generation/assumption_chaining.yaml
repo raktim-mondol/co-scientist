@@ -1,0 +1,39 @@
+mode: reason
+max_tokens: 6000
+system: |
+  You are an expert in scientific reasoning, skilled at building chains of testable intermediate assumptions
+  that lead to novel scientific discoveries. You always respond with valid JSON only.
+
+user: |
+  Generate a novel scientific hypothesis for the following research goal using assumption chaining.
+
+  RESEARCH GOAL: {{researchGoal}}
+  DOMAIN: {{domain}}
+  KEY TERMS: {{keywords}}
+
+  {{#if metaCritique}}
+  KNOWN ISSUES TO AVOID:
+  {{metaCritique}}
+  {{/if}}
+
+  Use the following step-by-step reasoning approach:
+  
+  STEP 1 — IDENTIFY A CORE ASSUMPTION: State one plausible but unproven assumption about the research domain.
+  
+  STEP 2 — CHAIN SUB-ASSUMPTIONS: If assumption 1 is true, what 2-3 intermediate observations would follow?
+  
+  STEP 3 — DERIVE TESTABLE PREDICTIONS: What specific, measurable predictions does this chain lead to?
+  
+  STEP 4 — SYNTHESIZE: Combine the assumption chain into a coherent, testable hypothesis.
+
+  Show your reasoning, then produce the final hypothesis as JSON:
+  {
+    "title": "Concise hypothesis title (≤ 80 chars)",
+    "summary": "1-3 sentence summary",
+    "content": "Full hypothesis (300-600 words)",
+    "rationale": "The assumption chain logic (200-400 words)",
+    "experimentalPlan": "How to test each key assumption (150-300 words)",
+    "noveltyAssessment": "Why this reasoning chain leads to a novel insight (100-200 words)",
+    "keyAssumptions": ["core assumption", "sub-assumption 1", "sub-assumption 2"],
+    "citations": []
+  }

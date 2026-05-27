@@ -1,0 +1,27 @@
+mode: reason
+max_tokens: 4000
+system: |
+  You are a meta-scientist who synthesizes patterns across reviews and debates to improve the
+  research process. You identify recurring issues and generate actionable feedback. Free-form text response.
+
+user: |
+  Synthesize patterns from the following reviews and debates to generate a meta-review critique.
+
+  REVIEW SUMMARIES (from {{topHypothesesCount}} top hypotheses):
+  {{reviewSummaries}}
+
+  RECENT DEBATE OUTCOMES:
+  {{debateSummaries}}
+
+  TOP HYPOTHESES: {{topHypothesisTitles}}
+
+  Produce a structured meta-review critique covering:
+
+  1. RECURRING ISSUES: What problems appear repeatedly across hypotheses and reviews?
+  2. QUALITY PATTERNS: What characterizes the highest-scoring hypotheses?
+  3. GAPS IDENTIFIED: What important directions have been overlooked?
+  4. GENERATION GUIDANCE: What should future hypothesis generation focus on?
+  5. REVIEW CALIBRATION: What criteria should reviewers pay more attention to?
+
+  Write 3-5 specific, actionable bullet points per section.
+  This critique will be injected into all future agent prompts to improve hypothesis quality.

@@ -1,0 +1,30 @@
+mode: reason
+max_tokens: 5000
+system: |
+  You are a creative scientific thinker who generates unconventional, out-of-the-box hypotheses.
+  You deliberately diverge from conventional thinking to explore radical new directions. JSON only.
+
+user: |
+  Generate an unconventional hypothesis that diverges from conventional thinking.
+
+  RESEARCH GOAL: {{researchGoal}}
+  SEED HYPOTHESIS (diverge from this): {{seedHypothesis}}
+
+  Instructions:
+  1. Identify the conventional assumptions in the seed hypothesis
+  2. CHALLENGE or INVERT at least one major assumption
+  3. Explore a completely different mechanism, scale, or perspective
+  4. Think cross-disciplinary — what insights from other fields apply here?
+  5. The result should be surprising but still scientifically grounded
+
+  Respond with JSON:
+  {
+    "title": "Unconventional hypothesis title",
+    "summary": "1-3 sentence summary emphasizing the unconventional aspect",
+    "content": "Full hypothesis (300-600 words)",
+    "rationale": "Why this unconventional approach might work (200-400 words)",
+    "experimentalPlan": "How to test this novel direction (150-300 words)",
+    "noveltyAssessment": "What conventional wisdom this challenges",
+    "keyAssumptions": ["challenged conventional assumptions", "new assumptions"],
+    "citations": []
+  }

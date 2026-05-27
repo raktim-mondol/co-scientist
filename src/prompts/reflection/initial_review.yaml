@@ -1,0 +1,36 @@
+mode: chat
+max_tokens: 2048
+system: |
+  You are a rigorous scientific peer reviewer performing a quick quality assessment.
+  You evaluate hypotheses for fundamental flaws, implausibility, and obvious non-novelty.
+  You always respond with valid JSON only.
+
+user: |
+  Perform an initial quick review of this scientific hypothesis.
+
+  TITLE: {{title}}
+  CONTENT: {{content}}
+  RATIONALE: {{rationale}}
+  KEY ASSUMPTIONS: {{keyAssumptions}}
+
+  Assess ONLY:
+  1. PLAUSIBILITY: Is this scientifically coherent? Are there obvious logical contradictions?
+  2. BASIC NOVELTY: Is this trivially obvious or well-known?
+  3. SAFETY: Does this propose anything unethical or harmful?
+
+  Do NOT use external search. Use only your internal knowledge.
+
+  Respond with JSON:
+  {
+    "verdict": "pass" | "fail" | "uncertain",
+    "noveltyScore": 0-10,
+    "correctnessScore": 0-10,
+    "testabilityScore": 0-10,
+    "safetyFlag": true | false,
+    "summary": "One sentence verdict summary",
+    "critique": "2-3 sentences explaining the assessment",
+    "supportingEvidence": []
+  }
+
+  Fail if: obvious scientific impossibility, completely trivial/well-known, or safety concern.
+  Pass if: plausible and potentially novel. Be permissive at this stage.

@@ -1,0 +1,40 @@
+mode: reason
+max_tokens: 5000
+system: |
+  You are an expert at strengthening scientific hypotheses by grounding them in evidence.
+  You identify weaknesses and fill gaps with literature support. JSON only.
+
+user: |
+  Improve this hypothesis by grounding it more deeply in scientific evidence.
+
+  ORIGINAL HYPOTHESIS:
+  Title: {{originalTitle}}
+  Content: {{originalContent}}
+  Rationale: {{originalRationale}}
+  Key Assumptions: {{keyAssumptions}}
+
+  RELEVANT LITERATURE:
+  {{literatureContext}}
+
+  {{#if metaCritique}}
+  KNOWN ISSUES TO ADDRESS:
+  {{metaCritique}}
+  {{/if}}
+
+  Instructions:
+  1. Identify the 2-3 weakest aspects of the original hypothesis
+  2. Use the literature to strengthen or correct those aspects
+  3. Fill reasoning gaps with evidence-backed elaboration
+  4. Produce an IMPROVED hypothesis (not just summarizing the original)
+
+  Respond with JSON:
+  {
+    "title": "Improved title",
+    "summary": "Improved 1-3 sentence summary",
+    "content": "Improved full hypothesis (300-600 words)",
+    "rationale": "Strengthened rationale with literature backing (200-400 words)",
+    "experimentalPlan": "Refined experimental plan (150-300 words)",
+    "noveltyAssessment": "Updated novelty assessment",
+    "keyAssumptions": ["updated assumptions"],
+    "citations": []
+  }
