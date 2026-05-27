@@ -48,7 +48,12 @@ program
 
 program
   .command("results <sessionId>")
-  .description("Display ranked hypotheses for a session")
+  .description(
+    "Display ranked hypotheses for a session\n" +
+    "  --top <n>        Show top N hypotheses (default: 10)\n" +
+    "  --all            Show all hypotheses including rejected\n" +
+    "  --show-feedback  Show full RLEF feedback details per hypothesis"
+  )
   .option("-n, --top <n>", "Show top N hypotheses", "10")
   .option("--all", "Show all hypotheses including rejected")
   .option("--show-feedback", "Show full experimental feedback details per hypothesis")
@@ -74,7 +79,12 @@ program
 
 program
   .command("export <sessionId>")
-  .description("Export session results to a file")
+  .description(
+    "Export session results to a file\n" +
+    "  --format markdown|json   Output format (default: markdown)\n" +
+    "  --output <path>          Write to file instead of stdout\n" +
+    "  --all                    Export all active hypotheses (default: top 20)"
+  )
   .option("-f, --format <fmt>", "Output format: markdown | json", "markdown")
   .option("-o, --output <path>", "Output file path")
   .option("--all", "Export all active hypotheses (default: top 20)")
@@ -82,20 +92,31 @@ program
 
 program
   .command("delete [sessionId]")
-  .description("Delete a session and all its data")
+  .description(
+    "Delete a session and all its data\n" +
+    "  --all     Delete all sessions\n" +
+    "  --force   Skip confirmation prompt"
+  )
   .option("-f, --force", "Skip confirmation prompt")
   .option("--all", "Delete all sessions")
   .action(deleteCommand);
 
 program
   .command("design <sessionId>")
-  .description("Generate a structured experimental protocol for a hypothesis")
+  .description(
+    "Generate a structured experimental protocol for a hypothesis\n" +
+    "  --hypothesis-id <id>   Target hypothesis (default: top-1 by Elo)"
+  )
   .option("--hypothesis-id <id>", "Target a specific hypothesis (default: top-1 by Elo)")
   .action(designCommand);
 
 program
   .command("graph <sessionId>")
-  .description("Display or export the knowledge graph for a session")
+  .description(
+    "Display or export the knowledge graph for a session\n" +
+    "  --format text|dot|json   Output format (default: text)\n" +
+    "  --output <path>          Write to file instead of stdout"
+  )
   .option("-f, --format <fmt>", "Output format: text | dot | json", "text")
   .option("-o, --output <path>", "Write output to file instead of stdout")
   .action(graphCommand);
