@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { Command } from "commander";
 import "dotenv/config";
+import chalk from "chalk";
 import { printBanner } from "./banner.js";
 import { runCommand } from "./commands/run.js";
 import { resumeCommand } from "./commands/resume.js";
@@ -19,10 +20,7 @@ const program = new Command();
 
 program
   .name("co-scientist")
-  .description(
-    "Multi-agent AI system for accelerating scientific discovery\n" +
-    "Based on: Gottweis et al., \"Accelerating scientific discovery with Co-Scientist\" (Nature, 2026)"
-  )
+  .description("Multi-agent AI system for accelerating scientific discovery")
   .version("1.0.0");
 
 program
@@ -133,7 +131,45 @@ program
 
 program.action(() => {
   printBanner();
-  program.help();
+
+  const c = chalk;
+  const cmd  = (s: string) => c.bold.cyan(s);       // commands  — cyan  (action/go)
+  const arg  = (s: string) => c.yellow(s);           // arguments — yellow (variable input)
+  const opt  = (s: string) => c.green(s);            // options   — green  (modifiers)
+  const sub  = (s: string) => c.gray("  " + s);      // sub-opts  — gray   (secondary)
+  const dim  = (s: string) => c.dim(s);              // hints     — dim
+
+  console.log(c.bold.white("Usage:") + "  co-scientist " + arg("<command>") + " [options]\n");
+
+  console.log(c.bold.white("Session Management"));
+  console.log(`  ${cmd("run")}                                  Start a new research session`);
+  console.log(sub(opt("--goal <text>") + "  Research goal   " + opt("--max-hypotheses <n>") + "  " + opt("--budget <tokens>")));
+  console.log(`  ${cmd("resume")} ${arg("<sessionId>")}                Resume a paused session`);
+  console.log(`  ${cmd("list")}                                 List all sessions`);
+  console.log(`  ${cmd("delete")} ${arg("[sessionId]")}               Delete a session`);
+  console.log(sub(opt("--all") + "  Delete all sessions   " + opt("--force") + "  Skip confirmation"));
+
+  console.log("\n" + c.bold.white("Results & Analysis"));
+  console.log(`  ${cmd("results")} ${arg("<sessionId>")}               Show ranked hypotheses`);
+  console.log(sub(opt("--top <n>") + "  Top N results   " + opt("--all") + "  Include rejected   " + opt("--show-feedback") + "  RLEF details"));
+  console.log(`  ${cmd("overview")} ${arg("<sessionId>")}              Final research overview`);
+  console.log(`  ${cmd("graph")} ${arg("<sessionId>")}                 Knowledge graph`);
+  console.log(sub(opt("--format text|dot|json") + "   " + opt("--output <path>")));
+  console.log(`  ${cmd("diff")} ${arg("<sessionId> <hypothesisId>")}   Lineage & field diff vs parent`);
+  console.log(`  ${cmd("compare")} ${arg("<sessionId> <id1> <id2>")}   Head-to-head match`);
+
+  console.log("\n" + c.bold.white("Feedback"));
+  console.log(`  ${cmd("feedback")} ${arg("<sessionId>")} ${opt("--experimental")}   Empirical result ${dim("→ RLEF: updates Elo, injects into agents")}`);
+  console.log(`  ${cmd("feedback")} ${arg("<sessionId>")} ${opt("--hypothesis")}     Submit a new expert hypothesis`);
+  console.log(`  ${cmd("feedback")} ${arg("<sessionId>")} ${opt("--review <id>")}    Expert opinion review`);
+
+  console.log("\n" + c.bold.white("Export & Design"));
+  console.log(`  ${cmd("export")} ${arg("<sessionId>")}                Export to file`);
+  console.log(sub(opt("--format markdown|json") + "   " + opt("--output <path>") + "   " + opt("--all")));
+  console.log(`  ${cmd("design")} ${arg("<sessionId>")}                Experimental protocol`);
+  console.log(sub(opt("--hypothesis-id <id>") + "  Target hypothesis (default: top-1 by Elo)"));
+
+  console.log("\n" + dim("Run  co-scientist <command> --help  for command-specific options.\n"));
 });
 
 program.parse(process.argv);
