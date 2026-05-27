@@ -344,7 +344,7 @@ export async function feedbackCommand(
       { type: "number", name: "noveltyScore",      message: "Novelty score (0-10, blank=skip):", default: undefined },
       { type: "number", name: "correctnessScore",  message: "Correctness score (0-10, blank=skip):", default: undefined },
       { type: "number", name: "testabilityScore",  message: "Testability score (0-10, blank=skip):", default: undefined },
-      { type: "input",  name: "metadataJson", message: "Optional metadata JSON (blank=skip):", default: "" },
+      { type: "input",  name: "summary", message: "Summary (optional, blank=skip):", default: "" },
     ]);
 
     const hypId = (answers.hypothesisId as string).trim();
@@ -365,12 +365,8 @@ export async function feedbackCommand(
       testability,
     );
 
-    let metadata: Record<string, unknown> = {};
-    const rawMeta = (answers.metadataJson as string).trim();
-    if (rawMeta) {
-      try { metadata = JSON.parse(rawMeta); }
-      catch { console.warn(chalk.yellow("Invalid metadata JSON — stored as empty object.")); }
-    }
+    const summary = (answers.summary as string).trim();
+    const metadata: Record<string, unknown> = summary ? { summary } : {};
 
     // Persist to experimental_feedback
     getSqlite().query(`
