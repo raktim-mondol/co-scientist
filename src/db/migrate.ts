@@ -259,3 +259,10 @@ export async function runMigrations() {
     }
   }
 }
+
+// Run migrations when executed directly: `bun run src/db/migrate.ts`
+if (import.meta.main) {
+  await runMigrations();
+  console.log("Migrations complete.");
+  process.exit(0);
+}
