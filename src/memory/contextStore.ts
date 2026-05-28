@@ -841,3 +841,8 @@ export function getContextStore(): ContextStore {
   if (!_store) _store = new ContextStore();
   return _store;
 }
+
+/** Reset singleton (for test isolation). */
+export function resetContextStore(): void {
+  _store = null;
+}

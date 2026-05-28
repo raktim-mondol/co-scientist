@@ -47,4 +47,10 @@ export function closeDb() {
   }
 }
 
+/** Reset singletons without closing (for test isolation when DB_PATH changes). */
+export function resetDb() {
+  _sqlite = null;
+  _db = null;
+}
+
 export { schema };
