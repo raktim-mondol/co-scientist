@@ -99,7 +99,9 @@ co-scientist run --goal "..." --max-hypotheses 20 --budget 100000
 | `co-scientist compare <id> <hyp-id-1> <hyp-id-2>` | Run a manual head-to-head match between two hypotheses |
 | `co-scientist diff <id> <hyp-id>` | Show lineage tree and field-level diff vs parent |
 | `co-scientist feedback <id>` | Submit expert review or hypothesis |
-| `co-scientist feedback <id> --experimental` | Submit empirical/experimental feedback (RLEF) |
+| `co-scientist feedback <id> --experimental` | Submit empirical/experimental feedback (RLEF) · immediate Elo update |
+| `co-scientist feedback <id> --review <hyp-id>` | Expert opinion review (archival only, no Elo change) |
+| `co-scientist feedback <id> --hypothesis` | Submit your own hypothesis into the tournament |
 | `co-scientist export <id>` | Export to Markdown or JSON |
 | `co-scientist delete <id>` | Delete a session and all its data |
 
@@ -114,19 +116,49 @@ Co-Scientist can close the loop with real-world empirical results. After running
 3. **Injects validated/refuted hypotheses** into generation, reflection, and evolution prompts for in-session learning
 4. **Stores strong-signal feedback** in a cross-session semantic memory so future sessions on related goals benefit from past experiments
 
-### Submitting feedback
+### Feedback modes
+
+There are three ways to submit feedback, each with different effects:
+
+#### `--experimental` — Empirical result (RLEF) · *immediate effect*
 
 ```bash
 co-scientist feedback <session-id> --experimental
 ```
 
+The most actionable mode. When you submit empirical feedback:
+
+- Calculates a reward signal from your text + N/C/T scores
+- **Immediately updates the hypothesis Elo rating** (K=48 — higher weight than tournament debates)
+- Rankings change right away — visible with `co-scientist results <session-id>`
+- Strong signals (|reward| > 0.3) are stored in cross-session memory so future sessions on related goals benefit
+
 You will be prompted for:
 - **Hypothesis ID** — from `co-scientist results <session-id>`
-- **Feedback text** — free-text empirical observation (opens editor)
+- **Empirical feedback** — free-text observation (paste and press Enter)
 - **Novelty / Correctness / Testability scores** — 0–10, optional (press Enter to skip)
-- **Metadata JSON** — optional domain-specific payload (press Enter to skip)
+- **Summary** — optional one-liner (press Enter to skip)
 
-The computed reward and new Elo are displayed immediately.
+The computed reward and new Elo are displayed immediately. No re-run required.
+
+#### `--review` — Expert opinion · *archival only*
+
+```bash
+co-scientist feedback <session-id> --review <hypothesis-id>
+```
+
+Saves your expert verdict (`pass` / `fail` / `uncertain`) and N/C/T scores to the `reviews` table alongside the automated tournament results. **Does not change Elo or rankings.** Purely for record-keeping — a human expert's opinion stored for reference.
+
+#### `--hypothesis` — Expert submission · *enters tournament*
+
+```bash
+co-scientist feedback <session-id> --hypothesis
+```
+
+Inserts your own hypothesis into the session at Elo 1200.
+
+- **Session still running** → it will automatically compete in future tournament rounds against AI-generated hypotheses.
+- **Session completed** → stored in the database as an entry but won't be evaluated further unless the session is resumed.
 
 ### Viewing feedback
 
