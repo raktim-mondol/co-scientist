@@ -113,6 +113,7 @@ export class GenerationAgent extends BaseAgent {
           matchesPlayed: 0,
           wins: 0,
           losses: 0,
+          draws: 0,
           status: "pending_review",
           parentIds: [],
           generationStrategy: strategy,
@@ -295,9 +296,7 @@ export class GenerationAgent extends BaseAgent {
       .map((h, i) => `[${i + 1}] ${h.title}: ${h.summary}`)
       .join("\n");
 
-    const unexploredConcepts = this.kg.getUnexploredConcepts(
-      existingHypotheses[0].sessionId, 8
-    );
+    const unexploredConcepts = this.kg.getUnexploredConcepts(sessionId, 8);
 
     const { system, userPrompt } = this.loadPrompt("generation", "research_expansion", {
       researchGoal: planConfig.parsedTitle,

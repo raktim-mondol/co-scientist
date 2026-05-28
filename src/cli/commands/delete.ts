@@ -1,6 +1,7 @@
 import chalk from "chalk";
 import inquirer from "inquirer";
 import { getContextStore } from "../../memory/contextStore.js";
+import { runMigrations } from "../../db/migrate.js";
 
 interface DeleteOptions {
   force?: boolean;
@@ -11,6 +12,7 @@ export async function deleteCommand(
   sessionId: string | undefined,
   options: DeleteOptions
 ): Promise<void> {
+  await runMigrations();
   const memory = getContextStore();
 
   // ── Delete ALL sessions ──────────────────────────────────────────────────

@@ -332,9 +332,17 @@ export async function feedbackCommand(
     process.exit(1);
   }
 
+  if (!options.experimental && !options.hypothesis && !options.review) {
+    console.error(chalk.red("Error: specify a feedback mode flag."));
+    console.error(chalk.gray("  --experimental   Submit empirical/experimental feedback (RLEF)"));
+    console.error(chalk.gray("  --hypothesis     Submit a new expert hypothesis"));
+    console.error(chalk.gray("  --review <id>    Submit an expert review for a hypothesis"));
+    process.exit(1);
+  }
+
   // ── Experimental feedback (RLEF) ──────────────────────────────────────────
   if (options.experimental) {
-    const { extractRewardFromFeedback, applyRewardToElo } = await import("../../rlef/reward-signal.js");
+    const { extractRewardFromFeedback, applyFeedbackAsGlicko2Match } = await import("../../rlef/reward-signal.js");
     const { getSqlite } = await import("../../db/index.js");
     const { v4: uuidv4 } = await import("uuid");
 
@@ -388,26 +396,36 @@ export async function feedbackCommand(
       Date.now(),
     );
 
-    // Update hypothesis Elo (K=48 for empirical feedback)
-    const newElo = applyRewardToElo(hyp.eloRating, computedReward);
+    // Update hypothesis rating via Glicko-2 (proper RD/volatility/matchesPlayed update)
+    const updated = applyFeedbackAsGlicko2Match({
+      rating: hyp.eloRating,
+      rd: hyp.ratingDeviation ?? 350,
+      volatility: hyp.volatility ?? 0.06,
+      matchesPlayed: hyp.matchesPlayed,
+      wins: hyp.wins,
+      losses: hyp.losses,
+      draws: 0,
+    }, computedReward);
     memory.updateHypothesisRating(
       hypId,
-      newElo,
-      hyp.ratingDeviation ?? 350,
-      hyp.volatility ?? 0.06,
-      hyp.wins,
-      hyp.losses,
-      hyp.matchesPlayed,
+      updated.rating,
+      updated.rd,
+      updated.volatility,
+      updated.wins,
+      updated.losses,
+      updated.matchesPlayed,
+      updated.draws,
     );
 
     const rewardSign = computedReward >= 0 ? chalk.green(`+${computedReward.toFixed(3)}`) : chalk.red(computedReward.toFixed(3));
-    const eloChange  = newElo - hyp.eloRating;
+    const eloChange  = updated.rating - hyp.eloRating;
     const eloSign    = eloChange >= 0 ? chalk.green(`+${eloChange.toFixed(1)}`) : chalk.red(eloChange.toFixed(1));
 
     console.log(chalk.bold.cyan("\n✓ Experimental feedback recorded\n"));
     console.log(`  Hypothesis : ${chalk.white(hyp.title)}`);
     console.log(`  Reward     : ${rewardSign}`);
-    console.log(`  Elo        : ${Math.round(hyp.eloRating)} → ${chalk.bold(Math.round(newElo))} (${eloSign})`);
+    console.log(`  Rating     : ${Math.round(hyp.eloRating)} → ${chalk.bold(Math.round(updated.rating))} (${eloSign})`);
+    console.log(`  RD         : ${Math.round(hyp.ratingDeviation ?? 350)} → ${chalk.bold(Math.round(updated.rd))}`);
     console.log();
     return;
   }
@@ -437,6 +455,7 @@ export async function feedbackCommand(
       matchesPlayed: 0,
       wins: 0,
       losses: 0,
+      draws: 0,
       status: "active", // Expert hypotheses skip review
       parentIds: [],
       generationRound: 0,

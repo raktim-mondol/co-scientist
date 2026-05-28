@@ -251,6 +251,7 @@ export async function runMigrations() {
     `ALTER TABLE hypotheses ADD COLUMN rating_deviation REAL NOT NULL DEFAULT 350`,
     `ALTER TABLE hypotheses ADD COLUMN volatility       REAL NOT NULL DEFAULT 0.06`,
     `ALTER TABLE hypotheses ADD COLUMN experiment_protocol_json TEXT`,
+    `ALTER TABLE hypotheses ADD COLUMN draws INTEGER NOT NULL DEFAULT 0`,
   ]) {
     try {
       getSqlite().query(stmt).run();

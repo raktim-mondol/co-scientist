@@ -84,6 +84,9 @@ export function extractRewardFromFeedback(
  * reward=+1 → full win  (+K/2 points)
  * reward= 0 → draw      (no change)
  * reward=-1 → full loss (-K/2 points)
+ *
+ * @deprecated Use applyFeedbackAsGlicko2Match for DB updates — this function
+ * does not update RD, volatility, or matchesPlayed.
  */
 export function applyRewardToElo(
   currentElo: number,
@@ -91,4 +94,47 @@ export function applyRewardToElo(
   kFactor: number = 48,
 ): number {
   return currentElo + kFactor * ((reward + 1) / 2 - 0.5);
+}
+
+// ─── Glicko-2 Feedback Integration ───────────────────────────────────────────
+
+import { computeGlicko2Update, type Glicko2State, type MatchResult } from "../models/tournament.js";
+
+/** Virtual opponent representing the empirical baseline. Low RD = high confidence
+ *  in the baseline, which causes more RD reduction for the hypothesis. */
+const VIRTUAL_OPPONENT: Glicko2State = {
+  rating: 1200,
+  rd: 50,
+  volatility: 0.06,
+  matchesPlayed: 0,
+  wins: 0,
+  losses: 0,
+  draws: 0,
+};
+
+/** Reward threshold for mapping to win/loss. Values in [-0.33, 0.33] → draw. */
+const REWARD_WIN_THRESHOLD = 0.33;
+
+/**
+ * Apply RLEF feedback as a proper Glicko-2 match against a virtual opponent.
+ *
+ * This ensures RD, volatility, and matchesPlayed all update correctly,
+ * making RLEF-boosted ratings comparable to tournament debate ratings.
+ *
+ * Reward mapping:
+ *   reward >  0.33 → hypothesis wins  (positive empirical evidence)
+ *   reward < -0.33 → hypothesis loses (negative empirical evidence)
+ *   otherwise      → draw             (neutral/mixed evidence)
+ */
+export function applyFeedbackAsGlicko2Match(
+  player: Glicko2State,
+  reward: number,
+): Glicko2State {
+  const matchResult: MatchResult =
+    reward > REWARD_WIN_THRESHOLD ? "A_wins" :
+    reward < -REWARD_WIN_THRESHOLD ? "B_wins" :
+    "draw";
+
+  const { newA } = computeGlicko2Update(player, VIRTUAL_OPPONENT, matchResult);
+  return newA;
 }

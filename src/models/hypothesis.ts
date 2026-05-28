@@ -62,6 +62,7 @@ export const HypothesisSchema = z.object({
   matchesPlayed: z.number().int().default(0),
   wins: z.number().int().default(0),
   losses: z.number().int().default(0),
+  draws: z.number().int().default(0),
   status: HypothesisStatusSchema.default("pending_review"),
   parentIds: z.array(z.string()).default([]), // For evolved hypotheses
   generationRound: z.number().int().default(0),

@@ -2,7 +2,7 @@ import { describe, it, expect } from "bun:test";
 import { computeEloUpdate, computeGlicko2Update, seededGlicko2FromReviewScores, type Glicko2State } from "../models/tournament.js";
 import { TaskScheduler } from "../taskQueue/queue.js";
 import { z } from "zod";
-import { extractRewardFromFeedback, applyRewardToElo } from "../rlef/reward-signal.js";
+import { extractRewardFromFeedback, applyRewardToElo, applyFeedbackAsGlicko2Match } from "../rlef/reward-signal.js";
 import {
   HypothesisSchema,
   HypothesisStatusSchema,
@@ -660,5 +660,58 @@ describe("applyRewardToElo", () => {
 
   it("respects custom kFactor", () => {
     expect(applyRewardToElo(1200, 1, 64)).toBeCloseTo(1232);
+  });
+});
+
+// ─── applyFeedbackAsGlicko2Match ─────────────────────────────────────────────
+
+describe("applyFeedbackAsGlicko2Match", () => {
+  const freshPlayer: Glicko2State = {
+    rating: 1200, rd: 350, volatility: 0.06,
+    matchesPlayed: 0, wins: 0, losses: 0, draws: 0,
+  };
+
+  it("positive reward → rating increases AND RD decreases", () => {
+    const result = applyFeedbackAsGlicko2Match(freshPlayer, 0.8);
+    expect(result.rating).toBeGreaterThan(1200);
+    expect(result.rd).toBeLessThan(350);
+  });
+
+  it("negative reward → rating decreases AND RD decreases", () => {
+    const result = applyFeedbackAsGlicko2Match(freshPlayer, -0.8);
+    expect(result.rating).toBeLessThan(1200);
+    expect(result.rd).toBeLessThan(350);
+  });
+
+  it("neutral reward (draw) → RD still decreases", () => {
+    const result = applyFeedbackAsGlicko2Match(freshPlayer, 0.0);
+    expect(result.rd).toBeLessThan(350);
+  });
+
+  it("matchesPlayed increments", () => {
+    const result = applyFeedbackAsGlicko2Match(freshPlayer, 0.5);
+    expect(result.matchesPlayed).toBe(1);
+  });
+
+  it("wins increment on positive reward", () => {
+    const result = applyFeedbackAsGlicko2Match(freshPlayer, 0.8);
+    expect(result.wins).toBe(1);
+    expect(result.losses).toBe(0);
+  });
+
+  it("losses increment on negative reward", () => {
+    const result = applyFeedbackAsGlicko2Match(freshPlayer, -0.8);
+    expect(result.losses).toBe(1);
+    expect(result.wins).toBe(0);
+  });
+
+  it("after 5 positive feedbacks, RD drops below 200 (no longer provisional)", () => {
+    let state = freshPlayer;
+    for (let i = 0; i < 5; i++) {
+      state = applyFeedbackAsGlicko2Match(state, 0.8);
+    }
+    expect(state.rd).toBeLessThan(200);
+    expect(state.matchesPlayed).toBe(5);
+    expect(state.wins).toBe(5);
   });
 });

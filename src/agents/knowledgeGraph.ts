@@ -90,34 +90,31 @@ export class KnowledgeGraphAgent extends BaseAgent {
   }
 
   /**
-   * Returns concept labels that have no hypothesis node directly targeting them.
-   * Used by GenerationAgent.research_expansion to steer toward unexplored areas.
+   * Returns concept labels not covered by any currently active hypothesis.
+   * A concept is "unexplored" if it exists in the graph (from a rejected,
+   * evolved-away, or cross-pollinated hypothesis) but no active hypothesis
+   * has it as a keyAssumption. Used by GenerationAgent.research_expansion.
    */
   getUnexploredConcepts(sessionId: string, limit = 10): string[] {
     const nodes = this.memory.getKgNodes(sessionId);
     const edges = this.memory.getKgEdges(sessionId);
 
-    // Concept node IDs that are pointed to by at least one hypothesis via "supports"
+    // Active hypothesis node IDs
+    const activeHypotheses = this.memory.getAllActiveHypotheses(sessionId);
+    const activeHypNodeIds = new Set(
+      activeHypotheses.map((h) => this._nodeId("hypothesis", h.id))
+    );
+
+    // Concept node IDs covered by at least one ACTIVE hypothesis via "supports"
     const coveredConceptIds = new Set(
       edges
-        .filter((e) => e.relation === "supports")
+        .filter((e) => e.relation === "supports" && activeHypNodeIds.has(e.fromNodeId))
         .map((e) => e.toNodeId)
     );
 
-    // Hypothesis node IDs
-    const hypNodeIds = new Set(
-      nodes.filter((n) => n.type === "hypothesis").map((n) => n.id)
-    );
-
-    // Concepts not covered by any hypothesis node (only hypothesis→concept supports edges count)
+    // Concepts that exist in the graph but are not covered by any active hypothesis
     return nodes
-      .filter(
-        (n) =>
-          n.type === "concept" &&
-          !coveredConceptIds.has(n.id) &&
-          // exclude concepts that are themselves hypothesis nodes (shouldn't happen, but guard)
-          !hypNodeIds.has(n.id)
-      )
+      .filter((n) => n.type === "concept" && !coveredConceptIds.has(n.id))
       .map((n) => n.label)
       .slice(0, limit);
   }

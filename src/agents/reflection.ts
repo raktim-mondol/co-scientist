@@ -123,10 +123,12 @@ export class ReflectionAgent extends BaseAgent {
     const seededRating = seededGlicko2Rating(bestNovelty, bestCorrectness, bestTestability);
     if (seededRating.rating !== 1200) {
       // Only write back if the seeded value actually differs to avoid a no-op update
-      this.memory.updateHypothesisElo(hyp.id, seededRating.rating, 0, 0, 0);
+      this.memory.updateHypothesisRating(
+        hyp.id, seededRating.rating, seededRating.rd, seededRating.volatility, 0, 0, 0
+      );
       this.log(
         "info",
-        `Seeded Glicko-2 rating for "${hyp.title}": ${seededRating.rating} ` +
+        `Seeded Glicko-2 rating for "${hyp.title}": ${seededRating.rating} (RD=${seededRating.rd}) ` +
         `(novelty=${bestNovelty ?? "n/a"}, correctness=${bestCorrectness ?? "n/a"}, testability=${bestTestability ?? "n/a"})`
       );
     }

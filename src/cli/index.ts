@@ -28,7 +28,7 @@ program
   .description("Start a new scientific research session")
   .option("-g, --goal <text>", "Research goal (or omit to enter interactively)")
   .option("-n, --name <name>", "Session name")
-  .option("--max-hypotheses <n>", "Maximum hypotheses to generate", "50")
+  .option("--max-hypotheses <n>", "Maximum hypotheses to generate", "5")
   .option("--max-rounds <n>", "Maximum tournament rounds", "100")
   .option("--budget <tokens>", "Token budget (0 = unlimited)", "500000")
   .option("--no-tui", "Disable interactive TUI (plain log output)")

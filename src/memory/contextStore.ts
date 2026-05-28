@@ -211,7 +211,8 @@ export class ContextStore {
     volatility: number,
     wins: number,
     losses: number,
-    matchesPlayed: number
+    matchesPlayed: number,
+    draws: number = 0
   ): void {
     this.db
       .update(schema.hypotheses)
@@ -221,6 +222,7 @@ export class ContextStore {
         volatility,
         wins,
         losses,
+        draws,
         matchesPlayed,
         updatedAt: new Date(),
       })
@@ -240,6 +242,35 @@ export class ContextStore {
     matchesPlayed: number
   ): void {
     this.updateHypothesisRating(id, elo, 350, 0.06, wins, losses, matchesPlayed);
+  }
+
+  /**
+   * Atomic read-compute-write for Glicko-2 rating updates.
+   * Reads fresh state inside a transaction, applies the compute function,
+   * and writes back — preventing concurrent matches from overwriting each other.
+   */
+  atomicGlicko2Update(
+    id: string,
+    compute: (current: { rating: number; rd: number; volatility: number; wins: number; losses: number; draws: number; matchesPlayed: number }) => { rating: number; rd: number; volatility: number; wins: number; losses: number; draws: number; matchesPlayed: number }
+  ): void {
+    this.sqlite.transaction(() => {
+      const hyp = this.getHypothesis(id);
+      if (!hyp) return;
+      const current = {
+        rating: hyp.eloRating,
+        rd: hyp.ratingDeviation ?? 350,
+        volatility: hyp.volatility ?? 0.06,
+        wins: hyp.wins,
+        losses: hyp.losses,
+        draws: hyp.draws ?? 0,
+        matchesPlayed: hyp.matchesPlayed,
+      };
+      const updated = compute(current);
+      this.updateHypothesisRating(
+        id, updated.rating, updated.rd, updated.volatility,
+        updated.wins, updated.losses, updated.matchesPlayed, updated.draws
+      );
+    })();
   }
 
   updateHypothesisStatus(id: string, status: string): void {
@@ -793,6 +824,7 @@ export class ContextStore {
       matchesPlayed: row.matchesPlayed,
       wins: row.wins,
       losses: row.losses,
+      draws: row.draws ?? 0,
       status: row.status as Hypothesis["status"],
       parentIds: JSON.parse(row.parentIdsJson),
       generationRound: row.generationRound,

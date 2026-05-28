@@ -42,6 +42,7 @@ export const hypotheses = sqliteTable("hypotheses", {
   matchesPlayed: integer("matches_played").notNull().default(0),
   wins: integer("wins").notNull().default(0),
   losses: integer("losses").notNull().default(0),
+  draws: integer("draws").notNull().default(0),
   status: text("status").notNull().default("pending_review"),
   parentIdsJson: text("parent_ids_json").notNull().default("[]"),
   generationRound: integer("generation_round").notNull().default(0),

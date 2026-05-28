@@ -23,7 +23,7 @@ process.env.DEEPSEEK_API_KEY = "stub-for-tests";
 import { runMigrations } from "../db/migrate.js";
 import { closeDb, getSqlite } from "../db/index.js";
 import { getContextStore } from "../memory/contextStore.js";
-import { extractRewardFromFeedback, applyRewardToElo } from "../rlef/reward-signal.js";
+import { extractRewardFromFeedback, applyRewardToElo, applyFeedbackAsGlicko2Match } from "../rlef/reward-signal.js";
 import { buildRLEFMetaReviewBlock } from "../rlef/prompt-injection.js";
 import { RewardStore } from "../rlef/reward-store.js";
 import type { ExperimentalFeedback } from "../models/feedback.js";
@@ -79,6 +79,7 @@ beforeAll(async () => {
     matchesPlayed: 0,
     wins: 0,
     losses: 0,
+    draws: 0,
     status: "active",
     parentIds: [],
     generationRound: 1,
@@ -280,28 +281,35 @@ describe("RewardStore", () => {
 
 // ── End-to-end flow ───────────────────────────────────────────────────────────
 describe("RLEF end-to-end flow", () => {
-  it("submit feedback → reward extraction → Elo update → prompt injection", () => {
+  it("submit feedback → reward extraction → Glicko-2 update → prompt injection", () => {
     const originalElo = hyp.eloRating;
 
-    // 1. Extract reward
+    // 1. Extract reward (scores 9,9,9 produce reward > 0.33 → maps to a win)
     const reward = extractRewardFromFeedback(
       "Confirmed: drug X reduces tumor volume significantly",
-      9, 8, 8,
+      9, 9, 9,
     );
-    expect(reward).toBeGreaterThan(0);
+    expect(reward).toBeGreaterThan(0.33);
 
-    // 2. Apply to Elo
-    const newElo = applyRewardToElo(originalElo, reward);
-    expect(newElo).toBeGreaterThan(originalElo);
+    // 2. Apply via Glicko-2 match (proper RD/volatility update)
+    const updated = applyFeedbackAsGlicko2Match({
+      rating: originalElo, rd: 350, volatility: 0.06,
+      matchesPlayed: 0, wins: 0, losses: 0, draws: 0,
+    }, reward);
+    expect(updated.rating).toBeGreaterThan(originalElo);
+    expect(updated.rd).toBeLessThan(350);
+    expect(updated.matchesPlayed).toBe(1);
 
     // 3. Persist feedback
-    const fb = makeFeedback(hyp.id, "Confirmed: drug X reduces tumor volume significantly", reward, 9, 8, 8);
+    const fb = makeFeedback(hyp.id, "Confirmed: drug X reduces tumor volume significantly", reward, 9, 9, 9);
     store.saveExperimentalFeedback(fb);
-    store.updateHypothesisRating(hyp.id, newElo, 350, 0.06, 0, 0, 0);
+    store.updateHypothesisRating(hyp.id, updated.rating, updated.rd, updated.volatility, updated.wins, updated.losses, updated.matchesPlayed);
 
-    // 4. Verify Elo updated in DB
-    const updated = store.getHypothesis(hyp.id);
-    expect(updated!.eloRating).toBeCloseTo(newElo);
+    // 4. Verify state updated in DB
+    const fromDb = store.getHypothesis(hyp.id);
+    expect(fromDb!.eloRating).toBeCloseTo(updated.rating);
+    expect(fromDb!.ratingDeviation).toBeCloseTo(updated.rd);
+    expect(fromDb!.matchesPlayed).toBe(1);
 
     // 5. Prompt injection block contains the feedback
     const allFeedback = store.getAllFeedbackForSession(sessionId);

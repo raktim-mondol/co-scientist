@@ -105,52 +105,41 @@ export class RankingAgent extends BaseAgent {
     const matchResult: MatchResult =
       result.winner === "A" ? "A_wins" : result.winner === "B" ? "B_wins" : "draw";
 
-    // ── Build Glicko-2 state from current DB values ───────────────────────────
-    const stateA: Glicko2State = {
-      rating:       hypA.eloRating,
-      rd:           hypA.ratingDeviation ?? 350,
-      volatility:   hypA.volatility      ?? 0.06,
-      matchesPlayed: hypA.matchesPlayed,
-      wins:          hypA.wins,
-      losses:        hypA.losses,
-      draws:         0,
-    };
-    const stateB: Glicko2State = {
-      rating:       hypB.eloRating,
-      rd:           hypB.ratingDeviation ?? 350,
-      volatility:   hypB.volatility      ?? 0.06,
-      matchesPlayed: hypB.matchesPlayed,
-      wins:          hypB.wins,
-      losses:        hypB.losses,
-      draws:         0,
-    };
+    // ── Atomic Glicko-2 update ────────────────────────────────────────────────
+    // Each hypothesis is updated inside a transaction that reads fresh state,
+    // computes the new Glicko-2 values, and writes back atomically — preventing
+    // concurrent matches from overwriting each other's rating/RD/volatility.
+    let ratingAfterA = { rating: hypA.eloRating, rd: hypA.ratingDeviation ?? 350 };
+    let ratingAfterB = { rating: hypB.eloRating, rd: hypB.ratingDeviation ?? 350 };
 
-    const { newA, newB } = computeGlicko2Update(stateA, stateB, matchResult);
+    this.memory.atomicGlicko2Update(hypA.id, (current) => {
+      const state: Glicko2State = { ...current };
+      const opponent: Glicko2State = {
+        rating: hypB.eloRating, rd: hypB.ratingDeviation ?? 350,
+        volatility: hypB.volatility ?? 0.06,
+        matchesPlayed: hypB.matchesPlayed, wins: hypB.wins, losses: hypB.losses, draws: hypB.draws ?? 0,
+      };
+      const { newA } = computeGlicko2Update(state, opponent, matchResult);
+      ratingAfterA = { rating: newA.rating, rd: newA.rd };
+      return newA;
+    });
 
-    // Re-fetch fresh state from DB so concurrent matches don't lose updates
+    this.memory.atomicGlicko2Update(hypB.id, (current) => {
+      const state: Glicko2State = { ...current };
+      const opponent: Glicko2State = {
+        rating: hypA.eloRating, rd: hypA.ratingDeviation ?? 350,
+        volatility: hypA.volatility ?? 0.06,
+        matchesPlayed: hypA.matchesPlayed, wins: hypA.wins, losses: hypA.losses, draws: hypA.draws ?? 0,
+      };
+      const reverseResult: MatchResult =
+        matchResult === "A_wins" ? "B_wins" : matchResult === "B_wins" ? "A_wins" : "draw";
+      const { newA } = computeGlicko2Update(state, opponent, reverseResult);
+      ratingAfterB = { rating: newA.rating, rd: newA.rd };
+      return newA;
+    });
+
     const freshA = this.memory.getHypothesis(hypA.id) ?? hypA;
     const freshB = this.memory.getHypothesis(hypB.id) ?? hypB;
-
-    // Persist Glicko-2 state
-    this.memory.updateHypothesisRating(
-      freshA.id,
-      newA.rating,
-      newA.rd,
-      newA.volatility,
-      freshA.wins   + (result.winner === "A" ? 1 : 0),
-      freshA.losses + (result.winner === "B" ? 1 : 0),
-      freshA.matchesPlayed + 1
-    );
-    this.memory.updateHypothesisRating(
-      freshB.id,
-      newB.rating,
-      newB.rd,
-      newB.volatility,
-      freshB.wins   + (result.winner === "B" ? 1 : 0),
-      freshB.losses + (result.winner === "A" ? 1 : 0),
-      freshB.matchesPlayed + 1
-    );
-
     const winner = result.winner === "A" ? freshA : result.winner === "B" ? freshB : null;
 
     this.memory.saveTournamentMatch({
@@ -159,16 +148,16 @@ export class RankingAgent extends BaseAgent {
       hypothesisBId: hypB.id,
       matchType: isTopRanked ? "debate" : "simple",
       result: matchResult,
-      winnerEloAfter: result.winner === "A" ? newA.rating : result.winner === "B" ? newB.rating : newA.rating,
-      loserEloAfter:  result.winner === "A" ? newB.rating : result.winner === "B" ? newA.rating : newB.rating,
+      winnerEloAfter: result.winner === "A" ? ratingAfterA.rating : result.winner === "B" ? ratingAfterB.rating : ratingAfterA.rating,
+      loserEloAfter:  result.winner === "A" ? ratingAfterB.rating : result.winner === "B" ? ratingAfterA.rating : ratingAfterB.rating,
       debateTranscript: result.transcript,
       rationale: result.rationale,
       round,
     });
 
     if (winner) {
-      const winnerNewRating = result.winner === "A" ? newA.rating : newB.rating;
-      const winnerNewRd     = result.winner === "A" ? newA.rd     : newB.rd;
+      const winnerNewRating = result.winner === "A" ? ratingAfterA.rating : ratingAfterB.rating;
+      const winnerNewRd     = result.winner === "A" ? ratingAfterA.rd     : ratingAfterB.rd;
       this.log(
         "info",
         `Winner: "${winner.title}" (${winner.eloRating} → ${winnerNewRating}, RD: ${winnerNewRd})`
@@ -182,8 +171,8 @@ export class RankingAgent extends BaseAgent {
       rationale: result.rationale,
       transcript: result.transcript,
       matchType: isTopRanked ? "debate" : "simple",
-      ratingA: { before: hypA.eloRating, after: newA.rating, rd: newA.rd },
-      ratingB: { before: hypB.eloRating, after: newB.rating, rd: newB.rd },
+      ratingA: { before: hypA.eloRating, after: ratingAfterA.rating, rd: ratingAfterA.rd },
+      ratingB: { before: hypB.eloRating, after: ratingAfterB.rating, rd: ratingAfterB.rd },
     };
   }
 
