@@ -421,6 +421,27 @@ export async function feedbackCommand(
     const eloChange  = updated.rating - hyp.eloRating;
     const eloSign    = eloChange >= 0 ? chalk.green(`+${eloChange.toFixed(1)}`) : chalk.red(eloChange.toFixed(1));
 
+    // Persist strong signals to cross-session semantic memory
+    const { getRewardStore } = await import("../../rlef/reward-store.js");
+    try {
+      await getRewardStore().recordFeedback({
+        id: uuidv4(),
+        hypothesisId: hypId,
+        sessionId,
+        feedbackText: answers.feedbackText as string,
+        noveltyScore: novelty,
+        correctnessScore: correctness,
+        testabilityScore: testability,
+        metadata,
+        computedReward,
+        recordedBy: "human",
+        createdAt: new Date(),
+      }, hyp);
+    } catch (err) {
+      // Non-fatal — embedding model may be unavailable
+      console.warn(chalk.yellow(`  ⚠ Cross-session memory write failed: ${(err as Error).message}`));
+    }
+
     console.log(chalk.bold.cyan("\n✓ Experimental feedback recorded\n"));
     console.log(`  Hypothesis : ${chalk.white(hyp.title)}`);
     console.log(`  Reward     : ${rewardSign}`);
