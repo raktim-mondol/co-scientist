@@ -343,7 +343,6 @@ export async function feedbackCommand(
   // ── Experimental feedback (RLEF) ──────────────────────────────────────────
   if (options.experimental) {
     const { extractRewardFromFeedback, applyFeedbackAsGlicko2Match } = await import("../../rlef/reward-signal.js");
-    const { getSqlite } = await import("../../db/index.js");
     const { v4: uuidv4 } = await import("uuid");
 
     const answers = await inquirer.prompt([
@@ -377,24 +376,20 @@ export async function feedbackCommand(
     const metadata: Record<string, unknown> = summary ? { summary } : {};
 
     // Persist to experimental_feedback
-    getSqlite().query(`
-      INSERT INTO experimental_feedback
-        (id, hypothesis_id, session_id, feedback_text,
-         novelty_score, correctness_score, testability_score,
-         metadata_json, computed_reward, recorded_by, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'human', ?)
-    `).run(
-      uuidv4(),
-      hypId,
+    const feedbackId = uuidv4();
+    memory.saveExperimentalFeedback({
+      id: feedbackId,
+      hypothesisId: hypId,
       sessionId,
-      answers.feedbackText as string,
-      novelty  ?? null,
-      correctness ?? null,
-      testability ?? null,
-      JSON.stringify(metadata),
+      feedbackText: answers.feedbackText as string,
+      noveltyScore: novelty,
+      correctnessScore: correctness,
+      testabilityScore: testability,
+      metadata,
       computedReward,
-      Date.now(),
-    );
+      recordedBy: "human",
+      createdAt: new Date(),
+    });
 
     // Update hypothesis rating via Glicko-2 (proper RD/volatility/matchesPlayed update)
     const updated = applyFeedbackAsGlicko2Match({
@@ -425,7 +420,7 @@ export async function feedbackCommand(
     const { getRewardStore } = await import("../../rlef/reward-store.js");
     try {
       await getRewardStore().recordFeedback({
-        id: uuidv4(),
+        id: feedbackId,
         hypothesisId: hypId,
         sessionId,
         feedbackText: answers.feedbackText as string,
