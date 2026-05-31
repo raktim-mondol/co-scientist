@@ -10,6 +10,7 @@ import { getContextStore } from "../../memory/contextStore.js";
 import { getMCPManager } from "../../tools/mcpClient.js";
 import { runMigrations } from "../../db/migrate.js";
 import { resetConfig, getConfig } from "../../config.js";
+import { seedRng } from "../../util/rng.js";
 import type { ResearchGoal } from "../../models/researchGoal.js";
 import type { SessionStats } from "../../models/session.js";
 import { renderTUI } from "../tui/index.js";
@@ -20,6 +21,7 @@ interface RunOptions {
   maxHypotheses?: string;
   maxRounds?: string;
   budget?: string;
+  seed?: string;
   tui?: boolean;
 }
 
@@ -30,7 +32,20 @@ export async function runCommand(options: RunOptions): Promise<void> {
   if (options.maxHypotheses) process.env.MAX_HYPOTHESES = options.maxHypotheses;
   if (options.maxRounds) process.env.MAX_TOURNAMENT_ROUNDS = options.maxRounds;
   if (options.budget) process.env.COMPUTE_BUDGET_TOKENS = options.budget;
+  if (options.seed) process.env.SEED = options.seed;
   resetConfig(); // force re-read of env vars into config singleton
+
+  // Seed the global RNG so scheduling/sampling is reproducible when --seed is set.
+  const seed = getConfig().seed;
+  seedRng(seed);
+  if (seed !== undefined) {
+    console.log(
+      chalk.gray(
+        `🎲 Deterministic seed: ${seed} ` +
+        `(scheduling/sampling reproducible — add --max-workers 1 for stricter determinism)`
+      )
+    );
+  }
 
   // Get research goal
   let rawGoal = options.goal;

@@ -36,6 +36,9 @@ const ConfigSchema = z.object({
     budgetTokens: z.number().int().nonnegative().default(500_000), // 0 = unlimited
   }),
 
+  // Reproducibility
+  seed: z.number().int().optional(),         // seeds all scheduling/sampling RNG
+
   // Logging
   logLevel: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });
@@ -43,6 +46,13 @@ const ConfigSchema = z.object({
 export type AppConfig = z.infer<typeof ConfigSchema>;
 
 function loadConfig(): AppConfig {
+  // ── Reproducibility prelude ──────────────────────────────────────────────
+  const seedRaw =
+    process.env.SEED !== undefined && process.env.SEED !== ""
+      ? parseInt(process.env.SEED, 10)
+      : undefined;
+  const seed = seedRaw !== undefined && !Number.isNaN(seedRaw) ? seedRaw : undefined;
+
   const raw = {
     deepseek: {
       apiKey: process.env.DEEPSEEK_API_KEY ?? "",
@@ -75,6 +85,7 @@ function loadConfig(): AppConfig {
         ? parseInt(process.env.COMPUTE_BUDGET_TOKENS, 10)
         : undefined,
     },
+    seed,
     logLevel: process.env.LOG_LEVEL,
   };
 
