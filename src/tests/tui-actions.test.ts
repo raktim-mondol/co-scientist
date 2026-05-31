@@ -2,8 +2,8 @@
  * TUI steering actions — unit tests against a real (temp) SQLite database.
  * No LLM calls. Mirrors the DB-isolation pattern used in knowledgeGraph.test.ts.
  */
-import { describe, it, expect, beforeAll } from "bun:test";
-import { mkdirSync } from "fs";
+import { describe, it, expect, beforeAll, afterAll } from "bun:test";
+import { mkdirSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { v4 as uuidv4 } from "uuid";
@@ -47,6 +47,10 @@ function seedHypothesis(elo = 1200): string {
   return hyp.id;
 }
 
+afterAll(() => {
+  rmSync(TEST_DIR, { recursive: true, force: true });
+});
+
 beforeAll(async () => {
   resetConfig();
   resetDb();
@@ -72,7 +76,7 @@ describe("boostHypothesis", () => {
   it("sets the Elo to the requested absolute value", () => {
     const id = seedHypothesis(1200);
     boostHypothesis(store, id, 1500);
-    expect(Math.round(store.getHypothesis(id)!.eloRating)).toBe(1500);
+    expect(store.getHypothesis(id)!.eloRating).toBe(1500);
   });
 });
 
