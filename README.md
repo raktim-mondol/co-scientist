@@ -117,16 +117,17 @@ When `co-scientist run` is launched in a real terminal (stdout is a TTY), it aut
 ```
 ╭─────────────────────────────────────────────────────────────╮
 │ co-scientist   sess:883876e2   running   4m 12s             │
-│ Goal: What are novel epigenetic mechanisms underlying ALS?   │
-│ Tokens ▓▓▓▓▓░░░░░ 245.3k/500k (49%)   Hyp:8   AvgElo:1284  │
+│ Goal: What are novel epigenetic mechanisms underlying ALS?  |
+|                                                             │
+│ Tokens ▓▓▓▓▓░░░░░ 245.3k/500k (49%)   Hyp:8   AvgElo:1284   │
 ╰─────────────────────────────────────────────────────────────╯
-╭─────────────────────────────────────────────────────────────╮
+╭───────────────────────────────────────────────────────────── ╮
 │   #   Elo   Hypothesis                                       │
 │▶  1  1412  ✓ Aberrant R-loop accumulation at TDP-43 loci... │
-│   2  1344  ✓ Phase-separated FUS condensates impair spl...  │
-│   3  1298  ⧖ Cryptic exon inclusion via STMN2 silencing...  │
-│   4  1201  ✓ m6A hypomethylation destabilises TARDBP mRNA   │
-╰─────────────────────────────────────────────────────────────╯
+│   2  1344  ✓ Phase-separated FUS condensates impair spl...   |  
+│   3  1298  ⧖ Cryptic exon inclusion via STMN2 silencing...   │
+│   4  1201  ✓ m6A hypomethylation destabilises TARDBP mRNA    │
+╰───────────────────────────────────────────────────────────── ╯
 ticker: + hypothesis #8 added
 ↑↓ select   [k]ill   [b]oost   [i]nject   [p]ause   [q]uit
 ```
