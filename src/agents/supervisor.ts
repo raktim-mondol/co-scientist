@@ -45,6 +45,7 @@ export class SupervisorAgent extends BaseAgent {
   // Tracks how many generation tasks are currently enqueued or running,
   // so the supervisor loop never queues more than maxHypotheses at once.
   private pendingGeneration = 0;
+  private paused = false;
 
   setEmitter(emitter: EventEmitter): void {
     this.emitter = emitter;
@@ -93,6 +94,10 @@ export class SupervisorAgent extends BaseAgent {
     this.log("info", `Starting orchestration for session ${sessionId}`);
 
     while (this.running && round < maxRounds) {
+      // Idle here while paused so no new rounds advance until resume().
+      while (this.paused && this.running) {
+        await sleep(200);
+      }
       // Block until at least one worker slot is free, so we don't spiral ahead
       // of actual LLM execution. This makes the round counter meaningful.
       while (this.queue.running >= this.config.compute.maxWorkers) {
@@ -174,6 +179,24 @@ export class SupervisorAgent extends BaseAgent {
   stop(): void {
     this.running = false;
     this.queue.pause();
+  }
+
+  /** Pause the orchestration loop and stop scheduling new task execution. */
+  pause(): void {
+    this.paused = true;
+    this.queue.pause();
+    this.log("info", "Session paused by operator");
+  }
+
+  /** Resume a paused orchestration loop. */
+  resume(): void {
+    this.paused = false;
+    this.queue.resume();
+    this.log("info", "Session resumed by operator");
+  }
+
+  isPaused(): boolean {
+    return this.paused;
   }
 
   // ─── Private Methods ──────────────────────────────────────────────────────
