@@ -72,7 +72,7 @@ bun link
 ### 5. Run
 
 ```bash
-# Interactive mode (prompts for research goal)
+# Interactive mode (prompts for research goal) — opens the live TUI on a TTY
 co-scientist run
 
 # Or pass goal directly
@@ -80,6 +80,9 @@ co-scientist run --goal "What are novel epigenetic mechanisms underlying ALS pat
 
 # With custom budget
 co-scientist run --goal "..." --max-hypotheses 20 --budget 100000
+
+# Disable the TUI and use the plain progress output instead
+co-scientist run --no-tui --goal "..."
 ```
 
 ---
@@ -104,6 +107,65 @@ co-scientist run --goal "..." --max-hypotheses 20 --budget 100000
 | `co-scientist feedback <id> --hypothesis` | Submit your own hypothesis into the tournament |
 | `co-scientist export <id>` | Export to Markdown or JSON |
 | `co-scientist delete <id>` | Delete a session and all its data |
+
+---
+
+## Live Interactive TUI
+
+When `co-scientist run` is launched in a real terminal (stdout is a TTY), it automatically activates a full-screen **Ink terminal UI** instead of the plain progress bar.
+
+```
+╭─────────────────────────────────────────────────────────────╮
+│ co-scientist   sess:883876e2   running   4m 12s             │
+│ Goal: What are novel epigenetic mechanisms underlying ALS?   │
+│ Tokens ▓▓▓▓▓░░░░░ 245.3k/500k (49%)   Hyp:8   AvgElo:1284  │
+╰─────────────────────────────────────────────────────────────╯
+╭─────────────────────────────────────────────────────────────╮
+│   #   Elo   Hypothesis                                       │
+│▶  1  1412  ✓ Aberrant R-loop accumulation at TDP-43 loci... │
+│   2  1344  ✓ Phase-separated FUS condensates impair spl...  │
+│   3  1298  ⧖ Cryptic exon inclusion via STMN2 silencing...  │
+│   4  1201  ✓ m6A hypomethylation destabilises TARDBP mRNA   │
+╰─────────────────────────────────────────────────────────────╯
+ticker: + hypothesis #8 added
+↑↓ select   [k]ill   [b]oost   [i]nject   [p]ause   [q]uit
+```
+
+### Hotkeys
+
+| Key | Action |
+|-----|--------|
+| `↑` / `↓` | Move selection up/down in the leaderboard |
+| `k` | **Kill** — reject the selected hypothesis (confirms with `y`/`n`) |
+| `b` | **Boost** — set the selected hypothesis's Elo to an absolute value |
+| `i` | **Inject** — type a new hypothesis (title + content) directly into the tournament |
+| `p` | **Pause / Resume** — freeze the orchestration loop without losing state |
+| `q` | **Quit** — stop the session and save state to SQLite |
+
+### Status glyphs
+
+| Glyph | Meaning |
+|-------|---------|
+| `✓` | Active — competing in the tournament |
+| `⧖` | Pending review or currently under review |
+| `✗` | Rejected (killed) |
+| `✨` | Evolved from a parent hypothesis |
+
+### Operator steering
+
+- **Kill (`k`)** — marks the hypothesis as `rejected`; the supervisor stops scheduling work on it immediately.
+- **Boost (`b`)** — sets an absolute Elo value (e.g. `1500`) via an atomic Glicko-2 write so no concurrent tournament match can clobber it.
+- **Inject (`i`)** — inserts a human-authored hypothesis at Elo 1200 with status `pending_review`; it goes through the normal reflection + provenance pipeline before competing. Use Tab to switch between the Title and Content fields.
+
+### Disabling the TUI
+
+```bash
+# Plain chalk/ora progress output (also auto-used when stdout is piped)
+co-scientist run --no-tui --goal "..."
+
+# Piping stdout always disables TUI automatically
+co-scientist run --goal "..." | tee output.log
+```
 
 ---
 
