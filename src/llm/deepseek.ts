@@ -170,28 +170,44 @@ export class DeepSeekClient {
   }
 }
 
-// Local embedding fallback using @xenova/transformers
+// Local embedding fallback using @huggingface/transformers
+// Locked to all-MiniLM-L6-v2 which produces exactly 384-dimensional unit vectors.
+const EXPECTED_EMBED_DIM = 384;
 let _localPipeline: ((texts: string[]) => Promise<number[][]>) | null = null;
 
 async function localEmbed(texts: string[]): Promise<number[][]> {
   if (!_localPipeline) {
     const { pipeline } = await import("@huggingface/transformers");
+    // Explicitly pin the revision to prevent the library from silently
+    // resolving to a different (larger) model variant.
     const extractor = await pipeline(
       "feature-extraction",
-      "Xenova/all-MiniLM-L6-v2"
+      "Xenova/all-MiniLM-L6-v2",
+      { revision: "main" }
     );
     _localPipeline = async (inputs: string[]) => {
       const output = await extractor(inputs, {
         pooling: "mean",
         normalize: true,
       }) as { data: Float32Array; dims: number[] };
-      // Handle both batched and single output
       const dims = output.dims;
+      // dims may be [batchSize, hiddenSize] (2-D, pooled) or
+      // [batchSize, seqLen, hiddenSize] (3-D, unpooled) depending on
+      // the transformers library version.  Always use the actual data
+      // length to derive the per-sample stride so 3-D output is handled
+      // correctly: stride = data.length / batchSize.
       const batchSize = dims[0];
-      const hiddenSize = dims[1];
+      const stride = output.data.length / batchSize; // floats per sample
+      if (stride !== EXPECTED_EMBED_DIM) {
+        throw new Error(
+          `Embedding dimension mismatch: expected ${EXPECTED_EMBED_DIM} but ` +
+          `model returned ${stride} values per sample (dims=${JSON.stringify(dims)}). ` +
+          `Delete ~/.cache/huggingface and re-run to force a fresh download.`
+        );
+      }
       const result: number[][] = [];
       for (let i = 0; i < batchSize; i++) {
-        result.push(Array.from(output.data.slice(i * hiddenSize, (i + 1) * hiddenSize)));
+        result.push(Array.from(output.data.slice(i * stride, (i + 1) * stride)));
       }
       return result;
     };

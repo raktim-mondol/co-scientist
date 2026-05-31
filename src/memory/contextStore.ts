@@ -470,13 +470,22 @@ export class ContextStore {
     // Use raw SQL INSERT OR REPLACE to avoid duplicate edges for the same pair.
     // Pairs are stored in canonical (sorted) order so (A,B) and (B,A) are treated identically.
     const [aId, bId] = [hypAId, hypBId].sort();
-    this.sqlite
-      .query(
-        `INSERT INTO proximity_edges (id, session_id, hypothesis_a_id, hypothesis_b_id, similarity_score, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(hypothesis_a_id, hypothesis_b_id) DO UPDATE SET similarity_score = excluded.similarity_score`
-      )
-      .run(uuidv4(), sessionId, aId, bId, score, Date.now());
+    this.sqlite.transaction(() => {
+      // INSERT OR IGNORE so new pairs are inserted; existing pairs are silently skipped.
+      this.sqlite
+        .query(
+          `INSERT OR IGNORE INTO proximity_edges (id, session_id, hypothesis_a_id, hypothesis_b_id, similarity_score, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        )
+        .run(uuidv4(), sessionId, aId, bId, score, Date.now());
+      // UPDATE the score for the pair that already existed (no-op for the just-inserted row
+      // since it matches, but SQLite guarantees the INSERT above ran first).
+      this.sqlite
+        .query(
+          `UPDATE proximity_edges SET similarity_score = ? WHERE hypothesis_a_id = ? AND hypothesis_b_id = ?`
+        )
+        .run(score, aId, bId);
+    })();
   }
 
   getSimilarHypotheses(hypothesisId: string, k = 5): string[] {
@@ -524,10 +533,12 @@ export class ContextStore {
     }).run();
 
     // 2. Upsert into vec_embeddings (sqlite-vec vec0 virtual table) for ANN search.
-    //    vec0 uses INSERT OR REPLACE semantics for primary-key conflicts.
-    this.sqlite
-      .query(`INSERT OR REPLACE INTO vec_embeddings(hypothesis_id, embedding) VALUES (?, ?)`)
-      .run(hypothesisId, buf);
+    //    sqlite-vec virtual tables do not support ON CONFLICT / INSERT OR REPLACE,
+    //    so we use an explicit DELETE + INSERT inside a transaction instead.
+    this.sqlite.transaction(() => {
+      this.sqlite.query(`DELETE FROM vec_embeddings WHERE hypothesis_id = ?`).run(hypothesisId);
+      this.sqlite.query(`INSERT INTO vec_embeddings(hypothesis_id, embedding) VALUES (?, ?)`).run(hypothesisId, buf);
+    })();
   }
 
   getEmbedding(hypothesisId: string): number[] | null {
