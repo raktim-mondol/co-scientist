@@ -12,6 +12,7 @@ import { runMigrations } from "../../db/migrate.js";
 import { resetConfig, getConfig } from "../../config.js";
 import type { ResearchGoal } from "../../models/researchGoal.js";
 import type { SessionStats } from "../../models/session.js";
+import { renderTUI } from "../tui/index.js";
 
 interface RunOptions {
   goal?: string;
@@ -121,41 +122,70 @@ export async function runCommand(options: RunOptions): Promise<void> {
 
   // Set up progress display
   const startTime = Date.now();
+  const budgetTokens = getConfig().compute.budgetTokens;
+  const useTui = options.tui !== false && Boolean(process.stdout.isTTY);
+
+  let tui: { unmount: () => void; waitUntilExit: () => Promise<void> } | null = null;
   let lastActivity = "Initializing...";
   let lastStats: (SessionStats & { activity: string }) | null = null;
 
-  emitter.on("progress", (stats: SessionStats & { activity: string }) => {
-    lastStats = stats;
-    lastActivity = stats.activity;
-    printProgress(stats, startTime);
-  });
+  if (useTui) {
+    tui = renderTUI({
+      emitter,
+      memory: getContextStore(),
+      sessionId,
+      goal: rawGoal.trim(),
+      startTime,
+      budgetTokens,
+      onTogglePause: () => {
+        if (supervisor.isPaused()) {
+          supervisor.resume();
+          return false;
+        }
+        supervisor.pause();
+        return true;
+      },
+      onQuit: () => {
+        supervisor.stop();
+        getContextStore().updateSessionStatus(sessionId, "paused");
+      },
+    });
+  } else {
+    emitter.on("progress", (stats: SessionStats & { activity: string }) => {
+      lastStats = stats;
+      lastActivity = stats.activity;
+      printProgress(stats, startTime);
+    });
 
-  emitter.on("hypothesis_added", (count: number) => {
-    if (lastStats) {
-      lastStats = { ...lastStats, totalHypotheses: count };
-      printProgress(lastStats, startTime);
-    }
-    console.log(chalk.green(`\n  ✓ Hypotheses: ${count}`));
-  });
+    emitter.on("hypothesis_added", (count: number) => {
+      if (lastStats) {
+        lastStats = { ...lastStats, totalHypotheses: count };
+        printProgress(lastStats, startTime);
+      }
+      console.log(chalk.green(`\n  ✓ Hypotheses: ${count}`));
+    });
 
-  emitter.on("match_completed", (round: number) => {
-    console.log(chalk.blue(`  ⚔  Tournament round ${round} complete`));
-  });
+    emitter.on("match_completed", (round: number) => {
+      console.log(chalk.blue(`  ⚔  Tournament round ${round} complete`));
+    });
 
-  emitter.on("completed", (overview: string) => {
-    console.log(chalk.bold.green("\n✅ Session completed!\n"));
-    if (overview) {
-      console.log(chalk.cyan("📄 Research Overview Preview:"));
-      console.log(overview.slice(0, 500) + (overview.length > 500 ? "\n..." : ""));
-    }
-  });
+    emitter.on("completed", (overview: string) => {
+      console.log(chalk.bold.green("\n✅ Session completed!\n"));
+      if (overview) {
+        console.log(chalk.cyan("📄 Research Overview Preview:"));
+        console.log(overview.slice(0, 500) + (overview.length > 500 ? "\n..." : ""));
+      }
+    });
 
-  emitter.on("error", (err: Error) => {
-    console.error(chalk.red(`\n❌ Error: ${err.message}`));
-  });
+    emitter.on("error", (err: Error) => {
+      console.error(chalk.red(`\n❌ Error: ${err.message}`));
+    });
+  }
+  void lastActivity;
 
   // Handle graceful shutdown
   process.on("SIGINT", () => {
+    if (tui) tui.unmount();
     console.log(chalk.yellow("\n\n⏸  Pausing session... (data saved to SQLite)"));
     supervisor.stop();
 
@@ -171,7 +201,9 @@ export async function runCommand(options: RunOptions): Promise<void> {
   // Run the main orchestration loop
   try {
     await supervisor.run(sessionId);
+    if (tui) tui.unmount();
   } catch (err) {
+    if (tui) tui.unmount();
     console.error(chalk.red(`\n❌ Session error: ${(err as Error).message}`));
     const memory = getContextStore();
     memory.updateSessionStatus(sessionId, "error");

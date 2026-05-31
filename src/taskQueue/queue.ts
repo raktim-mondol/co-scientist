@@ -67,7 +67,9 @@ export class AgentTaskQueue {
   }
 
   resume(): void {
-    this.cancelledTypes.clear();
+    // Restart execution WITHOUT clearing cancellations — pause/resume must not
+    // re-enable task types that were deliberately cancelled (e.g. generation at
+    // the hypothesis cap). Use clearCancelledType() to explicitly un-cancel.
     this.queue.start();
     logger.info("Task queue resumed");
   }
