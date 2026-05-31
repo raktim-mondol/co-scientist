@@ -87,6 +87,7 @@ export class SupervisorAgent extends BaseAgent {
   async run(sessionId: string): Promise<void> {
     this.sessionId = sessionId;
     this.running = true;
+    this.paused = false;
     let round = 0;
     const maxRounds = this.config.compute.maxTournamentRounds;
     const metaReviewInterval = 25; // every N completed tasks
