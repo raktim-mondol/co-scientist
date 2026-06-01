@@ -14,7 +14,7 @@
 
 Co-Scientist is a **multi-agent AI system** inspired by the scientific method that autonomously generates, critiques, evolves, and ranks novel research hypotheses. Given a research goal in natural language, it:
 
-1. **Generates** diverse hypotheses via literature search, scientific debates, and assumption chaining
+1. **Generates** diverse hypotheses via literature search, scientific debates, and assumption chaining — with a save-time near-duplicate gate that rejects converging ideas before they cost anything downstream
 2. **Reviews** each hypothesis for novelty, correctness, testability, and safety through a 3-stage pipeline
 3. **Tracks provenance** — fact-checks every claim against peer-reviewed literature before a hypothesis enters the tournament
 4. **Verifies citation integrity** — checks every cited paper actually exists against Crossref and applies a soft Glicko-2 penalty proportional to the fabrication rate
@@ -62,6 +62,10 @@ MAX_WORKERS=3
 MAX_HYPOTHESES=5
 MAX_TOURNAMENT_ROUNDS=100
 COMPUTE_BUDGET_TOKENS=500000
+
+# Generation quality (optional) — save-time near-duplicate cosine gate.
+# 1 (or >1) disables the gate. Default 0.92 (matches the proximity-dedup threshold).
+# GENERATION_DIVERSITY_THRESHOLD=0.92
 
 # Reproducibility (optional) — seeds all scheduling/sampling RNG. Unset = non-deterministic.
 # SEED=42
@@ -287,6 +291,28 @@ K=48 is intentionally higher than tournament debate K=16–32 because empirical 
 
 ---
 
+## Diversity-Aware Generation
+
+Mode collapse — many near-identical hypotheses crowding out genuinely distinct ideas — wastes budget and skews the tournament. `ProximityAgent` catches duplicates, but only *after* a hypothesis has been saved, reviewed, provenance-checked, and citation-verified. Diversity-aware generation adds an **early, save-time gate** so converging ideas are discarded before they cost anything downstream.
+
+Inside `GenerationAgent`, before a new hypothesis is persisted:
+
+1. The candidate is embedded locally (`all-MiniLM-L6-v2`, same `${title}. ${summary}` text shape `ProximityAgent` uses — no API tokens).
+2. The existing sqlite-vec ANN index returns its nearest neighbours, which are then **exact-cosine re-scored** against same-session, non-rejected hypotheses.
+3. If the nearest neighbour is ≥ the threshold (default **0.92**), the candidate is **discarded** — no save, no review, no provenance, no seeding.
+4. Otherwise it is saved and its embedding is persisted, so the next gate and `ProximityAgent` reuse it (no double-embedding).
+
+In addition, the `literature_exploration` strategy is **proactively steered**: the titles/summaries of existing hypotheses are injected into the prompt with an instruction to propose a *mechanistically distinct* idea, nudging generation away from occupied regions of embedding space.
+
+This is **complementary** to `ProximityAgent`, not a replacement — proximity still owns the inter-hypothesis graph (`proximity_edges`) and post-hoc dedup, and still catches duplicates that bypass this gate (evolution, expert injection).
+
+```env
+# Save-time near-duplicate cosine threshold (default 0.92). 1 (or >1) disables the gate.
+GENERATION_DIVERSITY_THRESHOLD=0.92
+```
+
+---
+
 ## Citation Integrity
 
 Provenance checks whether a hypothesis's *claims are supported*. Citation integrity is a separate, complementary check: it verifies that every cited paper **actually exists** — catching LLM-fabricated references (hallucinated DOIs and invented titles) before they lend false credibility to a hypothesis.
@@ -384,7 +410,7 @@ flowchart TD
     XREF(["Crossref API"])
 
     SUP["① Supervisor"]
-    GEN["② Generation"]
+    GEN["② Generation<br/>(save-time diversity gate)"]
     REF["③ Reflection"]
     PROV["④ Provenance"]
     CITE["⑤ Citation Integrity<br/>(Crossref · soft Glicko-2 penalty)"]
@@ -425,6 +451,7 @@ flowchart TD
 
     RANK -->|active hypotheses| PROX
     VEC2 -->|dedup + edges| KG
+    VEC2 -.->|nearest-neighbour gate| GEN
     KG -->|unexplored concepts| GEN
 
     RANK -->|reviews + rationales| META
