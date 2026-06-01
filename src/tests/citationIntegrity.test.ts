@@ -13,6 +13,7 @@ import { resetDb } from "../db/index.js";
 import { runMigrations } from "../db/migrate.js";
 import { getContextStore, resetContextStore } from "../memory/contextStore.js";
 import { resetConfig } from "../config.js";
+import { citationPenalty } from "../agents/citationIntegrity.js";
 
 let store: ReturnType<typeof getContextStore>;
 let sessionId: string;
@@ -88,5 +89,42 @@ describe("ContextStore citation verifications", () => {
     const s = store.getCitationIntegrity(h.id);
     expect(s.total).toBe(0);
     expect(s.fabricationRate).toBe(0);
+  });
+});
+
+describe("citationPenalty", () => {
+  it("no citations → no penalty", () => {
+    const p = citationPenalty({ total: 0, unverified: 0, fabricated: 0 });
+    expect(p.f).toBe(0);
+    expect(p.ratingDelta).toBe(0);
+    expect(p.rdDelta).toBe(0);
+  });
+
+  it("all verified → no penalty", () => {
+    const p = citationPenalty({ total: 4, unverified: 0, fabricated: 0 });
+    expect(p.ratingDelta).toBe(0);
+    expect(p.rdDelta).toBe(0);
+  });
+
+  it("all fabricated → full penalty and full RD widening", () => {
+    const p = citationPenalty({ total: 3, unverified: 0, fabricated: 3 });
+    expect(p.f).toBeCloseTo(1, 5);
+    expect(p.ratingDelta).toBe(-150);
+    expect(p.rdDelta).toBe(100);
+  });
+
+  it("unverified counts half as much as fabricated", () => {
+    const p = citationPenalty({ total: 2, unverified: 2, fabricated: 0 });
+    expect(p.f).toBeCloseTo(0.5, 5);
+    expect(p.ratingDelta).toBe(-75);
+    expect(p.rdDelta).toBe(50);
+  });
+
+  it("mixed case is proportional", () => {
+    const p = citationPenalty({ total: 4, unverified: 1, fabricated: 1 });
+    // f = (1 + 0.5*1)/4 = 0.375
+    expect(p.f).toBeCloseTo(0.375, 5);
+    expect(p.ratingDelta).toBe(Math.round(-0.375 * 150));
+    expect(p.rdDelta).toBe(Math.round(0.375 * 100));
   });
 });
