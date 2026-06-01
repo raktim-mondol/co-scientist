@@ -14,6 +14,8 @@ import { runMigrations } from "../db/migrate.js";
 import { getContextStore, resetContextStore } from "../memory/contextStore.js";
 import { resetConfig } from "../config.js";
 import { citationPenalty } from "../agents/citationIntegrity.js";
+import { CitationIntegrityAgent } from "../agents/citationIntegrity.js";
+import type { FetchFn } from "../tools/citationResolver.js";
 
 let store: ReturnType<typeof getContextStore>;
 let sessionId: string;
@@ -126,5 +128,45 @@ describe("citationPenalty", () => {
     expect(p.f).toBeCloseTo(0.375, 5);
     expect(p.ratingDelta).toBe(Math.round(-0.375 * 150));
     expect(p.rdDelta).toBe(Math.round(0.375 * 100));
+  });
+});
+
+describe("CitationIntegrityAgent.execute", () => {
+  it("persists per-citation rows and returns the penalty", async () => {
+    const h = store.saveHypothesis({
+      sessionId,
+      title: "Cited Hyp", summary: "s", content: "c", rationale: "r",
+      generationStrategy: "literature_exploration",
+      eloRating: 1300, ratingDeviation: 200, volatility: 0.06,
+      matchesPlayed: 0, wins: 0, losses: 0, draws: 0,
+      status: "reviewing", parentIds: [], generationRound: 1,
+      keyAssumptions: [],
+      citations: ["10.1038/real", "10.9999/fake"],
+    });
+
+    // Stub fetch: the "real" DOI resolves (200), the "fake" DOI 404s.
+    // Both have 4-digit registrants so extractDoi takes the DOI path.
+    const fetchFn: FetchFn = async (url) =>
+      url.includes("real")
+        ? { ok: true, status: 200, json: async () => ({ message: { title: ["Real"], DOI: "10.1038/real" } }) }
+        : { ok: false, status: 404, json: async () => ({}) };
+
+    const agent = new CitationIntegrityAgent(fetchFn);
+    const penalty = await agent.execute(sessionId, h);
+
+    const rows = store.getCitationVerifications(h.id);
+    expect(rows.length).toBe(2);
+    expect(rows.some((r) => r.status === "verified")).toBe(true);
+    expect(rows.some((r) => r.status === "fabricated")).toBe(true);
+    // f = (1 + 0)/2 = 0.5 → -75
+    expect(penalty.ratingDelta).toBe(-75);
+  });
+
+  it("no-ops on a hypothesis with no citations", async () => {
+    const h = addHyp();
+    const agent = new CitationIntegrityAgent(async () => ({ ok: true, status: 200, json: async () => ({}) }));
+    const penalty = await agent.execute(sessionId, h);
+    expect(penalty.ratingDelta).toBe(0);
+    expect(store.getCitationVerifications(h.id).length).toBe(0);
   });
 });
