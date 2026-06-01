@@ -1,6 +1,7 @@
 import { BaseAgent } from "./base.js";
 import type { Hypothesis } from "../models/hypothesis.js";
 import { buildRLEFMetaReviewBlock } from "../rlef/prompt-injection.js";
+import { rngInt } from "../util/rng.js";
 
 type EvolutionStrategy =
   | "grounding"
@@ -56,7 +57,7 @@ export class EvolutionAgent extends BaseAgent {
         break;
       }
       case "cross_pollination": {
-        const target = topHypotheses[Math.floor(Math.random() * topHypotheses.length)];
+        const target = topHypotheses[rngInt(topHypotheses.length)];
         evolved = await this._crossPollination(target, topHypotheses);
         parentIds = [target.id];
         break;
@@ -74,7 +75,7 @@ export class EvolutionAgent extends BaseAgent {
         break;
       }
       case "out_of_box": {
-        const seed = topHypotheses[Math.floor(Math.random() * topHypotheses.length)];
+        const seed = topHypotheses[rngInt(topHypotheses.length)];
         const planConfig = this.memory.getPlanConfig(sessionId);
         evolved = await this._outOfBox(seed, planConfig?.parsedTitle ?? "", metaCritiqueWithRLEF);
         parentIds = [seed.id];

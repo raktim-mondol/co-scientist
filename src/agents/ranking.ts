@@ -5,6 +5,8 @@ import {
 } from "../models/tournament.js";
 import type { Hypothesis } from "../models/hypothesis.js";
 import type { MatchResult } from "../models/tournament.js";
+import { rng, rngInt } from "../util/rng.js";
+import { combineSwappedVerdicts, mapPresentedVerdict, type Verdict } from "./judgeDebias.js";
 
 interface DebateResult {
   winner: "A" | "B" | "draw";
@@ -95,12 +97,7 @@ export class RankingAgent extends BaseAgent {
     const provenanceA = this._formatProvenance(hypA.id);
     const provenanceB = this._formatProvenance(hypB.id);
 
-    let result: DebateResult;
-    if (isTopRanked) {
-      result = await this._runDebateMatch(hypA, hypB, provenanceA, provenanceB);
-    } else {
-      result = await this._runSimpleMatch(hypA, hypB, provenanceA, provenanceB);
-    }
+    const result = await this._judgeMatch(hypA, hypB, provenanceA, provenanceB, isTopRanked);
 
     const matchResult: MatchResult =
       result.winner === "A" ? "A_wins" : result.winner === "B" ? "B_wins" : "draw";
@@ -173,6 +170,55 @@ export class RankingAgent extends BaseAgent {
       matchType: isTopRanked ? "debate" : "simple",
       ratingA: { before: hypA.eloRating, after: ratingAfterA.rating, rd: ratingAfterA.rd },
       ratingB: { before: hypB.eloRating, after: ratingAfterB.rating, rd: ratingAfterB.rd },
+    };
+  }
+
+  // ─── Position-bias-robust judging ─────────────────────────────────────────
+  /**
+   * Judge a pair while controlling for LLM position bias.
+   *
+   * - Simple matches (1 cheap call each) → **swap-and-average**: judge both
+   *   A,B and B,A orderings and reconcile (a verdict that flips with order is
+   *   downgraded to a draw).
+   * - Debate matches (3 expensive reason calls) → a single **seeded-random**
+   *   orientation, so doubling the cost is avoided while the *systematic* slot-A
+   *   advantage is removed across the tournament.
+   *
+   * The returned `winner` is always in real A/B terms (hypA = "A").
+   */
+  private async _judgeMatch(
+    hypA: Hypothesis,
+    hypB: Hypothesis,
+    provenanceA: string,
+    provenanceB: string,
+    isTopRanked: boolean
+  ): Promise<DebateResult> {
+    if (isTopRanked) {
+      const swapped = rng() < 0.5;
+      const raw = swapped
+        ? await this._runDebateMatch(hypB, hypA, provenanceB, provenanceA)
+        : await this._runDebateMatch(hypA, hypB, provenanceA, provenanceB);
+      const winner = mapPresentedVerdict(raw.winner as Verdict, swapped);
+      return {
+        winner,
+        rationale: `[presentation order: ${swapped ? "B,A" : "A,B"}] ${raw.rationale}`,
+        transcript: raw.transcript,
+      };
+    }
+
+    // Cheap path: judge both orderings and reconcile.
+    const normal = await this._runSimpleMatch(hypA, hypB, provenanceA, provenanceB);
+    const swappedRaw = await this._runSimpleMatch(hypB, hypA, provenanceB, provenanceA);
+    const swappedReal = mapPresentedVerdict(swappedRaw.winner as Verdict, true);
+    const winner = combineSwappedVerdicts(normal.winner as Verdict, swappedReal);
+    return {
+      winner,
+      rationale:
+        `Order-robust verdict: ${winner} (A,B→${normal.winner}; B,A→${swappedReal}).\n\n` +
+        `[A,B] ${normal.rationale}\n\n[B,A] ${swappedRaw.rationale}`,
+      transcript:
+        `=== Orientation A,B ===\n${normal.transcript}\n\n` +
+        `=== Orientation B,A ===\n${swappedRaw.transcript}`,
     };
   }
 
@@ -305,7 +351,7 @@ export class RankingAgent extends BaseAgent {
     // Otherwise, pick the second-highest-priority hypothesis
     const secondaryPool = scored.slice(1, Math.min(10, scored.length));
     if (secondaryPool.length === 0) return [null, null];
-    const secondary = secondaryPool[Math.floor(Math.random() * secondaryPool.length)].hyp;
+    const secondary = secondaryPool[rngInt(secondaryPool.length)].hyp;
 
     return [primary, secondary];
   }

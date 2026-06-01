@@ -1,5 +1,6 @@
 import PQueue from "p-queue";
 import { getConfig, logger } from "../config.js";
+import { rng } from "../util/rng.js";
 import type { TaskType } from "../models/agentTask.js";
 
 export interface QueuedTask {
@@ -213,7 +214,7 @@ export class TaskScheduler {
   sampleNextTaskType(weights: AgentWeights): TaskType {
     const entries = Object.entries(weights) as [TaskType, number][];
     const total = entries.reduce((s, [, w]) => s + w, 0);
-    let rand = Math.random() * total;
+    let rand = rng() * total;
 
     for (const [type, weight] of entries) {
       rand -= weight;
