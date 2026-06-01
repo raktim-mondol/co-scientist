@@ -36,6 +36,12 @@ const ConfigSchema = z.object({
     budgetTokens: z.number().int().nonnegative().default(500_000), // 0 = unlimited
   }),
 
+  // Generation quality
+  generation: z.object({
+    // Save-time near-duplicate cosine threshold. 1 (or >1) disables the gate.
+    diversityThreshold: z.number().min(0).max(1).default(0.92),
+  }),
+
   // Reproducibility
   seed: z.number().int().optional(),         // seeds all scheduling/sampling RNG
 
@@ -84,6 +90,14 @@ function loadConfig(): AppConfig {
       budgetTokens: process.env.COMPUTE_BUDGET_TOKENS
         ? parseInt(process.env.COMPUTE_BUDGET_TOKENS, 10)
         : undefined,
+    },
+    generation: {
+      diversityThreshold: (() => {
+        const v = process.env.GENERATION_DIVERSITY_THRESHOLD;
+        if (!v) return undefined;
+        const n = parseFloat(v);
+        return Number.isNaN(n) ? undefined : n;
+      })(),
     },
     seed,
     logLevel: process.env.LOG_LEVEL,
