@@ -22,7 +22,10 @@ export type FetchFn = (url: string) => Promise<{
 const CROSSREF_BASE = "https://api.crossref.org/works";
 const TITLE_MATCH_THRESHOLD = 0.7;
 const TIMEOUT_MS = 6000;
-const UA = "co-scientist/1.0 (citation-integrity; mailto:noreply@co-scientist.local)";
+// Polite pool: identify ourselves via mailto (query param + User-Agent) for
+// higher, more reliable rate limits. No API key needed — Plus is the only keyed tier.
+const MAILTO = "dr.raktim.mondol@gmail.com";
+const UA = `co-scientist/1.0 (citation-integrity; mailto:${MAILTO})`;
 
 // In-process cache: coalesce duplicate lookups within a run.
 const _cache = new Map<string, Promise<CitationResolution>>();
@@ -93,7 +96,7 @@ async function _resolve(raw: string, fetchFn: FetchFn): Promise<CitationResoluti
   const doi = extractDoi(raw);
   try {
     if (doi) {
-      const res = await withTimeout(fetchFn(`${CROSSREF_BASE}/${encodeURIComponent(doi)}`));
+      const res = await withTimeout(fetchFn(`${CROSSREF_BASE}/${encodeURIComponent(doi)}?mailto=${MAILTO}`));
       if (res.status === 404) {
         return { raw, status: "fabricated", matchScore: 0, source: "crossref" };
       }
@@ -107,7 +110,7 @@ async function _resolve(raw: string, fetchFn: FetchFn): Promise<CitationResoluti
     }
 
     // No DOI: bibliographic title search.
-    const url = `${CROSSREF_BASE}?query.bibliographic=${encodeURIComponent(raw)}&rows=3`;
+    const url = `${CROSSREF_BASE}?query.bibliographic=${encodeURIComponent(raw)}&rows=3&mailto=${MAILTO}`;
     const res = await withTimeout(fetchFn(url));
     if (!res.ok) return { raw, status: "unverified", matchScore: 0, source: "none" };
     const body = (await res.json()) as { message?: { items?: CrossrefItem[] } };
