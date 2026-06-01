@@ -17,10 +17,11 @@ Co-Scientist is a **multi-agent AI system** inspired by the scientific method th
 1. **Generates** diverse hypotheses via literature search, scientific debates, and assumption chaining
 2. **Reviews** each hypothesis for novelty, correctness, testability, and safety through a 3-stage pipeline
 3. **Tracks provenance** — fact-checks every claim against peer-reviewed literature before a hypothesis enters the tournament
-4. **Ranks** hypotheses via a Glicko-2 tournament with multi-turn scientific debates and evidence-grounded judging
-5. **Evolves** top-ranked hypotheses toward higher quality using 6 mutation strategies
-6. **Maps** a knowledge graph of concepts and lineage to steer generation toward unexplored areas
-7. **Synthesizes** a final research overview and generates a step-by-step experimental protocol for the top hypothesis
+4. **Verifies citation integrity** — checks every cited paper actually exists against Crossref and applies a soft Glicko-2 penalty proportional to the fabrication rate
+5. **Ranks** hypotheses via a Glicko-2 tournament with multi-turn scientific debates and evidence-grounded judging, debiased against LLM position bias
+6. **Evolves** top-ranked hypotheses toward higher quality using 6 mutation strategies
+7. **Maps** a knowledge graph of concepts and lineage to steer generation toward unexplored areas
+8. **Synthesizes** a final research overview and generates a step-by-step experimental protocol for the top hypothesis
 
 ---
 
@@ -61,6 +62,9 @@ MAX_WORKERS=3
 MAX_HYPOTHESES=5
 MAX_TOURNAMENT_ROUNDS=100
 COMPUTE_BUDGET_TOKENS=500000
+
+# Reproducibility (optional) — seeds all scheduling/sampling RNG. Unset = non-deterministic.
+# SEED=42
 ```
 
 ### 4. Link globally
@@ -95,7 +99,7 @@ co-scientist run --no-tui --goal "..."
 | `co-scientist resume <id>` | Resume a paused session |
 | `co-scientist list` | List all sessions |
 | `co-scientist results <id>` | Show ranked hypotheses |
-| `co-scientist results <id> --show-feedback` | Show ranked hypotheses with full RLEF feedback details |
+| `co-scientist results <id> --show-feedback` | Show ranked hypotheses with full RLEF feedback + citation-integrity details |
 | `co-scientist overview <id>` | Show final research overview |
 | `co-scientist design <id>` | Generate experimental protocol for a hypothesis |
 | `co-scientist graph <id>` | Visualise the knowledge graph (text / DOT / JSON) |
@@ -283,6 +287,69 @@ K=48 is intentionally higher than tournament debate K=16–32 because empirical 
 
 ---
 
+## Citation Integrity
+
+Provenance checks whether a hypothesis's *claims are supported*. Citation integrity is a separate, complementary check: it verifies that every cited paper **actually exists** — catching LLM-fabricated references (hallucinated DOIs and invented titles) before they lend false credibility to a hypothesis.
+
+After provenance, the **Citation-Integrity agent** resolves each citation against the [Crossref REST API](https://api.crossref.org) (no auth required) and classifies it:
+
+| Status | Meaning |
+|--------|---------|
+| ✅ `verified` | DOI resolves, or a free-text citation matches a real paper title (token-set Dice ≥ 0.7) |
+| ⚠️ `unverified` | No confident match — or Crossref was unreachable (network failures fail safe, never block the pipeline) |
+| ❌ `fabricated` | DOI returns 404 — the paper does not exist |
+
+### Soft Glicko-2 penalty
+
+Results are persisted to a `citation_verifications` table and folded into the hypothesis's seed rating via a **soft penalty** proportional to the weighted fabrication rate:
+
+```
+f          = (fabricated + 0.5 × unverified) / total       // 0..1, weighted rate
+ratingDelta = −round(f × 150)                               // up to −150 Elo
+rdDelta     = +round(f × 100)                               // up to +100 RD (more uncertainty)
+```
+
+The penalty is *soft* (proportional, not a hard reject) and widens the rating deviation so the tournament can still re-evaluate the hypothesis on its merits. A hypothesis with no citations is never penalised.
+
+### Viewing citation integrity
+
+```bash
+# Per-hypothesis summary line (verified · unverified · fabricated), fabricated entries listed
+co-scientist results <session-id> --show-feedback
+
+# Markdown export annotates each citation; JSON export includes full citationVerifications
+co-scientist export <session-id>
+```
+
+---
+
+## Position-Bias-Robust Judging
+
+LLM-as-judge exhibits **position bias** — a systematic preference for whichever candidate is shown first. In the tournament this is compounded because the matchup selector always places the higher-priority hypothesis in slot "A". The Ranking agent controls for this:
+
+- **Simple matches** (cheap) → **swap-and-average**: the pair is judged in both `A,B` and `B,A` orderings. A verdict that flips with order is downgraded to a **draw** (it was position-dependent, not substantive).
+- **Debate matches** (3 expensive reasoning calls) → a single **seeded-random** orientation, so the systematic slot-A advantage is removed across the tournament without doubling cost.
+
+The reconciled winner is always reported in real A/B terms, with the presentation order recorded in the match rationale.
+
+---
+
+## Reproducibility
+
+Set a seed to make all scheduling and sampling decisions deterministic:
+
+```bash
+co-scientist run --seed 42 --goal "..."
+# or via env
+SEED=42 co-scientist run --goal "..."
+```
+
+A seed makes the seeded RNG (`src/util/rng.ts`, mulberry32) drive every `rng()` call — matchup selection, debate orientation, evolution parent picks, etc. With no seed, `rng()` transparently falls back to `Math.random()` so normal runs are unaffected.
+
+> **Note:** deterministic scheduling is necessary but not sufficient for byte-for-byte replay — LLM outputs are also non-deterministic, and with `MAX_WORKERS > 1` task-completion order varies. For stricter determinism, add `--max-workers 1`.
+
+---
+
 ## Development
 
 ```bash
@@ -314,23 +381,25 @@ flowchart TD
     DS(["DeepSeek LLM"])
     PAI(["Parallel AI Search"])
     CON(["Consensus MCP"])
+    XREF(["Crossref API"])
 
     SUP["① Supervisor"]
     GEN["② Generation"]
     REF["③ Reflection"]
     PROV["④ Provenance"]
-    RANK["⑤ Ranking<br/>(Glicko-2 Tournament)"]
+    CITE["⑤ Citation Integrity<br/>(Crossref · soft Glicko-2 penalty)"]
+    RANK["⑥ Ranking<br/>(Glicko-2 Tournament<br/>· position-bias-robust judging)"]
 
     subgraph PROXVEC["Proximity + Vector Store"]
-        PROX["⑥ Proximity<br/>(all-MiniLM-L6-v2 · 384-dim)"]
+        PROX["⑦ Proximity<br/>(all-MiniLM-L6-v2 · 384-dim)"]
         VEC2["sqlite-vec<br/>(vec0 ANN index)"]
         PROX --> VEC2
     end
 
-    KG["⑦ Knowledge Graph"]
-    EVOL["⑧ Evolution"]
-    META["⑨ Meta-Review<br/>(every 25 rounds)"]
-    DESIGN["⑩ Experiment Design<br/>(post-plateau)"]
+    KG["⑧ Knowledge Graph"]
+    EVOL["⑨ Evolution"]
+    META["⑩ Meta-Review<br/>(every 25 rounds)"]
+    DESIGN["⑪ Experiment Design<br/>(post-plateau)"]
 
     %% ── Main flow ────────────────────────────────────────────────
     GOAL --> SUP --> GEN
@@ -340,6 +409,7 @@ flowchart TD
     PAI --> REF
     CON --> REF
     CON --> PROV
+    XREF --> CITE
     CON --> EVOL
     CON --> DESIGN
 
@@ -347,7 +417,8 @@ flowchart TD
 
     GEN -->|hypothesis| REF
     REF -->|passes| PROV
-    PROV -->|ClaimCitations injected| RANK
+    PROV -->|ClaimCitations injected| CITE
+    CITE -->|penalty folded into seed rating| RANK
     REF -->|passes| RANK
     RANK -->|top hypotheses| EVOL
     EVOL -->|evolved hypothesis| REF
@@ -371,12 +442,14 @@ flowchart TD
     style DS       fill:#1565C0,color:#fff,stroke:#0D47A1
     style PAI      fill:#00695C,color:#fff,stroke:#004D40
     style CON      fill:#00695C,color:#fff,stroke:#004D40
+    style XREF     fill:#00695C,color:#fff,stroke:#004D40
     style SUP      fill:#6A1B9A,color:#fff,stroke:#4A148C
     style META     fill:#6A1B9A,color:#fff,stroke:#4A148C
     style GEN      fill:#E65100,color:#fff,stroke:#BF360C
     style EVOL     fill:#E65100,color:#fff,stroke:#BF360C
     style REF      fill:#C62828,color:#fff,stroke:#B71C1C
     style PROV     fill:#C62828,color:#fff,stroke:#B71C1C
+    style CITE     fill:#C62828,color:#fff,stroke:#B71C1C
     style RANK     fill:#F9A825,color:#333,stroke:#F57F17
     style PROX     fill:#37474F,color:#fff,stroke:#263238
     style VEC2     fill:#37474F,color:#fff,stroke:#263238
@@ -395,6 +468,7 @@ flowchart TD
 | `--max-hypotheses <n>` | `MAX_HYPOTHESES` | `5` | Hard cap on total hypotheses generated |
 | `--max-rounds <n>` | `MAX_TOURNAMENT_ROUNDS` | `100` | Maximum orchestration rounds |
 | `--budget <tokens>` | `COMPUTE_BUDGET_TOKENS` | `500000` | Token budget (0 = unlimited) |
+| `--seed <n>` | `SEED` | _(unset)_ | Seed scheduling/sampling RNG for reproducible runs |
 
 **Estimated cost** (DeepSeek-v4-pro): A typical 50-hypothesis run uses ~200k–400k tokens (~$0.50–$2.00).
 
