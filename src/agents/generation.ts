@@ -244,6 +244,10 @@ export class GenerationAgent extends BaseAgent {
     const context = this.formatSearchContext(results);
 
     // Step 2: Generate hypothesis from literature
+    const diversityContext = existingHypotheses.length > 0
+      ? existingHypotheses.map((h, i) => `[${i + 1}] ${h.title}: ${h.summary}`).join("\n")
+      : "";
+
     const { system, userPrompt } = this.loadPrompt("generation", "literature_exploration", {
       researchGoal: planConfig.parsedTitle,
       domain: planConfig.parsedDomain,
@@ -251,6 +255,7 @@ export class GenerationAgent extends BaseAgent {
       literatureContext: context,
       attributes: planConfig.hypothesisAttributes.join(", "),
       metaCritique: metaCritique ?? "No meta-review critique available yet.",
+      diversityContext,
     });
 
     return this.callLLMForJSON<ParsedHypothesis>(system, userPrompt, {
