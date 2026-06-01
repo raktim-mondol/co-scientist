@@ -1,6 +1,7 @@
 import chalk from "chalk";
 import { getContextStore } from "../../memory/contextStore.js";
 import { runMigrations } from "../../db/migrate.js";
+import { formatCitationIntegrity } from "../../agents/citationIntegrity.js";
 
 export async function listCommand(): Promise<void> {
   await runMigrations();
@@ -139,6 +140,19 @@ export async function resultsCommand(
         const icon = c.support === "contradicts" ? chalk.red("✗") : chalk.yellow("?");
         console.log(`     ${icon} ${chalk.gray(c.claimText.slice(0, 80))}${c.claimText.length > 80 ? "…" : ""}`);
         if (c.paperTitle) console.log(`       ${chalk.gray("→")} ${chalk.dim(c.paperTitle.slice(0, 70))}`);
+      }
+    }
+
+    // Citation integrity (existence of cited papers — distinct from provenance claim anchoring)
+    const integ = memory.getCitationIntegrity(h.id);
+    const integLine = formatCitationIntegrity(integ);
+    if (integLine) {
+      const color = integ.fabricated > 0 ? chalk.red : integ.unverified > 0 ? chalk.yellow : chalk.green;
+      console.log(`   ${color(`📚 Citations: ${integLine}`)}`);
+      if (integ.fabricated > 0) {
+        memory.getCitationVerifications(h.id)
+          .filter((c) => c.status === "fabricated")
+          .forEach((c) => console.log(chalk.red(`      ✗ ${c.rawCitation.slice(0, 80)}`)));
       }
     }
 

@@ -83,3 +83,11 @@ export class CitationIntegrityAgent extends BaseAgent {
     return penalty;
   }
 }
+
+/** One-line human summary, e.g. "4 verified · 1 unverified · 2 fabricated". Empty string when no citations. */
+export function formatCitationIntegrity(s: {
+  total: number; verified: number; unverified: number; fabricated: number;
+}): string {
+  if (s.total === 0) return "";
+  return `${s.verified} verified · ${s.unverified} unverified · ${s.fabricated} fabricated`;
+}

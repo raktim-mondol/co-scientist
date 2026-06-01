@@ -3,6 +3,7 @@ import chalk from "chalk";
 import { getContextStore } from "../../memory/contextStore.js";
 import { runMigrations } from "../../db/migrate.js";
 import type { ExperimentProtocol } from "../../agents/experimentDesign.js";
+import { formatCitationIntegrity } from "../../agents/citationIntegrity.js";
 
 export async function exportCommand(
   sessionId: string,
@@ -76,6 +77,8 @@ export async function exportCommand(
             critique: r.critique,
             supportingEvidence: r.supportingEvidence,
           })),
+          citationIntegrity: memory.getCitationIntegrity(h.id),
+          citationVerifications: memory.getCitationVerifications(h.id),
         })),
       },
       null,
@@ -160,9 +163,18 @@ export async function exportCommand(
       }
 
       if (h.citations.length > 0) {
-        lines.push(`**Citations:**`);
+        const integ = memory.getCitationIntegrity(h.id);
+        const integLine = formatCitationIntegrity(integ);
+        lines.push(`**Citations:**${integLine ? ` _(${integLine})_` : ""}`);
         lines.push("");
-        h.citations.forEach((c) => lines.push(`- ${c}`));
+        const statusByRaw = new Map(
+          memory.getCitationVerifications(h.id).map((v) => [v.rawCitation.trim(), v.status])
+        );
+        h.citations.forEach((c) => {
+          const st = statusByRaw.get(c.trim());
+          const mark = st === "fabricated" ? " ⚠️ fabricated" : st === "unverified" ? " ⚠️ unverified" : "";
+          lines.push(`- ${c}${mark}`);
+        });
         lines.push("");
       }
 
