@@ -203,3 +203,21 @@ export const rewardMemory = sqliteTable("reward_memory", {
   embeddingId: text("embedding_id").notNull(),           // -> vec_embeddings.hypothesis_id
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
+
+// ─── Citation Verifications (Citation-Integrity) ─────────────────────────────
+// Existence check for each free-text entry in hypotheses.citationsJson, resolved
+// against Crossref. Distinct from claim_citations (which checks whether claims
+// are SUPPORTED) — this checks whether the cited paper EXISTS.
+export const citationVerifications = sqliteTable("citation_verifications", {
+  id: text("id").primaryKey(),
+  hypothesisId: text("hypothesis_id").notNull().references(() => hypotheses.id),
+  sessionId: text("session_id").notNull().references(() => sessions.id),
+  rawCitation: text("raw_citation").notNull(),
+  status: text("status").notNull(), // 'verified' | 'unverified' | 'fabricated'
+  canonicalTitle: text("canonical_title"),
+  doi: text("doi"),
+  authors: text("authors"),
+  year: integer("year"),
+  matchScore: real("match_score").notNull().default(0),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});

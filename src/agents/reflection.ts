@@ -3,6 +3,7 @@ import type { Hypothesis } from "../models/hypothesis.js";
 import type { ReviewVerdict } from "../models/hypothesis.js";
 import { seededGlicko2Rating } from "../models/tournament.js";
 import { ProvenanceAgent } from "./provenance.js";
+import { CitationIntegrityAgent } from "./citationIntegrity.js";
 import { buildRLEFMetaReviewBlock } from "../rlef/prompt-injection.js";
 
 interface ReviewResult {
@@ -20,6 +21,7 @@ export class ReflectionAgent extends BaseAgent {
   get agentName() { return "Reflection"; }
 
   private provenance = new ProvenanceAgent();
+  private citationIntegrity = new CitationIntegrityAgent();
 
   async execute(sessionId: string): Promise<void> {
     // Get hypotheses pending review
@@ -78,6 +80,9 @@ export class ReflectionAgent extends BaseAgent {
     // Provenance: anchor claims to literature before entering tournament
     await this.provenance.execute(sessionId, hyp);
 
+    // Citation integrity: verify cited papers exist; penalty folded into seeding below.
+    const citePenalty = await this.citationIntegrity.execute(sessionId, hyp);
+
     // Step 3: Deep verification — each sub-claim holds independently?
     const deepReview = await this._deepVerificationReview(hyp);
     this.memory.saveReview({
@@ -121,15 +126,19 @@ export class ReflectionAgent extends BaseAgent {
     const bestTestability = this._bestScore(reviews.map(r => r.testabilityScore));
 
     const seededRating = seededGlicko2Rating(bestNovelty, bestCorrectness, bestTestability);
-    if (seededRating.rating !== 1200) {
-      // Only write back if the seeded value actually differs to avoid a no-op update
+    // Fold the citation-integrity penalty into the seed: lower rating, wider RD.
+    const finalRating = Math.max(1000, seededRating.rating + citePenalty.ratingDelta);
+    const finalRd = Math.min(350, seededRating.rd + citePenalty.rdDelta);
+    if (finalRating !== 1200 || finalRd !== seededRating.rd) {
+      // Only write back if the seeded/penalized value actually differs from default.
       this.memory.updateHypothesisRating(
-        hyp.id, seededRating.rating, seededRating.rd, seededRating.volatility, 0, 0, 0
+        hyp.id, finalRating, finalRd, seededRating.volatility, 0, 0, 0
       );
       this.log(
         "info",
-        `Seeded Glicko-2 rating for "${hyp.title}": ${seededRating.rating} (RD=${seededRating.rd}) ` +
-        `(novelty=${bestNovelty ?? "n/a"}, correctness=${bestCorrectness ?? "n/a"}, testability=${bestTestability ?? "n/a"})`
+        `Seeded Glicko-2 rating for "${hyp.title}": ${finalRating} (RD=${finalRd}) ` +
+        `(novelty=${bestNovelty ?? "n/a"}, correctness=${bestCorrectness ?? "n/a"}, testability=${bestTestability ?? "n/a"}` +
+        (citePenalty.ratingDelta !== 0 ? `, citation penalty=${citePenalty.ratingDelta}` : "") + ")"
       );
     }
 

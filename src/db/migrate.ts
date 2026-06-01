@@ -233,6 +233,25 @@ export async function runMigrations() {
   db.run(sql`CREATE INDEX IF NOT EXISTS idx_reward_memory_embedding ON reward_memory(embedding_id)`);
   db.run(sql`CREATE INDEX IF NOT EXISTS idx_reward_memory_reward ON reward_memory(computed_reward DESC)`);
 
+  // ── Citation Verifications (Citation-Integrity) ──────────────────────────────
+  db.run(sql`
+    CREATE TABLE IF NOT EXISTS citation_verifications (
+      id TEXT PRIMARY KEY,
+      hypothesis_id TEXT NOT NULL REFERENCES hypotheses(id),
+      session_id TEXT NOT NULL REFERENCES sessions(id),
+      raw_citation TEXT NOT NULL,
+      status TEXT NOT NULL,
+      canonical_title TEXT,
+      doi TEXT,
+      authors TEXT,
+      year INTEGER,
+      match_score REAL NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL
+    )
+  `);
+
+  db.run(sql`CREATE INDEX IF NOT EXISTS idx_citation_verifications_hypothesis ON citation_verifications(hypothesis_id)`);
+
   // ── Unique index on proximity_edges(hypothesis_a_id, hypothesis_b_id) ────────
   // Pairs are stored in canonical sorted order so (A,B) == (B,A).
   // The ON CONFLICT DO UPDATE in saveProximityEdge relies on this constraint.
