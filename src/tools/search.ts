@@ -110,13 +110,14 @@ export class SearchTool {
     const maxResults = options.maxResults ?? 10;
     const silent = options.silent ?? false;
     return _cachedSearch(_cacheKey("academic", query), async () => {
-      if (!silent) logger.info(`[Search:Consensus]\n  • "${query}"`);
+      const label = this._academicProviderLabel();
+      if (!silent) logger.info(`[Search:${label}]\n  • "${query}"`);
       try {
-        const result = await this.mcpManager.callConsensus("search", { query });
+        const result = await this.mcpManager.callAcademicSearch("search", { query });
         const results = this._parseMCPResults(result.content, "consensus");
         return results;
       } catch (error) {
-        logger.warn(`[Search:Consensus] ✗ failed for "${query}" — falling back to Parallel AI web: ${(error as Error).message}`);
+        logger.warn(`[Search:${label}] ✗ failed for "${query}" — falling back to Parallel AI web: ${(error as Error).message}`);
         return this.searchWeb(`academic research ${query}`, { maxResults, silent });
       }
     });
@@ -178,7 +179,8 @@ export class SearchTool {
     }
 
     // Auto: run both in parallel, log a single summary line
-    logger.info(`[Search] Parallel AI + Consensus —\n  • "${query}"`);
+    const acLabel = this._academicProviderLabel();
+    logger.info(`[Search] Parallel AI + ${acLabel} —\n  • "${query}"`);
     const [academic, web] = await Promise.allSettled([
       this.searchAcademic(query, { maxResults: Math.ceil(maxResults / 2), silent: true }),
       this.searchWeb(query, { maxResults: Math.ceil(maxResults / 2), silent: true }),
@@ -209,7 +211,8 @@ export class SearchTool {
         queries.map((q) => this.searchAcademic(q, { maxResults: 5, silent: true }))
       );
       const merged = this._deduplicate(results.flat());
-      logger.info(`[Search] Consensus —\n${queryList}`);
+      const acLabel = this._academicProviderLabel();
+      logger.info(`[Search] ${acLabel} —\n${queryList}`);
       return merged;
     }
 
@@ -240,19 +243,44 @@ export class SearchTool {
       }
     }
 
+    const acLabel = this._academicProviderLabel();
+
     if (mode === "auto") {
       const academicResults = await Promise.all(
         queries.map((q) => this.searchAcademic(q, { maxResults: 3, silent: true }))
       );
       const merged = this._deduplicate([...webResults, ...academicResults.flat()]);
-      const provider = client ? "Parallel AI + Consensus" : "Consensus";
+      const provider = client ? `Parallel AI + ${acLabel}` : acLabel;
       logger.info(`[Search] ${provider} —\n${queryList}`);
       return merged;
     }
 
     const merged2 = this._deduplicate(webResults);
-    logger.info(`[Search] ${client ? "Parallel AI" : "Consensus (fallback)"} —\n${queryList}`);
+    if (!client && webResults.length === 0) {
+      logger.warn(`[Search] web search unavailable — no results (set PARALLEL_AI_API_KEY for web search)`);
+    } else {
+      logger.info(`[Search] ${client ? "Parallel AI" : "Web (no results)"} —\n${queryList}`);
+    }
     return merged2;
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Human-readable label for the active academic search provider(s).
+   * Handles all provider modes: single, priority/fallback (primary shown),
+   * and parallel (all shown joined with " + ").
+   */
+  private _academicProviderLabel(): string {
+    const priority = this.mcpManager.providerPriority();
+    const mode = getConfig().tools.academicSearchMode;
+    const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+    if (mode === "parallel" && priority.length > 1) {
+      return priority.map(capitalize).join(" + ");
+    }
+    // Priority, fallback, or single provider — show the primary
+    return capitalize(priority[0]);
   }
 
   // ── Parsers ─────────────────────────────────────────────────────────────────

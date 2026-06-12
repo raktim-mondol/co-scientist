@@ -168,7 +168,7 @@ export class MCPClientManager {
   }
 
   /** Ordered list of provider names to try, from config. */
-  private providerPriority(): Array<"consensus" | "scite"> {
+  providerPriority(): Array<"consensus" | "scite"> {
     return parseProviderPriority(getConfig().tools.academicSearchProviders);
   }
 
@@ -291,7 +291,7 @@ export class MCPClientManager {
    *   parallel — call all configured providers, merge results
    *   fallback — try first; only use next if first returns zero results or errors
    */
-  async callConsensus(
+  async callAcademicSearch(
     toolName: string,
     args: Record<string, unknown>
   ): Promise<MCPToolResult> {

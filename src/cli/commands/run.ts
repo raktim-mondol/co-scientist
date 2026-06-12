@@ -84,13 +84,15 @@ export async function runCommand(options: RunOptions): Promise<void> {
   await runMigrations();
   initSpinner.succeed("Database ready");
 
-  // Initialize MCP tools (Consensus academic search)
-  const mcpSpinner = ora("Connecting to Consensus MCP (academic search)...").start();
+  // Initialize MCP tools (academic search)
+  const acProvider = getMCPManager().providerPriority()[0];
+  const acLabel = acProvider.charAt(0).toUpperCase() + acProvider.slice(1);
+  const mcpSpinner = ora(`Connecting to ${acLabel} MCP (academic search)...`).start();
   try {
     await getMCPManager().initialize();
-    mcpSpinner.succeed("Consensus MCP connected");
+    mcpSpinner.succeed(`${acLabel} MCP connected`);
   } catch {
-    mcpSpinner.warn("Consensus MCP connection degraded — academic search may be limited");
+    mcpSpinner.warn(`${acLabel} MCP connection degraded — academic search may be limited`);
   }
 
   // Create research goal

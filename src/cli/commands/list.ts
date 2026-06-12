@@ -258,11 +258,13 @@ export async function resumeCommand(sessionId: string): Promise<void> {
   const { getMCPManager } = await import("../../tools/mcpClient.js");
   const { getConfig } = await import("../../config.js");
 
-  // Initialize MCP tools (Consensus academic search)
+  // Initialize MCP tools (academic search)
   try {
     await getMCPManager().initialize();
   } catch {
-    console.warn(chalk.yellow("Consensus MCP connection degraded — academic search may be limited"));
+    const acProvider = getMCPManager().providerPriority()[0];
+    const acLabel = acProvider.charAt(0).toUpperCase() + acProvider.slice(1);
+    console.warn(chalk.yellow(`${acLabel} MCP connection degraded — academic search may be limited`));
   }
 
   const supervisor = new SupervisorAgent();
