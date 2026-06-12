@@ -204,8 +204,10 @@ export class MCPClientManager {
 
     const config = getConfig();
 
+    const isFirstInit = !this.initialized;
+
     // ── Consensus auth ──────────────────────────────────────────────────────
-    if (wantConsensus && (!this.consensus.isAvailable() || needConsensusReconnect)) {
+    if (wantConsensus && (isFirstInit || !this.consensus.isAvailable() || needConsensusReconnect)) {
       try {
         let consensusToken: string;
 
@@ -233,7 +235,7 @@ export class MCPClientManager {
     }
 
     // ── Scite auth ──────────────────────────────────────────────────────────
-    if (wantScite && (!this.scite.isAvailable() || needSciteReconnect)) {
+    if (wantScite && (isFirstInit || !this.scite.isAvailable() || needSciteReconnect)) {
       try {
         let sciteToken: string;
 
