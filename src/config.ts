@@ -25,6 +25,9 @@ const ConfigSchema = z.object({
       url: z.string().url().default("https://api.scite.ai/mcp"),
       apiKey: z.string().optional(),       // static API key (skips OAuth)
     }),
+    // Priority-ordered academic search providers. Comma-separated:
+    // "consensus,scite" (default), "scite,consensus", "consensus", "scite".
+    academicSearchProviders: z.string().default("consensus,scite"),
   }),
 
   // Database
@@ -82,6 +85,7 @@ function loadConfig(): AppConfig {
         url: process.env.SCITE_MCP_URL,
         apiKey: process.env.SCITE_API_KEY,
       },
+      academicSearchProviders: process.env.ACADEMIC_SEARCH_PROVIDERS,
     },
     db: {
       path: process.env.DB_PATH,

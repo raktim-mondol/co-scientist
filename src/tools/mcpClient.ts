@@ -131,6 +131,25 @@ class MCPServerClient {
 // ─── MCP Client Manager (Consensus + Scite fallback) ──────────────────────────
 // Parallel AI search is handled via the parallel-web REST SDK in search.ts.
 
+/** Parse the ACADEMIC_SEARCH_PROVIDERS comma-separated list into a deduped,
+ *  validated priority array. Unknown entries are dropped with a warning. */
+function parseProviderPriority(raw: string): Array<"consensus" | "scite"> {
+  const seen = new Set<string>();
+  const out: Array<"consensus" | "scite"> = [];
+  for (const token of raw.split(",")) {
+    const name = token.trim().toLowerCase();
+    if (name === "consensus" || name === "scite") {
+      if (!seen.has(name)) {
+        seen.add(name);
+        out.push(name);
+      }
+    } else if (name.length > 0) {
+      logger.warn(`Unknown academic search provider "${token.trim()}" — ignored. Valid: consensus, scite`);
+    }
+  }
+  return out.length > 0 ? out : ["consensus", "scite"]; // never return empty
+}
+
 export class MCPClientManager {
   private consensus: MCPServerClient;
   private scite: MCPServerClient;
@@ -146,6 +165,16 @@ export class MCPClientManager {
       "Scite",
       config.tools.scite.url
     );
+  }
+
+  /** Ordered list of provider names to try, from config. */
+  private providerPriority(): Array<"consensus" | "scite"> {
+    return parseProviderPriority(getConfig().tools.academicSearchProviders);
+  }
+
+  /** Look up the MCPServerClient for a provider name. */
+  private clientFor(name: "consensus" | "scite"): MCPServerClient {
+    return name === "consensus" ? this.consensus : this.scite;
   }
 
   async initialize(): Promise<void> {
@@ -167,12 +196,16 @@ export class MCPClientManager {
     // Skip if already fully initialized and no provider needs reconnection
     if (this.initialized && !needConsensusReconnect && !needSciteReconnect) return;
 
-    logger.info("Initializing MCP tool connections...");
+    const priority = this.providerPriority();
+    const wantConsensus = priority.includes("consensus");
+    const wantScite = priority.includes("scite");
+
+    logger.info(`Initializing MCP tool connections (providers: ${priority.join(", ")})...`);
 
     const config = getConfig();
 
     // ── Consensus auth ──────────────────────────────────────────────────────
-    if (!this.consensus.isAvailable() || needConsensusReconnect) {
+    if (wantConsensus && (!this.consensus.isAvailable() || needConsensusReconnect)) {
       try {
         let consensusToken: string;
 
@@ -200,7 +233,7 @@ export class MCPClientManager {
     }
 
     // ── Scite auth ──────────────────────────────────────────────────────────
-    if (!this.scite.isAvailable() || needSciteReconnect) {
+    if (wantScite && (!this.scite.isAvailable() || needSciteReconnect)) {
       try {
         let sciteToken: string;
 
@@ -228,30 +261,30 @@ export class MCPClientManager {
     }
 
     // Connect whichever need connecting. connect() is a no-op if already connected,
-    // but throws if permanently failed. Only attempt on providers known to be viable.
+    // but throws if permanently failed. Only attempt on configured providers.
     const connectPromises: Array<Promise<void>> = [];
-    if (this.consensus.isAvailable()) {
-      connectPromises.push(this.consensus.connect().catch((err) => {
-        logger.warn(`Consensus MCP server unavailable: ${(err as Error).message}.`);
-      }));
-    }
-    if (this.scite.isAvailable()) {
-      connectPromises.push(this.scite.connect().catch((err) => {
-        logger.warn(`Scite MCP server unavailable: ${(err as Error).message}.`);
-      }));
+    for (const name of priority) {
+      const client = this.clientFor(name);
+      if (client.isAvailable()) {
+        connectPromises.push(client.connect().catch((err) => {
+          logger.warn(`${name} MCP server unavailable: ${(err as Error).message}.`);
+        }));
+      }
     }
     if (connectPromises.length > 0) {
       await Promise.all(connectPromises);
     }
-    if (!this.consensus.isConnected() && !this.scite.isConnected()) {
-      logger.warn("Both academic search providers are unavailable — academic search will be degraded.");
+    const allConfiguredDead = priority.every((name) => !this.clientFor(name).isConnected());
+    if (allConfiguredDead && priority.length > 0) {
+      logger.warn(`Academic search unavailable — all configured providers (${priority.join(", ")}) are down.`);
     }
 
     this.initialized = true;
   }
 
   /**
-   * Call Consensus. If unavailable, falls back to Scite automatically.
+   * Call the academic search provider(s) in configured priority order.
+   * Tries each provider; returns the first successful result.
    */
   async callConsensus(
     toolName: string,
@@ -259,32 +292,34 @@ export class MCPClientManager {
   ): Promise<MCPToolResult> {
     await this.initialize();
 
-    // Try Consensus first
-    if (this.consensus.isAvailable()) {
-      try {
-        return await this.consensus.callTool(toolName, args);
-      } catch (err) {
-        logger.warn(`Consensus call failed, trying Scite: ${(err as Error).message}`);
-      }
-    }
+    const priority = this.providerPriority();
+    const errors: string[] = [];
 
-    // Fall back to Scite
-    if (this.scite.isAvailable()) {
+    for (const name of priority) {
+      const client = this.clientFor(name);
+      if (!client.isAvailable()) {
+        errors.push(`${name}: unavailable`);
+        continue;
+      }
       try {
-        logger.info(`Scite: falling back for academic search ("${toolName}")`);
-        return await this.scite.callTool(toolName, args);
+        if (name !== priority[0]) {
+          logger.info(`${name}: falling back for academic search ("${toolName}")`);
+        }
+        return await client.callTool(toolName, args);
       } catch (err) {
-        logger.warn(`Scite fallback also failed: ${(err as Error).message}`);
+        const msg = `${name}: ${(err as Error).message}`;
+        logger.warn(`Academic search call failed — ${msg}`);
+        errors.push(msg);
       }
     }
 
     throw new Error(
-      "Academic search unavailable — both Consensus and Scite are down or not authenticated."
+      `Academic search unavailable — tried ${priority.join(" → ")}. Errors: ${errors.join("; ")}`
     );
   }
 
   isConsensusAvailable(): boolean {
-    return this.consensus.isAvailable() || this.scite.isAvailable();
+    return this.providerPriority().some((name) => this.clientFor(name).isAvailable());
   }
 
   isSciteAvailable(): boolean {
