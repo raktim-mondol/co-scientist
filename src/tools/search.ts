@@ -14,6 +14,38 @@ export interface SearchResult {
   citationCount?: number;
 }
 
+export interface ExtractedPage {
+  url: string;
+  title: string;
+  publishedDate?: string;
+  content: string;
+}
+
+/** Pure mapper from parallel-web ExtractResult-shaped rows to ExtractedPage. */
+export function parseExtractResults(
+  results: Array<{
+    url: string;
+    title?: string | null;
+    publish_date?: string | null;
+    excerpts?: string[] | null;
+    full_content?: string | null;
+  }>,
+  maxCharsPerPage: number
+): ExtractedPage[] {
+  const pages: ExtractedPage[] = [];
+  for (const r of results) {
+    const content = (r.full_content?.trim() || (r.excerpts ?? []).join("\n\n").trim());
+    if (!content) continue;
+    pages.push({
+      url: r.url,
+      title: r.title?.trim() || r.url,
+      publishedDate: r.publish_date ?? undefined,
+      content: content.slice(0, maxCharsPerPage),
+    });
+  }
+  return pages;
+}
+
 export type SearchMode = "academic" | "web" | "auto";
 
 // ── In-process dedup cache ───────────────────────────────────────────────────
@@ -323,6 +355,36 @@ export class SearchTool {
       seen.add(key);
       return true;
     });
+  }
+
+  /**
+   * Fetch and clean page contents via Parallel AI /v1/extract.
+   * Used by LiteratureResearchAgent to read sources (deep evidence pipeline).
+   * Returns [] (never throws) when the key is missing or the call fails.
+   */
+  async extractPages(
+    urls: string[],
+    objective: string,
+    options: { maxCharsPerPage?: number } = {}
+  ): Promise<ExtractedPage[]> {
+    if (urls.length === 0) return [];
+    const maxCharsPerPage = options.maxCharsPerPage ?? 40_000;
+    const client = getParallelClient();
+    if (!client) {
+      logger.warn("[Search:Extract] skipped — PARALLEL_AI_API_KEY not set");
+      return [];
+    }
+    try {
+      logger.info(`[Search:Extract] reading ${urls.length} page(s)`);
+      const response = await client.extract({ urls, objective });
+      for (const err of response.errors ?? []) {
+        logger.warn(`[Search:Extract] ✗ ${JSON.stringify(err).slice(0, 200)}`);
+      }
+      return parseExtractResults(response.results ?? [], maxCharsPerPage);
+    } catch (error) {
+      logger.warn(`[Search:Extract] ✗ failed: ${(error as Error).message}`);
+      return [];
+    }
   }
 
   /** Format search results as readable text for LLM prompts */

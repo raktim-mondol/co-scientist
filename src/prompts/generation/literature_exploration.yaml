@@ -13,7 +13,7 @@ user: |
   KEY TERMS: {{keywords}}
   DESIRED ATTRIBUTES: {{attributes}}
 
-  RELEVANT LITERATURE:
+  RELEVANT LITERATURE (each item is labeled, e.g. [1] or [E1], with its source URL):
   {{literatureContext}}
 
   {{#if metaCritique}}
@@ -36,5 +36,5 @@ user: |
     "experimentalPlan": "Proposed experiments to test this hypothesis (150-300 words)",
     "noveltyAssessment": "Why this is novel compared to existing literature (100-200 words)",
     "keyAssumptions": ["assumption 1", "assumption 2", "assumption 3"],
-    "citations": ["url1", "url2"]
+    "citations": ["url of each literature item you actually relied on (copy the URL shown next to its label)"]
   }

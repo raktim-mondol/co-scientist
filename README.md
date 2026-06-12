@@ -15,13 +15,14 @@
 Co-Scientist is a **multi-agent AI system** inspired by the scientific method that autonomously generates, critiques, evolves, and ranks novel research hypotheses. Given a research goal in natural language, it:
 
 1. **Generates** diverse hypotheses via literature search, scientific debates, and assumption chaining
-2. **Reviews** each hypothesis for novelty, correctness, testability, and safety through a 3-stage pipeline
-3. **Tracks provenance** — fact-checks every claim against peer-reviewed literature before a hypothesis enters the tournament
-4. **Verifies citation integrity** — checks every cited paper actually exists against Crossref and applies a soft Glicko-2 penalty proportional to the fabrication rate
-5. **Ranks** hypotheses via a Glicko-2 tournament with multi-turn scientific debates and evidence-grounded judging, debiased against LLM position bias
-6. **Evolves** top-ranked hypotheses toward higher quality using 6 mutation strategies
-7. **Maps** a knowledge graph of concepts and lineage to steer generation toward unexplored areas
-8. **Synthesizes** a final research overview and generates a step-by-step experimental protocol for the top hypothesis
+2. **Grounds generation in actual sources** — a bounded DeepResearch-style loop (search → plan → read → bank) reads page/paper content before generating hypotheses, with a persistent cited evidence bank per session
+3. **Reviews** each hypothesis for novelty, correctness, testability, and safety through a 3-stage pipeline
+4. **Tracks provenance** — fact-checks every claim against peer-reviewed literature before a hypothesis enters the tournament
+5. **Verifies citation integrity** — checks every cited paper actually exists against Crossref and applies a soft Glicko-2 penalty proportional to the fabrication rate
+6. **Ranks** hypotheses via a Glicko-2 tournament with multi-turn scientific debates and evidence-grounded judging, debiased against LLM position bias
+7. **Evolves** top-ranked hypotheses toward higher quality using 6 mutation strategies
+8. **Maps** a knowledge graph of concepts and lineage to steer generation toward unexplored areas
+9. **Synthesizes** a final research overview and generates a step-by-step experimental protocol for the top hypothesis
 
 ---
 
@@ -287,6 +288,27 @@ K=48 is intentionally higher than tournament debate K=16–32 because empirical 
 
 ---
 
+## Deep Evidence Pipeline
+
+The `literature_exploration` generation strategy no longer relies solely on search-result snippets. A new **LiteratureResearchAgent** runs a bounded DeepResearch-style loop (search → plan → read → bank) that:
+
+1. **Searches** via the existing `SearchTool.multiSearch` (Parallel AI + Consensus)
+2. **Plans** each round with an LLM call that decides sufficiency, picks sources to read, and proposes new queries
+3. **Reads** actual page/paper content via `parallel-web` `/v1/extract`
+4. **Banks** goal-directed extractions (`{rationale, evidence, summary}`) in a `evidence_sources` table with a summary embedding
+
+Generation prompts receive a numbered `[E#]` evidence digest with source URLs, and citations map back through those markers. Every failure path falls back silently to the existing snippet-based behavior.
+
+**Config** (in `.env`):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DEEP_RESEARCH_MAX_ROUNDS` | 2 | Loop rounds (0 disables the pipeline) |
+| `DEEP_RESEARCH_URLS_PER_ROUND` | 3 | URLs to read per round |
+| `DEEP_RESEARCH_MAX_CONTENT_CHARS` | 40000 | Max chars per page sent to extractor |
+
+---
+
 ## Citation Integrity
 
 Provenance checks whether a hypothesis's *claims are supported*. Citation integrity is a separate, complementary check: it verifies that every cited paper **actually exists** — catching LLM-fabricated references (hallucinated DOIs and invented titles) before they lend false credibility to a hypothesis.
@@ -379,9 +401,10 @@ flowchart TD
     OUT(["Final Report"])
 
     DS(["DeepSeek LLM"])
-    PAI(["Parallel AI Search"])
+    PAI(["Parallel AI Search<br/>+ /v1/extract"])
     CON(["Consensus MCP"])
     XREF(["Crossref API"])
+    EVBANK[("Evidence Bank<br/>(evidence_sources)")]
 
     SUP["① Supervisor"]
     GEN["② Generation"]
@@ -406,6 +429,9 @@ flowchart TD
 
     PAI --> GEN
     CON --> GEN
+    PAI -->|extract pages| EVBANK
+    GEN -->|bank evidence| EVBANK
+    EVBANK -->|[E#] digest| GEN
     PAI --> REF
     CON --> REF
     CON --> PROV

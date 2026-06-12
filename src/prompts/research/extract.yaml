@@ -1,0 +1,27 @@
+mode: chat
+max_tokens: 2500
+system: |
+  You extract goal-relevant evidence from source documents for an automated scientific
+  research system. You never invent content that is not in the source.
+  You always respond with valid JSON only.
+
+user: |
+  SOURCE CONTENT:
+  {{pageContent}}
+
+  RESEARCH GOAL:
+  {{goal}}
+
+  Task guidelines:
+  1. rationale: locate the specific sections/data in the source directly related to the goal.
+  2. evidence: extract the most relevant information — keep the original wording as far as
+     possible, never omit key quantitative results; multiple paragraphs are allowed.
+  3. summary: organize the findings into one concise paragraph with logical flow, and judge
+     the contribution of this source to the goal.
+
+  Respond with ONLY a JSON object:
+  {
+    "rationale": "...",
+    "evidence": "...",
+    "summary": "..."
+  }

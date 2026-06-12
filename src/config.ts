@@ -36,6 +36,13 @@ const ConfigSchema = z.object({
     budgetTokens: z.number().int().nonnegative().default(500_000), // 0 = unlimited
   }),
 
+  // Deep evidence pipeline (DeepResearch-style literature loop)
+  research: z.object({
+    maxRounds: z.number().int().min(0).default(2),        // 0 disables the loop
+    urlsPerRound: z.number().int().positive().default(3),
+    maxContentChars: z.number().int().positive().default(40_000),
+  }),
+
   // Reproducibility
   seed: z.number().int().optional(),         // seeds all scheduling/sampling RNG
 
@@ -83,6 +90,17 @@ function loadConfig(): AppConfig {
         : undefined,
       budgetTokens: process.env.COMPUTE_BUDGET_TOKENS
         ? parseInt(process.env.COMPUTE_BUDGET_TOKENS, 10)
+        : undefined,
+    },
+    research: {
+      maxRounds: process.env.DEEP_RESEARCH_MAX_ROUNDS
+        ? parseInt(process.env.DEEP_RESEARCH_MAX_ROUNDS, 10)
+        : undefined,
+      urlsPerRound: process.env.DEEP_RESEARCH_URLS_PER_ROUND
+        ? parseInt(process.env.DEEP_RESEARCH_URLS_PER_ROUND, 10)
+        : undefined,
+      maxContentChars: process.env.DEEP_RESEARCH_MAX_CONTENT_CHARS
+        ? parseInt(process.env.DEEP_RESEARCH_MAX_CONTENT_CHARS, 10)
         : undefined,
     },
     seed,
