@@ -552,7 +552,11 @@ export class ContextStore {
       .where(eq(schema.embeddingCache.hypothesisId, hypothesisId))
       .get();
     if (!row) return null;
-    return Array.from(new Float32Array(row.embeddingBlob as Buffer));
+    // Reinterpret the raw bytes as float32 (NOT new Float32Array(buffer), which
+    // would copy each byte as a separate element). Respect byteOffset/length so
+    // a pooled Buffer slice decodes correctly.
+    const buf = row.embeddingBlob as Buffer;
+    return Array.from(new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4));
   }
 
   /**

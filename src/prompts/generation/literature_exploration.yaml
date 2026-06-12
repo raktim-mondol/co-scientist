@@ -21,6 +21,13 @@ user: |
   {{metaCritique}}
   {{/if}}
 
+  {{#if diversityContext}}
+  ALREADY-EXPLORED IDEAS (these hypotheses already occupy the idea space for this goal):
+  {{diversityContext}}
+
+  Propose a hypothesis that is MECHANISTICALLY DISTINCT from all of the above — a different pathway, level of analysis, or causal mechanism. Do NOT restate or marginally tweak them.
+  {{/if}}
+
   Instructions:
   1. Identify a knowledge gap or unexpected connection from the literature
   2. Formulate a specific, testable hypothesis that addresses this gap

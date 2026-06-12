@@ -1,6 +1,10 @@
 import { BaseAgent } from "./base.js";
 import { KnowledgeGraphAgent } from "./knowledgeGraph.js";
+<<<<<<< HEAD
 import { LiteratureResearchAgent, resolveCitationMarkers } from "./literatureResearch.js";
+=======
+import { isNearDuplicate, type NeighbourEmbedding, DIVERSITY_ANN_CANDIDATES } from "./diversity.js";
+>>>>>>> origin/main
 import type { Hypothesis } from "../models/hypothesis.js";
 import { buildRLEFMetaReviewBlock } from "../rlef/prompt-injection.js";
 
@@ -106,7 +110,36 @@ export class GenerationAgent extends BaseAgent {
             return;
           }
         }
-        this.memory.saveHypothesis({
+
+        // ── Diversity gate (#4): reject near-duplicates before they cost
+        // review/provenance/citation/seeding budget. Reuses the embedding we
+        // persist on save, so ProximityAgent need not re-embed later.
+        const candidateEmbedding = (await this.llm.embed([`${hypothesis.title}. ${hypothesis.summary}`]))[0];
+        const threshold = this.config.generation.diversityThreshold;
+        if (candidateEmbedding && threshold < 1) {
+          const neighbours: NeighbourEmbedding[] = this.memory
+            .findSimilarByVector(candidateEmbedding, DIVERSITY_ANN_CANDIDATES)
+            .map(({ hypothesisId }) => ({ id: hypothesisId, embedding: this.memory.getEmbedding(hypothesisId) }))
+            // Only compare against same-session hypotheses still in play (skip
+            // rejected, skip other sessions) that have a cached embedding.
+            .filter((n): n is NeighbourEmbedding => {
+              if (n.embedding === null) return false;
+              const h = this.memory.getHypothesis(n.id);
+              return h !== null && h.sessionId === sessionId && h.status !== "rejected";
+            });
+
+          const check = isNearDuplicate(candidateEmbedding, neighbours, threshold);
+          if (check.duplicate) {
+            this.log(
+              "info",
+              `Discarded near-duplicate hypothesis "${hypothesis.title}" ` +
+              `(cosine ${check.score.toFixed(3)} ≥ ${threshold} vs ${check.nearestId})`
+            );
+            return; // finally releases the inFlight slot
+          }
+        }
+
+        const saved = this.memory.saveHypothesis({
           sessionId,
           ...hypothesis,
           eloRating: 1200,
@@ -121,6 +154,7 @@ export class GenerationAgent extends BaseAgent {
           generationStrategy: strategy,
           generationRound: round,
         });
+        if (candidateEmbedding) this.memory.saveEmbedding(saved.id, candidateEmbedding);
         this.log("info", `Generated hypothesis: "${hypothesis.title}"`);
       } finally {
         this.inFlight.set(sessionId, Math.max(0, (this.inFlight.get(sessionId) ?? 1) - 1));
@@ -225,7 +259,15 @@ export class GenerationAgent extends BaseAgent {
       context = this.formatSearchContext(results);
     }
 
+<<<<<<< HEAD
     // Step 3: Generate hypothesis from literature
+=======
+    // Step 2: Generate hypothesis from literature
+    const diversityContext = existingHypotheses.length > 0
+      ? existingHypotheses.map((h, i) => `[${i + 1}] ${h.title}: ${h.summary}`).join("\n")
+      : "";
+
+>>>>>>> origin/main
     const { system, userPrompt } = this.loadPrompt("generation", "literature_exploration", {
       researchGoal: planConfig.parsedTitle,
       domain: planConfig.parsedDomain,
@@ -233,6 +275,7 @@ export class GenerationAgent extends BaseAgent {
       literatureContext: context,
       attributes: planConfig.hypothesisAttributes.join(", "),
       metaCritique: metaCritique ?? "No meta-review critique available yet.",
+      diversityContext,
     });
 
     const hypothesis = await this.callLLMForJSON<ParsedHypothesis>(system, userPrompt, {

@@ -49,11 +49,18 @@ const ConfigSchema = z.object({
     budgetTokens: z.number().int().nonnegative().default(500_000), // 0 = unlimited
   }),
 
+<<<<<<< HEAD
   // Deep evidence pipeline (DeepResearch-style literature loop)
   research: z.object({
     maxRounds: z.number().int().min(0).default(2),        // 0 disables the loop
     urlsPerRound: z.number().int().positive().default(3),
     maxContentChars: z.number().int().positive().default(40_000),
+=======
+  // Generation quality
+  generation: z.object({
+    // Save-time near-duplicate cosine threshold. 1 (or >1) disables the gate.
+    diversityThreshold: z.number().min(0).max(1).default(0.92),
+>>>>>>> origin/main
   }),
 
   // Reproducibility
@@ -111,6 +118,7 @@ function loadConfig(): AppConfig {
         ? parseInt(process.env.COMPUTE_BUDGET_TOKENS, 10)
         : undefined,
     },
+<<<<<<< HEAD
     research: {
       maxRounds: process.env.DEEP_RESEARCH_MAX_ROUNDS
         ? parseInt(process.env.DEEP_RESEARCH_MAX_ROUNDS, 10)
@@ -121,6 +129,15 @@ function loadConfig(): AppConfig {
       maxContentChars: process.env.DEEP_RESEARCH_MAX_CONTENT_CHARS
         ? parseInt(process.env.DEEP_RESEARCH_MAX_CONTENT_CHARS, 10)
         : undefined,
+=======
+    generation: {
+      diversityThreshold: (() => {
+        const v = process.env.GENERATION_DIVERSITY_THRESHOLD;
+        if (!v) return undefined;
+        const n = parseFloat(v);
+        return Number.isNaN(n) ? undefined : n;
+      })(),
+>>>>>>> origin/main
     },
     seed,
     logLevel: process.env.LOG_LEVEL,
