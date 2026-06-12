@@ -21,6 +21,10 @@ const ConfigSchema = z.object({
       url: z.string().url().default("https://mcp.consensus.app/mcp"),
       apiKey: z.string().optional(),
     }),
+    scite: z.object({
+      url: z.string().url().default("https://api.scite.ai/mcp"),
+      apiKey: z.string().optional(),       // static API key (skips OAuth)
+    }),
   }),
 
   // Database
@@ -73,6 +77,10 @@ function loadConfig(): AppConfig {
       consensus: {
         url: process.env.CONSENSUS_MCP_URL,
         apiKey: process.env.CONSENSUS_API_KEY,
+      },
+      scite: {
+        url: process.env.SCITE_MCP_URL,
+        apiKey: process.env.SCITE_API_KEY,
       },
     },
     db: {

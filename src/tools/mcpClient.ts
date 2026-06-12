@@ -5,6 +5,10 @@ import {
   getConsensusAccessToken,
   hasValidConsensusTokens,
 } from "./consensusAuth.js";
+import {
+  getSciteAccessToken,
+  hasValidSciteTokens,
+} from "./sciteAuth.js";
 
 export interface MCPToolResult {
   content: Array<{
@@ -124,11 +128,12 @@ class MCPServerClient {
   }
 }
 
-// ─── MCP Client Manager (Consensus only) ─────────────────────────────────────
+// ─── MCP Client Manager (Consensus + Scite fallback) ──────────────────────────
 // Parallel AI search is handled via the parallel-web REST SDK in search.ts.
 
 export class MCPClientManager {
   private consensus: MCPServerClient;
+  private scite: MCPServerClient;
   private initialized = false;
 
   constructor() {
@@ -137,84 +142,171 @@ export class MCPClientManager {
       "Consensus",
       config.tools.consensus.url
     );
+    this.scite = new MCPServerClient(
+      "Scite",
+      config.tools.scite.url
+    );
   }
 
   async initialize(): Promise<void> {
-    // If already initialized but Consensus is in a failed state and we now
-    // have a valid token, reset so we can reconnect with the fresh token.
-    if (this.initialized && !this.consensus.isAvailable() && hasValidConsensusTokens()) {
+    // Re-init individual providers if a previously-failed one now has fresh tokens
+    const needConsensusReconnect =
+      this.initialized && !this.consensus.isAvailable() && hasValidConsensusTokens();
+    const needSciteReconnect =
+      this.initialized && !this.scite.isAvailable() && hasValidSciteTokens();
+
+    if (needConsensusReconnect) {
       logger.info("Consensus: fresh token detected — resetting failed connection for retry.");
       this.consensus.reset();
-      this.initialized = false;
+    }
+    if (needSciteReconnect) {
+      logger.info("Scite: fresh token detected — resetting failed connection for retry.");
+      this.scite.reset();
     }
 
-    if (this.initialized) return;
+    // Skip if already fully initialized and no provider needs reconnection
+    if (this.initialized && !needConsensusReconnect && !needSciteReconnect) return;
 
     logger.info("Initializing MCP tool connections...");
 
-    // ── Consensus auth ──────────────────────────────────────────────────────
     const config = getConfig();
 
-    try {
-      let consensusToken: string;
+    // ── Consensus auth ──────────────────────────────────────────────────────
+    if (!this.consensus.isAvailable() || needConsensusReconnect) {
+      try {
+        let consensusToken: string;
 
-      if (config.tools.consensus.apiKey) {
-        logger.info("Consensus: using static API key (no OAuth needed).");
-        consensusToken = config.tools.consensus.apiKey;
-      } else {
-        if (hasValidConsensusTokens()) {
-          logger.info("Consensus: loading cached OAuth tokens.");
+        if (config.tools.consensus.apiKey) {
+          logger.info("Consensus: using static API key (no OAuth needed).");
+          consensusToken = config.tools.consensus.apiKey;
         } else {
-          logger.info(
-            "Consensus: no cached tokens found — starting OAuth 2.1 PKCE browser flow.\n" +
-            "  Tokens will be saved to ~/.co-scientist/consensus-oauth.json for future runs."
-          );
+          if (hasValidConsensusTokens()) {
+            logger.info("Consensus: loading cached OAuth tokens.");
+          } else {
+            logger.info(
+              "Consensus: no cached tokens found — starting OAuth 2.1 PKCE browser flow.\n" +
+              "  Tokens will be saved to ~/.co-scientist/consensus-oauth.json for future runs."
+            );
+          }
+          consensusToken = await getConsensusAccessToken();
         }
-        consensusToken = await getConsensusAccessToken();
-      }
 
-      this.consensus.setAuthHeader(consensusToken);
-    } catch (err) {
-      logger.warn(
-        `Consensus auth failed: ${(err as Error).message}. Academic search will be unavailable.`
-      );
+        this.consensus.setAuthHeader(consensusToken);
+      } catch (err) {
+        logger.warn(
+          `Consensus auth failed: ${(err as Error).message}.`
+        );
+      }
     }
 
-    const result = await Promise.allSettled([this.consensus.connect()]);
-    if (result[0].status === "rejected") {
-      logger.warn(`Consensus MCP server unavailable: ${result[0].reason}. Academic search will be degraded.`);
+    // ── Scite auth ──────────────────────────────────────────────────────────
+    if (!this.scite.isAvailable() || needSciteReconnect) {
+      try {
+        let sciteToken: string;
+
+        if (config.tools.scite.apiKey) {
+          logger.info("Scite: using static API key (no OAuth needed).");
+          sciteToken = config.tools.scite.apiKey;
+        } else {
+          if (hasValidSciteTokens()) {
+            logger.info("Scite: loading cached OAuth tokens.");
+          } else {
+            logger.info(
+              "Scite: no cached tokens found — starting OAuth 2.0 PKCE browser flow.\n" +
+              "  Tokens will be saved to ~/.co-scientist/scite-oauth.json for future runs."
+            );
+          }
+          sciteToken = await getSciteAccessToken();
+        }
+
+        this.scite.setAuthHeader(sciteToken);
+      } catch (err) {
+        logger.warn(
+          `Scite auth failed: ${(err as Error).message}.`
+        );
+      }
+    }
+
+    // Connect whichever need connecting. connect() is a no-op if already connected,
+    // but throws if permanently failed. Only attempt on providers known to be viable.
+    const connectPromises: Array<Promise<void>> = [];
+    if (this.consensus.isAvailable()) {
+      connectPromises.push(this.consensus.connect().catch((err) => {
+        logger.warn(`Consensus MCP server unavailable: ${(err as Error).message}.`);
+      }));
+    }
+    if (this.scite.isAvailable()) {
+      connectPromises.push(this.scite.connect().catch((err) => {
+        logger.warn(`Scite MCP server unavailable: ${(err as Error).message}.`);
+      }));
+    }
+    if (connectPromises.length > 0) {
+      await Promise.all(connectPromises);
+    }
+    if (!this.consensus.isConnected() && !this.scite.isConnected()) {
+      logger.warn("Both academic search providers are unavailable — academic search will be degraded.");
     }
 
     this.initialized = true;
   }
 
+  /**
+   * Call Consensus. If unavailable, falls back to Scite automatically.
+   */
   async callConsensus(
     toolName: string,
     args: Record<string, unknown>
   ): Promise<MCPToolResult> {
-    // Ensure initialized (and re-initialize if a fresh token is now available)
     await this.initialize();
-    if (!this.consensus.isAvailable()) {
-      throw new Error(
-        "Consensus unavailable — connection failed or auth was not completed. Check logs for details."
-      );
+
+    // Try Consensus first
+    if (this.consensus.isAvailable()) {
+      try {
+        return await this.consensus.callTool(toolName, args);
+      } catch (err) {
+        logger.warn(`Consensus call failed, trying Scite: ${(err as Error).message}`);
+      }
     }
-    return this.consensus.callTool(toolName, args);
+
+    // Fall back to Scite
+    if (this.scite.isAvailable()) {
+      try {
+        logger.info(`Scite: falling back for academic search ("${toolName}")`);
+        return await this.scite.callTool(toolName, args);
+      } catch (err) {
+        logger.warn(`Scite fallback also failed: ${(err as Error).message}`);
+      }
+    }
+
+    throw new Error(
+      "Academic search unavailable — both Consensus and Scite are down or not authenticated."
+    );
   }
 
   isConsensusAvailable(): boolean {
-    return this.consensus.isAvailable();
+    return this.consensus.isAvailable() || this.scite.isAvailable();
   }
 
-  async listAllTools(): Promise<{ consensus: string[] }> {
-    const [con] = await Promise.allSettled([this.consensus.listTools()]);
+  isSciteAvailable(): boolean {
+    return this.scite.isAvailable();
+  }
+
+  async listAllTools(): Promise<{ consensus: string[]; scite: string[] }> {
+    const [con, sci] = await Promise.allSettled([
+      this.consensus.listTools(),
+      this.scite.listTools(),
+    ]);
     return {
       consensus: con.status === "fulfilled" ? con.value : [],
+      scite: sci.status === "fulfilled" ? sci.value : [],
     };
   }
 
   async cleanup(): Promise<void> {
-    await this.consensus.disconnect();
+    await Promise.allSettled([
+      this.consensus.disconnect(),
+      this.scite.disconnect(),
+    ]);
     logger.debug("MCP connections closed");
   }
 }
