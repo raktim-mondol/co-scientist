@@ -1,10 +1,7 @@
 import { BaseAgent } from "./base.js";
 import { KnowledgeGraphAgent } from "./knowledgeGraph.js";
-<<<<<<< HEAD
 import { LiteratureResearchAgent, resolveCitationMarkers } from "./literatureResearch.js";
-=======
 import { isNearDuplicate, type NeighbourEmbedding, DIVERSITY_ANN_CANDIDATES } from "./diversity.js";
->>>>>>> origin/main
 import type { Hypothesis } from "../models/hypothesis.js";
 import { buildRLEFMetaReviewBlock } from "../rlef/prompt-injection.js";
 
@@ -259,15 +256,11 @@ export class GenerationAgent extends BaseAgent {
       context = this.formatSearchContext(results);
     }
 
-<<<<<<< HEAD
-    // Step 3: Generate hypothesis from literature
-=======
-    // Step 2: Generate hypothesis from literature
+    // Step 3: Generate hypothesis from literature (with diversity context)
     const diversityContext = existingHypotheses.length > 0
       ? existingHypotheses.map((h, i) => `[${i + 1}] ${h.title}: ${h.summary}`).join("\n")
       : "";
 
->>>>>>> origin/main
     const { system, userPrompt } = this.loadPrompt("generation", "literature_exploration", {
       researchGoal: planConfig.parsedTitle,
       domain: planConfig.parsedDomain,
