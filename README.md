@@ -459,7 +459,7 @@ flowchart TD
     SCITE --> GEN
     PAI -->|extract pages| EVBANK
     GEN -->|bank evidence| EVBANK
-    EVBANK -->|[E#] digest| GEN
+    EVBANK -->|"E# digest"| GEN
     PAI --> REF
     CON --> REF
     SCITE --> REF
