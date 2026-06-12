@@ -233,6 +233,27 @@ export async function runMigrations() {
   db.run(sql`CREATE INDEX IF NOT EXISTS idx_reward_memory_embedding ON reward_memory(embedding_id)`);
   db.run(sql`CREATE INDEX IF NOT EXISTS idx_reward_memory_reward ON reward_memory(computed_reward DESC)`);
 
+  // ── Evidence Bank (Deep Evidence Pipeline) ───────────────────────────────────
+  db.run(sql`
+    CREATE TABLE IF NOT EXISTS evidence_sources (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL REFERENCES sessions(id),
+      url TEXT NOT NULL,
+      title TEXT NOT NULL,
+      doi TEXT,
+      published_date TEXT,
+      goal TEXT NOT NULL,
+      rationale TEXT NOT NULL,
+      evidence TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      round INTEGER NOT NULL,
+      embedding_blob BLOB,
+      created_at INTEGER NOT NULL
+    )
+  `);
+  db.run(sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_evidence_session_url ON evidence_sources(session_id, url)`);
+  db.run(sql`CREATE INDEX IF NOT EXISTS idx_evidence_session ON evidence_sources(session_id)`);
+
   // ── Citation Verifications (Citation-Integrity) ──────────────────────────────
   db.run(sql`
     CREATE TABLE IF NOT EXISTS citation_verifications (

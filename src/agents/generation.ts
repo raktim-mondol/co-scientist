@@ -1,5 +1,6 @@
 import { BaseAgent } from "./base.js";
 import { KnowledgeGraphAgent } from "./knowledgeGraph.js";
+import { LiteratureResearchAgent, resolveCitationMarkers } from "./literatureResearch.js";
 import { isNearDuplicate, type NeighbourEmbedding, DIVERSITY_ANN_CANDIDATES } from "./diversity.js";
 import type { Hypothesis } from "../models/hypothesis.js";
 import { buildRLEFMetaReviewBlock } from "../rlef/prompt-injection.js";
@@ -25,6 +26,7 @@ export class GenerationAgent extends BaseAgent {
   get agentName() { return "Generation"; }
 
   private kg = new KnowledgeGraphAgent();
+  private researcher = new LiteratureResearchAgent();
 
   // Tracks all search queries used so far per session to avoid repetition
   private usedQueries = new Map<string, Set<string>>();
@@ -239,11 +241,22 @@ export class GenerationAgent extends BaseAgent {
 
     this.log("info", `Search queries: ${queries.join(" | ")}`);
 
-    // Step 2: Search and generate hypothesis
-    const results = await this.search.multiSearch(queries, "auto");
-    const context = this.formatSearchContext(results);
+    // Step 2: Deep evidence loop (DeepResearch-style). Any failure → snippet fallback.
+    let context: string;
+    let researched: Awaited<ReturnType<LiteratureResearchAgent["research"]>> = null;
+    try {
+      researched = await this.researcher.research(sessionId, planConfig.parsedTitle, queries);
+    } catch (err) {
+      this.log("warn", `Deep research failed — falling back to snippets: ${(err as Error).message}`);
+    }
+    if (researched) {
+      context = researched.digest;
+    } else {
+      const results = await this.search.multiSearch(queries, "auto");
+      context = this.formatSearchContext(results);
+    }
 
-    // Step 2: Generate hypothesis from literature
+    // Step 3: Generate hypothesis from literature (with diversity context)
     const diversityContext = existingHypotheses.length > 0
       ? existingHypotheses.map((h, i) => `[${i + 1}] ${h.title}: ${h.summary}`).join("\n")
       : "";
@@ -258,10 +271,14 @@ export class GenerationAgent extends BaseAgent {
       diversityContext,
     });
 
-    return this.callLLMForJSON<ParsedHypothesis>(system, userPrompt, {
+    const hypothesis = await this.callLLMForJSON<ParsedHypothesis>(system, userPrompt, {
       mode: "chat",
       maxTokens: 6000,
     });
+    if (hypothesis && researched) {
+      hypothesis.citations = resolveCitationMarkers(hypothesis.citations ?? [], researched.sources);
+    }
+    return hypothesis;
   }
 
   // ─── Strategy: Scientific Debate ──────────────────────────────────────────

@@ -21,6 +21,19 @@ const ConfigSchema = z.object({
       url: z.string().url().default("https://mcp.consensus.app/mcp"),
       apiKey: z.string().optional(),
     }),
+    scite: z.object({
+      url: z.string().url().default("https://api.scite.ai/mcp"),
+      apiKey: z.string().optional(),       // static API key (skips OAuth)
+    }),
+    // Priority-ordered academic search providers. Comma-separated:
+    // "consensus,scite" (default), "scite,consensus", "consensus", "scite".
+    academicSearchProviders: z.string().default("consensus,scite"),
+
+    // How to use the provider list:
+    //   priority — try in order, first success wins (default)
+    //   parallel — call all configured providers, merge results
+    //   fallback — try first; only use next if first returns zero results or errors
+    academicSearchMode: z.enum(["priority", "parallel", "fallback"]).default("priority"),
   }),
 
   // Database
@@ -34,6 +47,13 @@ const ConfigSchema = z.object({
     maxHypotheses: z.number().int().positive().default(5),
     maxTournamentRounds: z.number().int().positive().default(100),
     budgetTokens: z.number().int().nonnegative().default(500_000), // 0 = unlimited
+  }),
+
+  // Deep evidence pipeline (DeepResearch-style literature loop)
+  research: z.object({
+    maxRounds: z.number().int().min(0).default(2),        // 0 disables the loop
+    urlsPerRound: z.number().int().positive().default(3),
+    maxContentChars: z.number().int().positive().default(40_000),
   }),
 
   // Generation quality
@@ -73,6 +93,12 @@ function loadConfig(): AppConfig {
         url: process.env.CONSENSUS_MCP_URL,
         apiKey: process.env.CONSENSUS_API_KEY,
       },
+      scite: {
+        url: process.env.SCITE_MCP_URL,
+        apiKey: process.env.SCITE_API_KEY,
+      },
+      academicSearchProviders: process.env.ACADEMIC_SEARCH_PROVIDERS,
+      academicSearchMode: process.env.ACADEMIC_SEARCH_MODE,
     },
     db: {
       path: process.env.DB_PATH,
@@ -89,6 +115,17 @@ function loadConfig(): AppConfig {
         : undefined,
       budgetTokens: process.env.COMPUTE_BUDGET_TOKENS
         ? parseInt(process.env.COMPUTE_BUDGET_TOKENS, 10)
+        : undefined,
+    },
+    research: {
+      maxRounds: process.env.DEEP_RESEARCH_MAX_ROUNDS
+        ? parseInt(process.env.DEEP_RESEARCH_MAX_ROUNDS, 10)
+        : undefined,
+      urlsPerRound: process.env.DEEP_RESEARCH_URLS_PER_ROUND
+        ? parseInt(process.env.DEEP_RESEARCH_URLS_PER_ROUND, 10)
+        : undefined,
+      maxContentChars: process.env.DEEP_RESEARCH_MAX_CONTENT_CHARS
+        ? parseInt(process.env.DEEP_RESEARCH_MAX_CONTENT_CHARS, 10)
         : undefined,
     },
     generation: {

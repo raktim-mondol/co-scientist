@@ -204,6 +204,26 @@ export const rewardMemory = sqliteTable("reward_memory", {
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
 
+// ─── Evidence Bank (Deep Evidence Pipeline) ───────────────────────────────────
+// Goal-directed extractions from visited sources. Deduped by (sessionId, url).
+export const evidenceSources = sqliteTable("evidence_sources", {
+  id: text("id").primaryKey(),
+  sessionId: text("session_id").notNull().references(() => sessions.id),
+  url: text("url").notNull(),
+  title: text("title").notNull(),
+  doi: text("doi"),
+  publishedDate: text("published_date"),
+  goal: text("goal").notNull(),
+  rationale: text("rationale").notNull(),
+  evidence: text("evidence").notNull(),
+  summary: text("summary").notNull(),
+  round: integer("round").notNull(),
+  embeddingBlob: blob("embedding_blob"), // Float32Array of summary embedding (nullable)
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+}, (t) => [
+  uniqueIndex("idx_evidence_session_url").on(t.sessionId, t.url),
+]);
+
 // ─── Citation Verifications (Citation-Integrity) ─────────────────────────────
 // Existence check for each free-text entry in hypotheses.citationsJson, resolved
 // against Crossref. Distinct from claim_citations (which checks whether claims

@@ -8,6 +8,8 @@ import type { CoScientistSession, SessionStats } from "../models/session.js";
 import type { ResearchGoal, ResearchPlanConfig } from "../models/researchGoal.js";
 import type { AgentTask } from "../models/agentTask.js";
 import type { ExperimentalFeedback } from "../models/feedback.js";
+import type { EvidenceSource } from "../models/evidence.js";
+import { cosineSimilarity } from "../util/vector.js";
 import { logger } from "../config.js";
 
 export class ContextStore {
@@ -92,6 +94,7 @@ export class ContextStore {
     this.db.delete(schema.kgEdges).where(eq(schema.kgEdges.sessionId, id)).run();
     this.db.delete(schema.kgNodes).where(eq(schema.kgNodes.sessionId, id)).run();
     this.db.delete(schema.proximityEdges).where(eq(schema.proximityEdges.sessionId, id)).run();
+    this.db.delete(schema.evidenceSources).where(eq(schema.evidenceSources.sessionId, id)).run();
     this.db.delete(schema.tournamentMatches).where(eq(schema.tournamentMatches.sessionId, id)).run();
     this.db.delete(schema.hypotheses).where(eq(schema.hypotheses.sessionId, id)).run();
     this.db.delete(schema.agentTasks).where(eq(schema.agentTasks.sessionId, id)).run();
@@ -715,6 +718,93 @@ export class ContextStore {
     return Number(row?.count ?? 0) > 0;
   }
 
+  // ─── Evidence Bank (Deep Evidence Pipeline) ──────────────────────────────────
+
+  /** Upsert by (sessionId, url). Optionally stores the summary embedding. */
+  saveEvidence(
+    ev: Omit<EvidenceSource, "id" | "createdAt">,
+    embedding?: number[]
+  ): EvidenceSource {
+    const id = uuidv4();
+    const now = new Date();
+    const embeddingBlob = embedding
+      ? Buffer.from(new Float32Array(embedding).buffer)
+      : null;
+
+    this.db.insert(schema.evidenceSources).values({
+      id,
+      sessionId: ev.sessionId,
+      url: ev.url,
+      title: ev.title,
+      doi: ev.doi ?? null,
+      publishedDate: ev.publishedDate ?? null,
+      goal: ev.goal,
+      rationale: ev.rationale,
+      evidence: ev.evidence,
+      summary: ev.summary,
+      round: ev.round,
+      embeddingBlob,
+      createdAt: now,
+    }).onConflictDoUpdate({
+      target: [schema.evidenceSources.sessionId, schema.evidenceSources.url],
+      set: {
+        title: ev.title,
+        doi: ev.doi ?? null,
+        publishedDate: ev.publishedDate ?? null,
+        goal: ev.goal,
+        rationale: ev.rationale,
+        evidence: ev.evidence,
+        summary: ev.summary,
+        round: ev.round,
+        embeddingBlob,
+        createdAt: now,
+      },
+    }).run();
+
+    // Re-read so upserts return the surviving row's id
+    const row = this.db.select().from(schema.evidenceSources)
+      .where(and(
+        eq(schema.evidenceSources.sessionId, ev.sessionId),
+        eq(schema.evidenceSources.url, ev.url),
+      )).get()!;
+    return this._rowToEvidence(row);
+  }
+
+  getEvidenceBySession(sessionId: string): EvidenceSource[] {
+    const rows = this.db.select().from(schema.evidenceSources)
+      .where(eq(schema.evidenceSources.sessionId, sessionId))
+      .orderBy(desc(schema.evidenceSources.createdAt))
+      .all();
+    return rows.map((r) => this._rowToEvidence(r));
+  }
+
+  hasVisitedUrl(sessionId: string, url: string): boolean {
+    const row = this.db.select({ id: schema.evidenceSources.id })
+      .from(schema.evidenceSources)
+      .where(and(
+        eq(schema.evidenceSources.sessionId, sessionId),
+        eq(schema.evidenceSources.url, url),
+      )).get();
+    return !!row;
+  }
+
+  /** Top-k evidence rows by cosine similarity of stored embeddings (TS-side; row counts are small). */
+  getRelevantEvidence(sessionId: string, embedding: number[], k: number): EvidenceSource[] {
+    const rows = this.db.select().from(schema.evidenceSources)
+      .where(eq(schema.evidenceSources.sessionId, sessionId))
+      .all();
+    return rows
+      .filter((r) => r.embeddingBlob != null)
+      .map((r) => {
+        const buf = r.embeddingBlob as Buffer;
+        const vec = Array.from(new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4));
+        return { row: r, score: cosineSimilarity(embedding, vec) };
+      })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, k)
+      .map(({ row }) => this._rowToEvidence(row));
+  }
+
   // ─── Citation Verifications (Citation-Integrity) ──────────────────────────
 
   saveCitationVerifications(
@@ -874,6 +964,23 @@ export class ContextStore {
   }
 
   // ─── Private helpers ──────────────────────────────────────────────────────
+
+  private _rowToEvidence(r: typeof schema.evidenceSources.$inferSelect): EvidenceSource {
+    return {
+      id: r.id,
+      sessionId: r.sessionId,
+      url: r.url,
+      title: r.title,
+      doi: r.doi ?? undefined,
+      publishedDate: r.publishedDate ?? undefined,
+      goal: r.goal,
+      rationale: r.rationale,
+      evidence: r.evidence,
+      summary: r.summary,
+      round: r.round,
+      createdAt: r.createdAt,
+    };
+  }
 
   private _rowToSession(row: typeof schema.sessions.$inferSelect): CoScientistSession {
     return {

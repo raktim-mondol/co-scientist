@@ -1,22 +1,11 @@
 import { BaseAgent } from "./base.js";
+import { cosineSimilarity } from "../util/vector.js";
 
 // all-MiniLM-L6-v2 produces 384-dimensional vectors normalised to unit length,
 // so cosine similarity = 1 - (L2 distance² / 2).  sqlite-vec reports L2 distance.
 function l2DistanceToCosine(l2: number): number {
   // cos_sim = 1 - (l2² / 2)  for unit-norm vectors
   return 1 - (l2 * l2) / 2;
-}
-
-function cosineSimilarity(a: number[], b: number[]): number {
-  if (a.length !== b.length || a.length === 0) return 0;
-  let dot = 0, normA = 0, normB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
-  }
-  const denom = Math.sqrt(normA) * Math.sqrt(normB);
-  return denom === 0 ? 0 : dot / denom;
 }
 
 const DUPLICATE_THRESHOLD = 0.92;
