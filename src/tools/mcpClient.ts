@@ -283,8 +283,11 @@ export class MCPClientManager {
   }
 
   /**
-   * Call the academic search provider(s) in configured priority order.
-   * Tries each provider; returns the first successful result.
+   * Call the academic search provider(s) according to the configured mode:
+   *
+   *   priority — try in order, first success wins (default)
+   *   parallel — call all configured providers, merge results
+   *   fallback — try first; only use next if first returns zero results or errors
    */
   async callConsensus(
     toolName: string,
@@ -293,6 +296,23 @@ export class MCPClientManager {
     await this.initialize();
 
     const priority = this.providerPriority();
+    const mode = getConfig().tools.academicSearchMode;
+
+    if (mode === "parallel") {
+      return this._callParallel(toolName, args, priority);
+    }
+    if (mode === "fallback") {
+      return this._callFallback(toolName, args, priority);
+    }
+    return this._callPriority(toolName, args, priority);
+  }
+
+  /** Priority mode: try each provider in order, return first success. */
+  private async _callPriority(
+    toolName: string,
+    args: Record<string, unknown>,
+    priority: Array<"consensus" | "scite">
+  ): Promise<MCPToolResult> {
     const errors: string[] = [];
 
     for (const name of priority) {
@@ -306,6 +326,105 @@ export class MCPClientManager {
           logger.info(`${name}: falling back for academic search ("${toolName}")`);
         }
         return await client.callTool(toolName, args);
+      } catch (err) {
+        const msg = `${name}: ${(err as Error).message}`;
+        logger.warn(`Academic search call failed — ${msg}`);
+        errors.push(msg);
+      }
+    }
+
+    throw new Error(
+      `Academic search unavailable — tried ${priority.join(" → ")}. Errors: ${errors.join("; ")}`
+    );
+  }
+
+  /** Parallel mode: call all configured providers simultaneously, merge results. */
+  private async _callParallel(
+    toolName: string,
+    args: Record<string, unknown>,
+    priority: Array<"consensus" | "scite">
+  ): Promise<MCPToolResult> {
+    interface ProviderResult {
+      name: string;
+      content: MCPToolResult["content"];
+    }
+
+    const calls = priority
+      .filter((name) => this.clientFor(name).isAvailable())
+      .map(async (name): Promise<ProviderResult | null> => {
+        try {
+          const result = await this.clientFor(name).callTool(toolName, args);
+          logger.info(`${name}: returned results for ("${toolName}")`);
+          return { name, content: result.content };
+        } catch (err) {
+          logger.warn(`${name}: call failed in parallel mode — ${(err as Error).message}`);
+          return null;
+        }
+      });
+
+    if (calls.length === 0) {
+      throw new Error("Academic search unavailable — no configured providers are available.");
+    }
+
+    const settled = await Promise.all(calls);
+    const successes = settled.filter((r): r is ProviderResult => r !== null);
+
+    if (successes.length === 0) {
+      throw new Error(
+        `Academic search unavailable — all ${priority.join(", ")} calls failed in parallel mode.`
+      );
+    }
+
+    // Merge: concatenate all content arrays, prefix each provider's text blocks
+    const mergedContent: MCPToolResult["content"] = [];
+    for (const { name, content } of successes) {
+      for (const block of content) {
+        if (block.type === "text" && block.text) {
+          mergedContent.push({
+            type: "text",
+            text: `[${name}]\n${block.text}`,
+          });
+        } else {
+          mergedContent.push(block);
+        }
+      }
+    }
+
+    logger.info(
+      `Parallel search: ${successes.length}/${priority.length} provider(s) succeeded (${successes.map((s) => s.name).join(", ")})`
+    );
+    return { content: mergedContent };
+  }
+
+  /** Fallback mode: try first; only use next if first returns zero results or errors. */
+  private async _callFallback(
+    toolName: string,
+    args: Record<string, unknown>,
+    priority: Array<"consensus" | "scite">
+  ): Promise<MCPToolResult> {
+    const errors: string[] = [];
+
+    for (let i = 0; i < priority.length; i++) {
+      const name = priority[i];
+      const client = this.clientFor(name);
+      if (!client.isAvailable()) {
+        errors.push(`${name}: unavailable`);
+        continue;
+      }
+      try {
+        if (i > 0) {
+          logger.info(`${name}: falling back for academic search ("${toolName}")`);
+        }
+        const result = await client.callTool(toolName, args);
+
+        // Check if the result has any substantive text content
+        const hasContent = result.content?.some(
+          (b) => b.type === "text" && (b.text?.trim() ?? "").length > 0
+        );
+        if (hasContent) return result;
+
+        logger.info(`${name}: returned empty results, trying next provider.`);
+        errors.push(`${name}: empty results`);
       } catch (err) {
         const msg = `${name}: ${(err as Error).message}`;
         logger.warn(`Academic search call failed — ${msg}`);

@@ -28,6 +28,12 @@ const ConfigSchema = z.object({
     // Priority-ordered academic search providers. Comma-separated:
     // "consensus,scite" (default), "scite,consensus", "consensus", "scite".
     academicSearchProviders: z.string().default("consensus,scite"),
+
+    // How to use the provider list:
+    //   priority — try in order, first success wins (default)
+    //   parallel — call all configured providers, merge results
+    //   fallback — try first; only use next if first returns zero results or errors
+    academicSearchMode: z.enum(["priority", "parallel", "fallback"]).default("priority"),
   }),
 
   // Database
@@ -86,6 +92,7 @@ function loadConfig(): AppConfig {
         apiKey: process.env.SCITE_API_KEY,
       },
       academicSearchProviders: process.env.ACADEMIC_SEARCH_PROVIDERS,
+      academicSearchMode: process.env.ACADEMIC_SEARCH_MODE,
     },
     db: {
       path: process.env.DB_PATH,
