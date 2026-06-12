@@ -429,11 +429,12 @@ flowchart TD
     DS(["DeepSeek LLM"])
     PAI(["Parallel AI Search<br/>+ /v1/extract"])
     CON(["Consensus MCP"])
+    SCITE(["Scite MCP<br/>(fallback)"])
     XREF(["Crossref API"])
     EVBANK[("Evidence Bank<br/>(evidence_sources)")]
 
     SUP["① Supervisor"]
-    GEN["② Generation<br/>(save-time diversity gate)"]
+    GEN["② Generation<br/>(deep evidence · diversity gate)"]
     REF["③ Reflection"]
     PROV["④ Provenance"]
     CITE["⑤ Citation Integrity<br/>(Crossref · soft Glicko-2 penalty)"]
@@ -455,15 +456,20 @@ flowchart TD
 
     PAI --> GEN
     CON --> GEN
+    SCITE --> GEN
     PAI -->|extract pages| EVBANK
     GEN -->|bank evidence| EVBANK
     EVBANK -->|[E#] digest| GEN
     PAI --> REF
     CON --> REF
+    SCITE --> REF
     CON --> PROV
+    SCITE --> PROV
     XREF --> CITE
     CON --> EVOL
+    SCITE --> EVOL
     CON --> DESIGN
+    SCITE --> DESIGN
 
     DS -.->|powers all agents| SUP & GEN & REF & PROV & RANK & EVOL & META & DESIGN
 
