@@ -59,6 +59,13 @@ PARALLEL_AI_API_KEY=your_token_here
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-v4-pro
 CONSENSUS_MCP_URL=https://mcp.consensus.app/mcp
+
+# Scite MCP — academic search fallback (OAuth PKCE, no key required)
+# SCITE_MCP_URL=https://api.scite.ai/mcp
+# SCITE_API_KEY=your_scite_api_key_here     # static key (skips OAuth)
+# ACADEMIC_SEARCH_PROVIDERS=consensus,scite  # priority order
+# ACADEMIC_SEARCH_MODE=priority              # priority | parallel | fallback
+
 MAX_WORKERS=3
 MAX_HYPOTHESES=5
 MAX_TOURNAMENT_ROUNDS=100
@@ -310,6 +317,69 @@ Generation prompts receive a numbered `[E#]` evidence digest with source URLs, a
 | `DEEP_RESEARCH_MAX_ROUNDS` | 2 | Loop rounds (0 disables the pipeline) |
 | `DEEP_RESEARCH_URLS_PER_ROUND` | 3 | URLs to read per round |
 | `DEEP_RESEARCH_MAX_CONTENT_CHARS` | 40000 | Max chars per page sent to extractor |
+
+---
+
+## Scite MCP — Academic Search Fallback
+
+Co-Scientist uses **Consensus** as the primary academic search provider, but automatically falls back to **Scite** — a citation intelligence platform that indexes 1.2B+ citation statements and classifies them as supporting, mentioning, or contrasting. If Consensus is unreachable or returns no results, Scite takes over transparently so academic search never fails hard.
+
+### How the fallback works
+
+By default, academic search providers are tried in **priority order**: Consensus first, Scite as fallback. This is controlled by two env vars:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ACADEMIC_SEARCH_PROVIDERS` | `consensus,scite` | Comma-separated provider list, tried in order |
+| `ACADEMIC_SEARCH_MODE` | `priority` | Execution mode: `priority`, `parallel`, or `fallback` |
+
+**Execution modes:**
+
+| Mode | Behaviour |
+|------|-----------|
+| `priority` | Try providers in order — first success wins. Consensus first, Scite only if Consensus fails. |
+| `parallel` | Call all configured providers simultaneously and merge results — more comprehensive but uses more tokens. |
+| `fallback` | Try the first provider; only use the next if the first returns **zero results** or errors. |
+
+### Authentication
+
+Scite uses **OAuth 2.0 PKCE** — the same browser-based flow as Consensus:
+
+1. On first run, a browser window opens for Scite authorization.
+2. After you approve, tokens are cached at `~/.co-scientist/scite-oauth.json`.
+3. On subsequent runs, cached tokens are used and auto-refreshed when expired.
+
+No manual key management needed. If you have a paid Scite API key, set `SCITE_API_KEY` in `.env` to skip the OAuth flow entirely:
+
+```env
+SCITE_API_KEY=your_scite_api_key_here
+```
+
+### Provider configuration examples
+
+```env
+# Consensus only (no fallback)
+ACADEMIC_SEARCH_PROVIDERS=consensus
+
+# Scite only
+ACADEMIC_SEARCH_PROVIDERS=scite
+
+# Scite first, Consensus as fallback
+ACADEMIC_SEARCH_PROVIDERS=scite,consensus
+
+# Call both simultaneously for comprehensive coverage
+ACADEMIC_SEARCH_MODE=parallel
+```
+
+### Scite vs. Consensus
+
+| Feature | Consensus | Scite |
+|---------|-----------|-------|
+| **Focus** | Peer-reviewed papers with consensus analysis | Citation intelligence — supporting/contrasting statements |
+| **Coverage** | 200M+ papers, semantic search | 1.2B+ citation statements, Smart Citations |
+| **Best for** | Finding consensus on a research question | Understanding how a paper has been cited (supported/refuted) |
+| **Auth** | OAuth 2.1 PKCE | OAuth 2.0 PKCE |
+| **Role** | Primary academic search | Fallback / complementary |
 
 ---
 
