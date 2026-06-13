@@ -77,6 +77,10 @@ COMPUTE_BUDGET_TOKENS=500000
 
 # Reproducibility (optional) — seeds all scheduling/sampling RNG. Unset = non-deterministic.
 # SEED=42
+
+# Citation integrity — headless browser fallback for Cloudflare-blocked URLs (optional)
+# Requires: bun add playwright && npx playwright install chromium (~200MB one-time)
+# CITATION_HEADLESS_BROWSER=true
 ```
 
 ### 4. Link globally
@@ -409,13 +413,40 @@ GENERATION_DIVERSITY_THRESHOLD=0.92
 
 Provenance checks whether a hypothesis's *claims are supported*. Citation integrity is a separate, complementary check: it verifies that every cited paper **actually exists** — catching LLM-fabricated references (hallucinated DOIs and invented titles) before they lend false credibility to a hypothesis.
 
-After provenance, the **Citation-Integrity agent** resolves each citation against the [Crossref REST API](https://api.crossref.org) (no auth required) and classifies it:
+After provenance, the **Citation-Integrity agent** resolves each citation through a multi-step pipeline:
+
+| Step | Method | What it handles |
+|------|--------|-----------------|
+| **1** | DOI extracted directly from the citation string | Bare DOIs (`10.1038/abc`), DOI URLs (`doi.org/10.1038/abc`), DOIs embedded in publisher URLs |
+| **2a** | Raw `fetch()` the URL, parse HTML for `citation_doi` / `dc.identifier` / JSON-LD / body regex | Publisher pages with server-rendered metadata (Nature, PMC, Science) |
+| **2b** | Parallel AI `/v1/extract` (JS-rendered extract) | Cloudflare JS challenges, SPA-rendered pages (requires `PARALLEL_AI_API_KEY`) |
+| **2c** | Headless Chromium via Playwright (opt-in) | Cloudflare-protected pages when Parallel AI is unavailable or also blocked |
+| **3** | Crossref bibliographic title search | Free-text citations with no DOI or URL |
+
+The extracted DOI is resolved against the [Crossref REST API](https://api.crossref.org) (no auth required) and classified:
 
 | Status | Meaning |
 |--------|---------|
 | ✅ `verified` | DOI resolves, or a free-text citation matches a real paper title (token-set Dice ≥ 0.7) |
-| ⚠️ `unverified` | No confident match — or Crossref was unreachable (network failures fail safe, never block the pipeline) |
-| ❌ `fabricated` | DOI returns 404 — the paper does not exist |
+| ⚠️ `unverified` | No confident match, DOI extracted from a page but not in Crossref, or network failures (fails safe) |
+| ❌ `fabricated` | **User-provided** DOI returns 404 — the paper does not exist. Only applies to DOIs the user typed directly. |
+
+> **Important:** DOIs extracted from fetched pages (Steps 2a/2b/2c) that 404 on Crossref are marked **unverified**, not fabricated. A real publisher page containing a DOI-like identifier isn't fabrication — it's just not in Crossref (e.g., DataCite DOIs, non-DOI strings matching the regex).
+
+### Headless browser fallback (Step 2c)
+
+Many major academic publishers (Oxford Academic, Frontiers) protect their pages with Cloudflare JS challenges that block plain `fetch()`. When both raw fetch and Parallel AI extract fail, an optional **headless Chromium** can render the page with full JavaScript execution:
+
+```bash
+# Install Playwright + Chromium browser (~200MB, one-time)
+bun add playwright
+npx playwright install chromium
+
+# Enable in .env
+CITATION_HEADLESS_BROWSER=true
+```
+
+Playwright is lazy-loaded — zero startup cost unless Step 2c is actually triggered. It can handle non-interactive Cloudflare Turnstile challenges (JS execution + browser fingerprint) but cannot solve interactive CAPTCHAs (reCAPTCHA v2 checkbox, hCaptcha). Most academic publisher pages use only the non-interactive type.
 
 ### Soft Glicko-2 penalty
 
