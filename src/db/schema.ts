@@ -224,6 +224,25 @@ export const evidenceSources = sqliteTable("evidence_sources", {
   uniqueIndex("idx_evidence_session_url").on(t.sessionId, t.url),
 ]);
 
+// ─── Safety Assessments (Safety Gate) ────────────────────────────────────────
+// Dual-use / harm screen for each hypothesis. When `decision = 'quarantined'`
+// the hypothesis status is set to `quarantined` and it is withheld from the
+// tournament until a human releases it (which records overriddenBy/reason).
+export const safetyAssessments = sqliteTable("safety_assessments", {
+  id: text("id").primaryKey(),
+  hypothesisId: text("hypothesis_id").notNull().references(() => hypotheses.id),
+  sessionId: text("session_id").notNull().references(() => sessions.id),
+  severity: text("severity").notNull(),          // 'none' | 'low' | 'moderate' | 'high'
+  category: text("category").notNull().default("none"),
+  reasoning: text("reasoning").notNull().default(""),
+  decision: text("decision").notNull(),          // 'allowed' | 'quarantined'
+  threshold: text("threshold").notNull(),        // quarantine threshold in force at decision time
+  overriddenBy: text("overridden_by"),           // set when a human releases the quarantine
+  overrideReason: text("override_reason"),
+  overriddenAt: integer("overridden_at", { mode: "timestamp" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});
+
 // ─── Citation Verifications (Citation-Integrity) ─────────────────────────────
 // Existence check for each free-text entry in hypotheses.citationsJson, resolved
 // against Crossref. Distinct from claim_citations (which checks whether claims

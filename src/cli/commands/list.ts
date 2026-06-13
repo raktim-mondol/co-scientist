@@ -184,6 +184,18 @@ export async function resultsCommand(
 
   console.log(`\n${chalk.gray(`Showing ${hypotheses.length} hypotheses`)}`);
 
+  // Safety gate: hypotheses withheld from the tournament
+  const quarantined = memory.getQuarantinedHypotheses(sessionId);
+  if (quarantined.length > 0) {
+    console.log(chalk.bold.red(`\n🛡  Withheld by safety gate (${quarantined.length})`));
+    for (const h of quarantined) {
+      const a = memory.getLatestSafetyAssessment(h.id);
+      const sev = (a?.severity ?? "unknown").toUpperCase();
+      console.log(`  ${chalk.red(`[${sev}]`)} ${chalk.white(h.title)} ${chalk.gray(`(${a?.category ?? "—"})`)}`);
+    }
+    console.log(chalk.gray(`  Review / release:  co-scientist safety ${sessionId}`));
+  }
+
   // Per-agent token breakdown
   const tokensByAgent = session.stats.tokensByAgent ?? {};
   const agentEntries = Object.entries(tokensByAgent).sort((a, b) => b[1] - a[1]);

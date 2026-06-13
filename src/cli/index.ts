@@ -15,6 +15,7 @@ import { designCommand } from "./commands/design.js";
 import { graphCommand } from "./commands/graph.js";
 import { compareCommand } from "./commands/compare.js";
 import { diffCommand } from "./commands/diff.js";
+import { safetyCommand } from "./commands/safety.js";
 
 const program = new Command();
 
@@ -130,6 +131,19 @@ program
   .description("Show lineage and diff of an evolved hypothesis vs its parent")
   .action(diffCommand);
 
+program
+  .command("safety <sessionId>")
+  .description(
+    "Inspect and manage hypotheses withheld by the safety gate\n" +
+    "  --release <id>   Release a quarantined hypothesis into the tournament\n" +
+    "  --reason <text>  Justification for the release (required with --release)\n" +
+    "  --by <name>      Who is authorising the release (default: operator)"
+  )
+  .option("--release <hypothesisId>", "Release a quarantined hypothesis (override)")
+  .option("--reason <text>", "Justification for the release (required with --release)")
+  .option("--by <name>", "Who is authorising the release", "operator")
+  .action(safetyCommand);
+
 program.action(() => {
   printBanner();
 
@@ -158,6 +172,8 @@ program.action(() => {
   console.log(sub(opt("--format text|dot|json") + "   " + opt("--output <path>")));
   console.log(`  ${cmd("diff")} ${arg("<sessionId> <hypothesisId>")}   Lineage & field diff vs parent`);
   console.log(`  ${cmd("compare")} ${arg("<sessionId> <id1> <id2>")}   Head-to-head match`);
+  console.log(`  ${cmd("safety")} ${arg("<sessionId>")}                 Review hypotheses withheld by the safety gate`);
+  console.log(sub(opt("--release <id>") + "  Override quarantine   " + opt("--reason <text>") + "  Justification"));
 
   console.log("\n" + c.bold.white("Feedback"));
   console.log(`  ${cmd("feedback")} ${arg("<sessionId>")} ${opt("--experimental")}   Empirical result ${dim("→ RLEF: updates Elo, injects into agents")}`);

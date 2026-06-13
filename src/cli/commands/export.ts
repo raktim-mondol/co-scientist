@@ -79,6 +79,13 @@ export async function exportCommand(
           })),
           citationIntegrity: memory.getCitationIntegrity(h.id),
           citationVerifications: memory.getCitationVerifications(h.id),
+          safetyAssessment: memory.getLatestSafetyAssessment(h.id),
+        })),
+        quarantined: memory.getQuarantinedHypotheses(sessionId).map((h) => ({
+          id: h.id,
+          title: h.title,
+          summary: h.summary,
+          safetyAssessment: memory.getLatestSafetyAssessment(h.id),
         })),
       },
       null,
@@ -227,6 +234,37 @@ export async function exportCommand(
 
       lines.push("---");
       lines.push("");
+    }
+
+    // Hypotheses withheld by the safety gate
+    const quarantined = memory.getQuarantinedHypotheses(sessionId);
+    if (quarantined.length > 0) {
+      lines.push(`## Withheld by Safety Gate`);
+      lines.push("");
+      lines.push(
+        `The following ${quarantined.length} hypothesis(es) were withheld from the tournament ` +
+        `because their assessed dual-use / harm severity met the configured threshold.`
+      );
+      lines.push("");
+      for (const h of quarantined) {
+        const a = memory.getLatestSafetyAssessment(h.id);
+        lines.push(`### [${(a?.severity ?? "unknown").toUpperCase()}] ${h.title}`);
+        lines.push("");
+        lines.push(`*Category: ${a?.category ?? "—"} | ID: \`${h.id}\`*`);
+        lines.push("");
+        if (a?.reasoning) {
+          lines.push(`**Safety rationale:** ${a.reasoning}`);
+          lines.push("");
+        }
+        lines.push(`**Summary:** ${h.summary}`);
+        lines.push("");
+        if (a?.overriddenBy) {
+          lines.push(`> Released by ${a.overriddenBy}: ${a.overrideReason ?? ""}`);
+          lines.push("");
+        }
+        lines.push("---");
+        lines.push("");
+      }
     }
 
     content = lines.join("\n");
