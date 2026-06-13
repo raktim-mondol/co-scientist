@@ -420,7 +420,51 @@ GENERATION_DIVERSITY_THRESHOLD=0.92
 
 Provenance checks whether a hypothesis's *claims are supported*. Citation integrity is a separate, complementary check: it verifies that every cited paper **actually exists** — catching LLM-fabricated references (hallucinated DOIs and invented titles) before they lend false credibility to a hypothesis.
 
-After provenance, the **Citation-Integrity agent** resolves each citation through a multi-step pipeline:
+After provenance, the **Citation-Integrity agent** resolves each citation through a cascading multi-step pipeline:
+
+```
+Citation string
+       │
+       ▼
+  ┌─────────┐    DOI found?    ┌──────────────┐
+  │ Step 1  │────────────────▶│ Crossref API  │──▶ verified / fabricated / unverified
+  │ Regex   │                  └──────────────┘
+  │ extract │
+  └────┬────┘   no DOI, but URL?
+       │
+       ▼
+  ┌─────────┐    DOI in meta?   ┌──────────────┐
+  │ Step 2a │────────────────▶│ Crossref API  │──▶ verified / unverified (page-sourced)
+  │ Raw     │    (citation_doi, └──────────────┘
+  │ fetch() │     dc.identifier,
+  │ + HTML  │     JSON-LD, body)
+  │ parse   │
+  └────┬────┘   raw fetch blocked (Cloudflare/SPA)?
+       │
+       ▼
+  ┌─────────┐    DOI in output? ┌──────────────┐
+  │ Step 2b │────────────────▶│ Crossref API  │──▶ verified / unverified (page-sourced)
+  │ Parallel│    (JS-rendered   └──────────────┘
+  │ AI      │     extract)
+  │ extract │
+  └────┬────┘   Parallel AI also blocked / unavailable?
+       │
+       ▼
+  ┌─────────┐    DOI in HTML?   ┌──────────────┐
+  │ Step 2c │────────────────▶│ Crossref API  │──▶ verified / unverified (page-sourced)
+  │ Headless│    (opt-in,       └──────────────┘
+  │ Chromium│     full JS exec)
+  │(Playwright)
+  └────┬────┘   no URL, or all URL steps failed?
+       │
+       ▼
+  ┌─────────┐   title match?   ┌──────────────┐
+  │ Step 3  │────────────────▶│ Crossref API  │──▶ verified (Dice ≥ 0.7) / unverified
+  │ Crossref│    bibliographic  └──────────────┘
+  │ title   │    search
+  │ search  │
+  └─────────┘
+```
 
 | Step | Method | What it handles |
 |------|--------|-----------------|
@@ -642,6 +686,7 @@ flowchart TD
     CON(["Consensus MCP"])
     SCITE(["Scite MCP<br/>(fallback)"])
     XREF(["Crossref API"])
+    HEADLESS(["Headless Chromium<br/>(Playwright · opt-in)"])
     EVBANK[("Evidence Bank<br/>(evidence_sources)")]
 
     SUP["① Supervisor"]
@@ -649,7 +694,7 @@ flowchart TD
     REF["③ Reflection<br/>(3-stage review pipeline)"]
     SAFE["④ Safety Gate<br/>(dual-use quarantine)"]
     PROV["⑤ Provenance"]
-    CITE["⑥ Citation Integrity<br/>(Crossref · soft Glicko-2 penalty)"]
+    CITE["⑥ Citation Integrity<br/>(4-step resolution<br/>· soft Glicko-2 penalty)"]
     RANK["⑦ Ranking<br/>(Glicko-2 Tournament<br/>· position-bias-robust judging)"]
 
     subgraph PROXVEC["Proximity + Vector Store"]
@@ -679,12 +724,14 @@ flowchart TD
     CON --> PROV
     SCITE --> PROV
     XREF --> CITE
+    PAI -->|extract pages| CITE
+    HEADLESS -->|JS-rendered HTML| CITE
     CON --> EVOL
     SCITE --> EVOL
     CON --> DESIGN
     SCITE --> DESIGN
 
-    DS -.->|powers all agents| SUP & GEN & REF & SAFE & PROV & RANK & EVOL & META & DESIGN
+    DS -.->|powers all agents| SUP & GEN & REF & SAFE & PROV & CITE & RANK & EVOL & META & DESIGN
 
     GEN -->|hypothesis| REF
     REF -->|passes initial review| SAFE
@@ -717,7 +764,10 @@ flowchart TD
     style DS       fill:#1565C0,color:#fff,stroke:#0D47A1
     style PAI      fill:#00695C,color:#fff,stroke:#004D40
     style CON      fill:#00695C,color:#fff,stroke:#004D40
+    style SCITE    fill:#00695C,color:#fff,stroke:#004D40
     style XREF     fill:#00695C,color:#fff,stroke:#004D40
+    style HEADLESS fill:#00695C,color:#fff,stroke:#004D40
+    style EVBANK   fill:#37474F,color:#fff,stroke:#263238
     style SUP      fill:#6A1B9A,color:#fff,stroke:#4A148C
     style META     fill:#6A1B9A,color:#fff,stroke:#4A148C
     style GEN      fill:#E65100,color:#fff,stroke:#BF360C
