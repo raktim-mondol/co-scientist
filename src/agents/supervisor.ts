@@ -127,6 +127,15 @@ export class SupervisorAgent extends BaseAgent {
         break;
       }
 
+      // Halt early if ALL search providers are dead (rate-limited, credits
+      // exhausted, auth expired). Without evidence-grounded search results,
+      // hypothesis generation produces hallucinated claims.
+      if (this.search.isSearchDead()) {
+        this.log("warn", this.search.getSearchDeathReason());
+        this.queue.cancelByType("generation");
+        break;
+      }
+
       // Compute sampling weights
       const weights = this.scheduler.computeWeights({
         totalHypotheses: stats.totalHypotheses,

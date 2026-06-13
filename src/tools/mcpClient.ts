@@ -90,6 +90,19 @@ class MCPServerClient {
     await this.connect();
     try {
       const result = await this.client!.callTool({ name: toolName, arguments: args });
+      // Detect application-level errors signaled via isError flag (e.g., Scite monthly limit).
+      // These are valid JSON-RPC responses that the SDK returns normally without throwing.
+      if (result.isError) {
+        const errText =
+          result.content
+            ?.filter(
+              (c): c is { type: "text"; text: string } =>
+                c.type === "text" && typeof c.text === "string" && c.text.length > 0
+            )
+            .map((c) => c.text)
+            .join("\n") || `${this.serverName} returned an error with no details`;
+        throw new Error(errText);
+      }
       return result as MCPToolResult;
     } catch (error) {
       logger.error(
@@ -327,7 +340,18 @@ export class MCPClientManager {
         if (name !== priority[0]) {
           logger.info(`${name}: falling back for academic search ("${toolName}")`);
         }
-        return await client.callTool(toolName, args);
+        const result = await client.callTool(toolName, args);
+        // Guard: if provider returns empty content, try next provider (defense-in-depth
+        // alongside the isError→throw check in callTool()).
+        const hasContent = result.content?.some(
+          (b) => b.type === "text" && (b.text?.trim() ?? "").length > 0
+        );
+        if (!hasContent) {
+          logger.warn(`${name}: returned empty results, trying next provider.`);
+          errors.push(`${name}: empty results`);
+          continue;
+        }
+        return result;
       } catch (err) {
         const msg = `${name}: ${(err as Error).message}`;
         logger.warn(`Academic search call failed — ${msg}`);
@@ -356,8 +380,13 @@ export class MCPClientManager {
       .map(async (name): Promise<ProviderResult | null> => {
         try {
           const result = await this.clientFor(name).callTool(toolName, args);
-          logger.info(`${name}: returned results for ("${toolName}")`);
-          return { name, content: result.content };
+          const hasContent = result.content?.some(
+            (b) => b.type === "text" && (b.text?.trim() ?? "").length > 0
+          );
+          if (hasContent) {
+            logger.info(`${name}: returned results for ("${toolName}")`);
+          }
+          return { name, content: hasContent ? result.content : [] };
         } catch (err) {
           logger.warn(`${name}: call failed in parallel mode — ${(err as Error).message}`);
           return null;

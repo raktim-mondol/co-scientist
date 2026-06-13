@@ -1,5 +1,11 @@
 import Parallel from "parallel-web";
 import type { WebSearchResult as ParallelWebSearchResult } from "parallel-web/resources/top-level.js";
+import {
+  AuthenticationError,
+  PermissionDeniedError,
+  RateLimitError,
+  APIConnectionError,
+} from "parallel-web";
 import { getMCPManager } from "./mcpClient.js";
 import { getConfig, logger } from "../config.js";
 
@@ -96,8 +102,95 @@ function getParallelClient(): Parallel | null {
   return _parallelClient;
 }
 
+/**
+ * Log a Parallel AI error with a specific, actionable message based on error type.
+ * Used by searchWeb, multiSearch, and extractPages to give users clear guidance.
+ *
+ * Returns a human-readable description of fatal errors (auth, credits) so
+ * callers can feed them into search-health tracking. Returns null for
+ * transient errors (rate-limit, network) or unknown error types.
+ */
+function _logParallelError(context: string, error: unknown): string | null {
+  if (error instanceof AuthenticationError) {
+    const msg = "Parallel AI: API key invalid or expired (check PARALLEL_AI_API_KEY)";
+    logger.warn(`[Search:${context}] ✗ ${msg}`);
+    return msg;
+  } else if (error instanceof PermissionDeniedError) {
+    const msg = "Parallel AI: API credits may be exhausted (check https://parallel.ai)";
+    logger.warn(`[Search:${context}] ✗ ${msg}`);
+    return msg;
+  } else if (error instanceof RateLimitError) {
+    logger.warn(
+      `[Search:${context}] ✗ rate limited — ${(error as Error).message}`
+    );
+    return null; // transient — may recover
+  } else if (error instanceof APIConnectionError) {
+    logger.warn(
+      `[Search:${context}] ✗ network connection failed — ${(error as Error).message}`
+    );
+    return null; // transient — may recover
+  } else {
+    logger.warn(
+      `[Search:${context}] ✗ failed: ${(error as Error).message}`
+    );
+    return null;
+  }
+}
+
 export class SearchTool {
   private mcpManager = getMCPManager();
+
+  // ── Search health tracking ─────────────────────────────────────────────────
+  // Tracks consecutive empty results to detect when all search providers are
+  // permanently unavailable (rate-limited, credits exhausted, auth expired).
+  // The supervisor checks isSearchDead() each iteration and halts the session
+  // if no provider can return results.
+  private _consecutiveEmptySearches = 0;
+  private _fatalErrors: string[] = [];
+
+  /** Call after every top-level search that returns results (or lack thereof). */
+  private _recordSearchOutcome(resultCount: number, fatalError?: string): void {
+    if (resultCount === 0) {
+      this._consecutiveEmptySearches++;
+      if (fatalError && !this._fatalErrors.includes(fatalError)) {
+        this._fatalErrors.push(fatalError);
+      }
+    } else {
+      this._consecutiveEmptySearches = 0;
+      this._fatalErrors = [];
+    }
+  }
+
+  /**
+   * Record a provider-level fatal error for the death-reason message
+   * WITHOUT incrementing the empty-search counter. Used when a higher-level
+   * search path (e.g. MCP → Parallel AI fallback) will separately track the
+   * final outcome so we don't double-count a single logical search attempt.
+   */
+  private _recordFatalError(msg: string): void {
+    if (!this._fatalErrors.includes(msg)) {
+      this._fatalErrors.push(msg);
+    }
+  }
+
+  /** True when every recent search attempt has returned zero results. */
+  isSearchDead(): boolean {
+    return this._consecutiveEmptySearches >= 5;
+  }
+
+  /** Human-readable explanation of why search is considered dead. */
+  getSearchDeathReason(): string {
+    const count = this._consecutiveEmptySearches;
+    if (this._fatalErrors.length > 0) {
+      return [
+        `All search providers have failed for ${count} consecutive queries.`,
+        ...this._fatalErrors.map((e) => `  • ${e}`),
+        "Session cannot produce evidence-grounded hypotheses — halting.",
+      ].join("\n");
+    }
+    return `No search results returned for ${count} consecutive queries — search may be unavailable.`;
+  }
+  // ───────────────────────────────────────────────────────────────────────────
 
   /**
    * Academic search via Consensus MCP — peer-reviewed papers.
@@ -115,10 +208,16 @@ export class SearchTool {
       try {
         const result = await this.mcpManager.callAcademicSearch("search", { query });
         const results = this._parseMCPResults(result.content, "consensus");
+        this._recordSearchOutcome(results.length); // success → reset dead counter
         return results;
       } catch (error) {
-        logger.warn(`[Search:${label}] ✗ failed for "${query}" — falling back to Parallel AI web: ${(error as Error).message}`);
-        return this.searchWeb(`academic research ${query}`, { maxResults, silent });
+        logger.warn(`[Search:${label}] ✗ ${(error as Error).message}`);
+        logger.warn(`[Search:${label}] ↳ falling back to Parallel AI web search`);
+        // Record MCP provider error for the death-reason message. Don't
+        // increment the empty-search counter here — searchWeb() (the fallback
+        // below) handles that, so a single logical search attempt counts once.
+        this._recordFatalError(`${label}: ${(error as Error).message}`);
+        return this.searchWeb(`academic research ${query}`, { maxResults, silent, _skipHealthTracking: true });
       }
     });
   }
@@ -132,7 +231,7 @@ export class SearchTool {
    */
   async searchWeb(
     query: string,
-    options: { maxResults?: number; objective?: string; silent?: boolean } = {}
+    options: { maxResults?: number; objective?: string; silent?: boolean; _skipHealthTracking?: boolean } = {}
   ): Promise<SearchResult[]> {
     const maxResults = options.maxResults ?? 10;
     const objective = options.objective ?? query;
@@ -144,6 +243,8 @@ export class SearchTool {
         logger.warn("[Search:ParallelAI] skipped — PARALLEL_AI_API_KEY not set");
         return [];
       }
+      let results: SearchResult[] = [];
+      let fatalError: string | undefined;
       try {
         const response = await client.search({
           mode: "advanced",
@@ -151,12 +252,18 @@ export class SearchTool {
           search_queries: [query],
           advanced_settings: { max_results: maxResults },
         });
-        const results = this._parseParallelResults(response.results ?? []);
-        return results;
+        results = this._parseParallelResults(response.results ?? []);
       } catch (error) {
-        logger.warn(`[Search:ParallelAI] ✗ failed for "${query}": ${(error as Error).message}`);
-        return [];
+        const err = _logParallelError("ParallelAI", error);
+        if (err) fatalError = err;
       }
+      // Track outcome only when searchWeb is the top-level caller (not an
+      // internal fallback from searchAcademic or multiSearch). Internal
+      // callers pass _skipHealthTracking: true to avoid double-counting.
+      if (!options._skipHealthTracking) {
+        this._recordSearchOutcome(results.length, fatalError);
+      }
+      return results;
     });
   }
 
@@ -189,7 +296,9 @@ export class SearchTool {
     const academicResults = academic.status === "fulfilled" ? academic.value : [];
     const webResults = web.status === "fulfilled" ? web.value : [];
 
-    return this._deduplicate([...academicResults, ...webResults]);
+    const merged = this._deduplicate([...academicResults, ...webResults]);
+    this._recordSearchOutcome(merged.length);
+    return merged;
   }
 
   /**
@@ -213,6 +322,7 @@ export class SearchTool {
       const merged = this._deduplicate(results.flat());
       const acLabel = this._academicProviderLabel();
       logger.info(`[Search] ${acLabel} —\n${queryList}`);
+      this._recordSearchOutcome(merged.length);
       return merged;
     }
 
@@ -234,12 +344,27 @@ export class SearchTool {
         webCount = results.length;
         webResults.push(...results);
       } catch (error) {
-        logger.warn(`[Search] Parallel AI multi-search failed: ${(error as Error).message} — falling back to sequential`);
-        const fallback = await Promise.all(
-          queries.map((q) => this.searchWeb(q, { maxResults: 5, silent: true }))
-        );
-        webResults.push(...fallback.flat());
-        webCount = webResults.length;
+        const fatalErr = _logParallelError("ParallelAI", error);
+        if (fatalErr) this._recordFatalError(fatalErr);
+        // If credits are exhausted or auth failed, sequential calls would all fail
+        // identically — skip the wasteful fallback and surface the error clearly.
+        if (
+          error instanceof AuthenticationError ||
+          error instanceof PermissionDeniedError
+        ) {
+          logger.warn(
+            "[Search] Parallel AI unavailable — skipping sequential fallback (all calls would fail with same error)"
+          );
+        } else {
+          logger.warn(
+            `[Search] Parallel AI multi-search failed — falling back to sequential`
+          );
+          const fallback = await Promise.all(
+            queries.map((q) => this.searchWeb(q, { maxResults: 5, silent: true, _skipHealthTracking: true }))
+          );
+          webResults.push(...fallback.flat());
+          webCount = webResults.length;
+        }
       }
     }
 
@@ -252,6 +377,7 @@ export class SearchTool {
       const merged = this._deduplicate([...webResults, ...academicResults.flat()]);
       const provider = client ? `Parallel AI + ${acLabel}` : acLabel;
       logger.info(`[Search] ${provider} —\n${queryList}`);
+      this._recordSearchOutcome(merged.length);
       return merged;
     }
 
@@ -261,6 +387,7 @@ export class SearchTool {
     } else {
       logger.info(`[Search] ${client ? "Parallel AI" : "Web (no results)"} —\n${queryList}`);
     }
+    this._recordSearchOutcome(merged2.length);
     return merged2;
   }
 
@@ -410,7 +537,7 @@ export class SearchTool {
       }
       return parseExtractResults(response.results ?? [], maxCharsPerPage);
     } catch (error) {
-      logger.warn(`[Search:Extract] ✗ failed: ${(error as Error).message}`);
+      _logParallelError("Extract", error);
       return [];
     }
   }
