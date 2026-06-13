@@ -305,7 +305,7 @@ The `literature_exploration` generation strategy no longer relies solely on sear
 
 1. **Searches** via the existing `SearchTool.multiSearch` (Parallel AI + Consensus)
 2. **Plans** each round with an LLM call that decides sufficiency, picks sources to read, and proposes new queries
-3. **Reads** actual page/paper content via `parallel-web` `/v1/extract`
+3. **Reads** actual page/paper content via the `parallel-web` SDK (Search + Extract)
 4. **Banks** goal-directed extractions (`{rationale, evidence, summary}`) in a `evidence_sources` table with a summary embedding
 
 Generation prompts receive a numbered `[E#]` evidence digest with source URLs, and citations map back through those markers. Every failure path falls back silently to the existing snippet-based behavior.
@@ -497,7 +497,7 @@ flowchart TD
     OUT(["Final Report"])
 
     DS(["DeepSeek LLM"])
-    PAI(["Parallel AI Search<br/>+ /v1/extract"])
+    PAI(["Parallel AI SDK<br/>(Search + Extract)"])
     CON(["Consensus MCP"])
     SCITE(["Scite MCP<br/>(fallback)"])
     XREF(["Crossref API"])
