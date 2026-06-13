@@ -12,6 +12,18 @@ import type { EvidenceSource } from "../models/evidence.js";
 import { cosineSimilarity } from "../util/vector.js";
 import { logger } from "../config.js";
 
+export interface SafetyAssessmentRow {
+  severity: string;
+  category: string;
+  reasoning: string;
+  decision: "allowed" | "quarantined";
+  threshold: string;
+  overriddenBy: string | null;
+  overrideReason: string | null;
+  overriddenAt: Date | null;
+  createdAt: Date;
+}
+
 export class ContextStore {
   private db = getDb();
   // Raw sqlite3 handle — used for vec0 virtual table (not supported by Drizzle ORM)
@@ -86,6 +98,7 @@ export class ContextStore {
       // Remove claim citations per hypothesis
       this.db.delete(schema.claimCitations).where(eq(schema.claimCitations.hypothesisId, h.id)).run();
       this.sqlite.query(`DELETE FROM citation_verifications WHERE hypothesis_id = ?`).run(h.id);
+      this.sqlite.query(`DELETE FROM safety_assessments WHERE hypothesis_id = ?`).run(h.id);
       // Remove embedding from vec0 ANN index
       this.sqlite.query(`DELETE FROM vec_embeddings WHERE hypothesis_id = ?`).run(h.id);
     }
@@ -890,6 +903,102 @@ export class ContextStore {
     return {
       ...counts,
       fabricationRate: counts.total > 0 ? counts.fabricated / counts.total : 0,
+    };
+  }
+
+  // ─── Safety Assessments (Safety Gate) ─────────────────────────────────────
+
+  saveSafetyAssessment(
+    hypothesisId: string,
+    sessionId: string,
+    a: { severity: string; category: string; reasoning: string; decision: string; threshold: string }
+  ): void {
+    this.db.insert(schema.safetyAssessments).values({
+      id: uuidv4(),
+      hypothesisId,
+      sessionId,
+      severity: a.severity,
+      category: a.category,
+      reasoning: a.reasoning,
+      decision: a.decision,
+      threshold: a.threshold,
+      overriddenBy: null,
+      overrideReason: null,
+      overriddenAt: null,
+      createdAt: new Date(),
+    }).run();
+  }
+
+  /** Most recent safety assessment for a hypothesis, or null if never screened. */
+  getLatestSafetyAssessment(hypothesisId: string): SafetyAssessmentRow | null {
+    const row = this.db
+      .select()
+      .from(schema.safetyAssessments)
+      .where(eq(schema.safetyAssessments.hypothesisId, hypothesisId))
+      .orderBy(desc(schema.safetyAssessments.createdAt))
+      .get();
+    return row ? this._rowToSafetyAssessment(row) : null;
+  }
+
+  /** Hypotheses currently withheld by the safety gate, newest first. */
+  getQuarantinedHypotheses(sessionId: string): Hypothesis[] {
+    const rows = this.db
+      .select()
+      .from(schema.hypotheses)
+      .where(
+        and(
+          eq(schema.hypotheses.sessionId, sessionId),
+          eq(schema.hypotheses.status, "quarantined")
+        )
+      )
+      .orderBy(desc(schema.hypotheses.createdAt))
+      .all();
+    return rows.map((r) => this._rowToHypothesis(r));
+  }
+
+  /**
+   * Release a quarantined hypothesis into the active pool (operator override).
+   * Records who released it and why on its latest assessment row. Returns false
+   * if the hypothesis is not currently quarantined.
+   */
+  releaseQuarantine(hypothesisId: string, overriddenBy: string, reason: string): boolean {
+    const hyp = this.getHypothesis(hypothesisId);
+    if (!hyp || hyp.status !== "quarantined") return false;
+    const now = new Date();
+    this.sqlite.transaction(() => {
+      this.db
+        .update(schema.hypotheses)
+        .set({ status: "active", updatedAt: now })
+        .where(eq(schema.hypotheses.id, hypothesisId))
+        .run();
+      const latest = this.db
+        .select({ id: schema.safetyAssessments.id })
+        .from(schema.safetyAssessments)
+        .where(eq(schema.safetyAssessments.hypothesisId, hypothesisId))
+        .orderBy(desc(schema.safetyAssessments.createdAt))
+        .get();
+      if (latest) {
+        this.db
+          .update(schema.safetyAssessments)
+          .set({ overriddenBy, overrideReason: reason, overriddenAt: now })
+          .where(eq(schema.safetyAssessments.id, latest.id))
+          .run();
+      }
+    })();
+    return true;
+  }
+
+  private _rowToSafetyAssessment(r: typeof schema.safetyAssessments.$inferSelect): SafetyAssessmentRow {
+    return {
+      severity: r.severity,
+      category: r.category,
+      reasoning: r.reasoning,
+      decision: r.decision as "allowed" | "quarantined",
+      threshold: r.threshold,
+      overriddenBy: r.overriddenBy ?? null,
+      overrideReason: r.overrideReason ?? null,
+      overriddenAt: r.overriddenAt ?? null,
+      createdAt: r.createdAt,
     };
   }
 

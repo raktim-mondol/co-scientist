@@ -273,6 +273,27 @@ export async function runMigrations() {
 
   db.run(sql`CREATE INDEX IF NOT EXISTS idx_citation_verifications_hypothesis ON citation_verifications(hypothesis_id)`);
 
+  // ── Safety Assessments (Safety Gate) ─────────────────────────────────────────
+  db.run(sql`
+    CREATE TABLE IF NOT EXISTS safety_assessments (
+      id TEXT PRIMARY KEY,
+      hypothesis_id TEXT NOT NULL REFERENCES hypotheses(id),
+      session_id TEXT NOT NULL REFERENCES sessions(id),
+      severity TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'none',
+      reasoning TEXT NOT NULL DEFAULT '',
+      decision TEXT NOT NULL,
+      threshold TEXT NOT NULL,
+      overridden_by TEXT,
+      override_reason TEXT,
+      overridden_at INTEGER,
+      created_at INTEGER NOT NULL
+    )
+  `);
+
+  db.run(sql`CREATE INDEX IF NOT EXISTS idx_safety_assessments_hypothesis ON safety_assessments(hypothesis_id)`);
+  db.run(sql`CREATE INDEX IF NOT EXISTS idx_safety_assessments_session ON safety_assessments(session_id)`);
+
   // ── Unique index on proximity_edges(hypothesis_a_id, hypothesis_b_id) ────────
   // Pairs are stored in canonical sorted order so (A,B) == (B,A).
   // The ON CONFLICT DO UPDATE in saveProximityEdge relies on this constraint.

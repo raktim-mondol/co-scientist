@@ -7,6 +7,7 @@ export const HypothesisStatusSchema = z.enum([
   "rejected",
   "active",        // passed initial review, in tournament
   "evolved",       // spawned from evolution
+  "quarantined",   // withheld by the safety gate; excluded from the tournament until released
 ]);
 
 export type HypothesisStatus = z.infer<typeof HypothesisStatusSchema>;

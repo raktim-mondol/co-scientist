@@ -67,6 +67,14 @@ const ConfigSchema = z.object({
     diversityThreshold: z.number().min(0).max(1).default(0.92),
   }),
 
+  // Safety gate — withholds (quarantines) hypotheses whose dual-use / harm
+  // severity meets the threshold, so they never enter the tournament.
+  safety: z.object({
+    gateEnabled: z.boolean().default(true),
+    // Quarantine a hypothesis when its assessed severity is >= this level.
+    quarantineThreshold: z.enum(["low", "moderate", "high"]).default("high"),
+  }),
+
   // Reproducibility
   seed: z.number().int().optional(),         // seeds all scheduling/sampling RNG
 
@@ -140,6 +148,14 @@ function loadConfig(): AppConfig {
         if (!v) return undefined;
         const n = parseFloat(v);
         return Number.isNaN(n) ? undefined : n;
+      })(),
+    },
+    safety: {
+      // SAFETY_GATE=false disables the gate; any other value (or unset) leaves the default (enabled).
+      gateEnabled: process.env.SAFETY_GATE === "false" ? false : undefined,
+      quarantineThreshold: (() => {
+        const v = process.env.SAFETY_QUARANTINE_THRESHOLD?.trim().toLowerCase();
+        return v === "low" || v === "moderate" || v === "high" ? v : undefined;
       })(),
     },
     seed,

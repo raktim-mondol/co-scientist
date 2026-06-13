@@ -4,6 +4,7 @@ import type { ReviewVerdict } from "../models/hypothesis.js";
 import { seededGlicko2Rating } from "../models/tournament.js";
 import { ProvenanceAgent } from "./provenance.js";
 import { CitationIntegrityAgent } from "./citationIntegrity.js";
+import { SafetyAgent } from "./safety.js";
 import { buildRLEFMetaReviewBlock } from "../rlef/prompt-injection.js";
 
 interface ReviewResult {
@@ -22,6 +23,7 @@ export class ReflectionAgent extends BaseAgent {
 
   private provenance = new ProvenanceAgent();
   private citationIntegrity = new CitationIntegrityAgent();
+  private safety = new SafetyAgent();
 
   async execute(sessionId: string): Promise<void> {
     // Get hypotheses pending review
@@ -59,6 +61,18 @@ export class ReflectionAgent extends BaseAgent {
       this.memory.updateHypothesisStatus(hyp.id, "rejected");
       this.log("info", `Rejected hypothesis: "${hyp.title}"`);
       return;
+    }
+
+    // Safety gate: screen for dual-use / harm risk before spending compute on the
+    // full review, provenance, citation, and tournament-seeding stages. A
+    // quarantined hypothesis is withheld (status `quarantined`) — it never enters
+    // the tournament until a human releases it via `co-scientist safety`.
+    if (this.config.safety.gateEnabled) {
+      const assessment = await this.safety.assess(sessionId, hyp, initial.safetyFlag ?? false);
+      if (assessment.decision === "quarantined") {
+        this.memory.updateHypothesisStatus(hyp.id, "quarantined");
+        return;
+      }
     }
 
     // Step 2: Full review with literature search
