@@ -19,10 +19,11 @@ Co-Scientist is a **multi-agent AI system** inspired by the scientific method th
 3. **Reviews** each hypothesis for novelty, correctness, testability, and safety through a 3-stage pipeline
 4. **Tracks provenance** — fact-checks every claim against peer-reviewed literature before a hypothesis enters the tournament
 5. **Verifies citation integrity** — checks every cited paper actually exists against Crossref and applies a soft Glicko-2 penalty proportional to the fabrication rate
-6. **Ranks** hypotheses via a Glicko-2 tournament with multi-turn scientific debates and evidence-grounded judging, debiased against LLM position bias
-7. **Evolves** top-ranked hypotheses toward higher quality using 6 mutation strategies
-8. **Maps** a knowledge graph of concepts and lineage to steer generation toward unexplored areas
-9. **Synthesizes** a final research overview and generates a step-by-step experimental protocol for the top hypothesis
+6. **Screens for dual-use risk** — quarantines hypotheses flagged for bioweapon, chemical-weapon, or human-harm potential before they enter the tournament, with a human-in-the-loop override
+7. **Ranks** hypotheses via a Glicko-2 tournament with multi-turn scientific debates and evidence-grounded judging, debiased against LLM position bias
+8. **Evolves** top-ranked hypotheses toward higher quality using 6 mutation strategies
+9. **Maps** a knowledge graph of concepts and lineage to steer generation toward unexplored areas
+10. **Synthesizes** a final research overview and generates a step-by-step experimental protocol for the top hypothesis
 
 ---
 
@@ -81,6 +82,10 @@ COMPUTE_BUDGET_TOKENS=500000
 # Citation integrity — headless browser fallback for Cloudflare-blocked URLs (optional)
 # Requires: bun add playwright && npx playwright install chromium (~200MB one-time)
 # CITATION_HEADLESS_BROWSER=true
+
+# Safety gate — dual-use / biosecurity quarantine (recommended: keep enabled)
+# SAFETY_GATE=false                 # disable entirely (not recommended)
+# SAFETY_QUARANTINE_THRESHOLD=high  # high (default) | moderate | low
 ```
 
 ### 4. Link globally
@@ -125,6 +130,8 @@ co-scientist run --no-tui --goal "..."
 | `co-scientist feedback <id> --experimental` | Submit empirical/experimental feedback (RLEF) · immediate Elo update |
 | `co-scientist feedback <id> --review <hyp-id>` | Expert opinion review (archival only, no Elo change) |
 | `co-scientist feedback <id> --hypothesis` | Submit your own hypothesis into the tournament |
+| `co-scientist safety <id>` | Review quarantined hypotheses (dual-use screen) |
+| `co-scientist safety <id> --release <hyp> --reason "..."` | Release a quarantined hypothesis with justification |
 | `co-scientist export <id>` | Export to Markdown or JSON |
 | `co-scientist delete <id>` | Delete a session and all its data |
 
@@ -490,6 +497,91 @@ co-scientist export <session-id>
 
 ---
 
+## Safety Gate — Dual-Use & Biosecurity Quarantine
+
+Not every scientifically valid hypothesis is safe to pursue. Co-Scientist includes a dedicated **SafetyAgent** that screens every hypothesis for dual-use, biosecurity, and human-harm risk **after the initial review but before the tournament** — so hazardous ideas never compete for ranking or receive experimental protocols.
+
+### How it works
+
+After a hypothesis passes the initial review (novelty/correctness check), the safety gate intercepts it:
+
+1. The **SafetyAgent** sends the hypothesis title, content, rationale, key assumptions, and experimental plan to the LLM with a dedicated safety-review prompt
+2. The LLM classifies the hypothesis into one of four severity levels:
+   | Severity | Meaning |
+   |----------|---------|
+   | `none` | No meaningful misuse or harm potential |
+   | `low` | Sensitive area but minimal actionable uplift |
+   | `moderate` | Plausible misuse pathway or non-trivial harm potential |
+   | `high` | Clear, actionable uplift toward serious harm or a weapon |
+3. If the assessed severity meets or exceeds the configured **quarantine threshold**, the hypothesis status is set to `quarantined` — it is withheld from provenance, citation verification, tournament seeding, and everything downstream
+4. If the severity is below the threshold, the hypothesis proceeds normally
+
+A prior `safetyFlag` from the initial review acts as a floor: if a reviewer raised a safety concern but the dedicated screen returned `none`, the severity is lifted to at least `low` so no upstream signal is silently dropped.
+
+### Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SAFETY_GATE` | `true` | Set to `false` to disable the safety gate entirely (not recommended) |
+| `SAFETY_QUARANTINE_THRESHOLD` | `high` | Severity at which hypotheses are quarantined: `high`, `moderate`, or `low` |
+
+```env
+# Disable the safety gate entirely (not recommended):
+# SAFETY_GATE=false
+
+# Quarantine threshold:
+#   high     — only clearly actionable weapons-uplift (default)
+#   moderate — also quarantine plausible misuse pathways
+#   low      — quarantine any sensitive-area hypothesis (higher false-positive rate)
+# SAFETY_QUARANTINE_THRESHOLD=high
+```
+
+### Reviewing and releasing quarantined hypotheses
+
+The safety gate is a **human-in-the-loop** system — quarantined hypotheses can be reviewed and released by an operator:
+
+```bash
+# List all quarantined hypotheses with severity, category, and reasoning
+co-scientist safety <session-id>
+
+# Release a specific hypothesis with a required justification
+co-scientist safety <session-id> --release <hypothesis-id> --reason "Defensive research with no actionable uplift to harm"
+```
+
+Released hypotheses re-enter the active pool and will compete in future tournament rounds if the session is resumed. Each release is recorded with who authorised it, when, and why.
+
+### Example output
+
+```
+🛡  Safety Gate — ALS Epigenetics Research
+
+2 hypothesis(es) withheld for safety review:
+
+──────────────────────────────────────────────────────────────────────
+
+[HIGH] CRISPR-based enhancer silencing for TDP-43 knockdown
+   ID: abc123
+   Category: dual_use  (threshold: high)
+   This hypothesis describes a method to silence gene expression via...
+   Release: co-scientist safety sess-abc --release abc123 --reason "<justification>"
+──────────────────────────────────────────────────────────────────────
+
+[LOW] m6A methylation profiling of ALS patient samples
+   ID: def456
+   Category: dual_use  (threshold: high)
+   Sensitive area but the specific method described is standard...
+   Release: co-scientist safety sess-abc --release def456 --reason "<justification>"
+──────────────────────────────────────────────────────────────────────
+
+Releasing a hypothesis overrides the safety gate. Review each one carefully.
+```
+
+### Design rationale
+
+The safety gate is deliberately placed **after initial review but before provenance and citation verification** — it saves compute by screening early, but still requires the hypothesis to pass novelty/correctness first so we don't waste safety-review tokens on clearly invalid ideas. The gate defaults to `high` (only quarantine the most clearly dangerous hypotheses) to minimise false positives while still catching the worst cases.
+
+---
+
 ## Position-Bias-Robust Judging
 
 LLM-as-judge exhibits **position bias** — a systematic preference for whichever candidate is shown first. In the tournament this is compounded because the matchup selector always places the higher-priority hypothesis in slot "A". The Ranking agent controls for this:
@@ -554,21 +646,23 @@ flowchart TD
 
     SUP["① Supervisor"]
     GEN["② Generation<br/>(deep evidence · diversity gate)"]
-    REF["③ Reflection"]
-    PROV["④ Provenance"]
-    CITE["⑤ Citation Integrity<br/>(Crossref · soft Glicko-2 penalty)"]
-    RANK["⑥ Ranking<br/>(Glicko-2 Tournament<br/>· position-bias-robust judging)"]
+    REF["③ Reflection<br/>(3-stage review pipeline)"]
+    SAFE["④ Safety Gate<br/>(dual-use quarantine)"]
+    PROV["⑤ Provenance"]
+    CITE["⑥ Citation Integrity<br/>(Crossref · soft Glicko-2 penalty)"]
+    RANK["⑦ Ranking<br/>(Glicko-2 Tournament<br/>· position-bias-robust judging)"]
 
     subgraph PROXVEC["Proximity + Vector Store"]
-        PROX["⑦ Proximity<br/>(all-MiniLM-L6-v2 · 384-dim)"]
+        PROX["⑧ Proximity<br/>(all-MiniLM-L6-v2 · 384-dim)"]
         VEC2["sqlite-vec<br/>(vec0 ANN index)"]
         PROX --> VEC2
     end
 
-    KG["⑧ Knowledge Graph"]
-    EVOL["⑨ Evolution"]
-    META["⑩ Meta-Review<br/>(every 25 rounds)"]
-    DESIGN["⑪ Experiment Design<br/>(post-plateau)"]
+    KG["⑨ Knowledge Graph"]
+    EVOL["⑩ Evolution"]
+    META["⑪ Meta-Review<br/>(every 25 rounds)"]
+    DESIGN["⑫ Experiment Design<br/>(post-plateau)"]
+    QUAR["⛔ Quarantined<br/>(withheld · human release)"]
 
     %% ── Main flow ────────────────────────────────────────────────
     GOAL --> SUP --> GEN
@@ -590,13 +684,16 @@ flowchart TD
     CON --> DESIGN
     SCITE --> DESIGN
 
-    DS -.->|powers all agents| SUP & GEN & REF & PROV & RANK & EVOL & META & DESIGN
+    DS -.->|powers all agents| SUP & GEN & REF & SAFE & PROV & RANK & EVOL & META & DESIGN
 
     GEN -->|hypothesis| REF
-    REF -->|passes| PROV
+    REF -->|passes initial review| SAFE
+    SAFE -->|allowed| PROV
     PROV -->|ClaimCitations injected| CITE
     CITE -->|penalty folded into seed rating| RANK
-    REF -->|passes| RANK
+    SAFE -->|allowed| RANK
+    SAFE -->|quarantined| QUAR
+    QUAR -.->|human release<br/>co-scientist safety --release| RANK
     RANK -->|top hypotheses| EVOL
     EVOL -->|evolved hypothesis| REF
 
@@ -626,6 +723,7 @@ flowchart TD
     style GEN      fill:#E65100,color:#fff,stroke:#BF360C
     style EVOL     fill:#E65100,color:#fff,stroke:#BF360C
     style REF      fill:#C62828,color:#fff,stroke:#B71C1C
+    style SAFE     fill:#FF6F00,color:#fff,stroke:#E65100
     style PROV     fill:#C62828,color:#fff,stroke:#B71C1C
     style CITE     fill:#C62828,color:#fff,stroke:#B71C1C
     style RANK     fill:#F9A825,color:#333,stroke:#F57F17
@@ -633,6 +731,7 @@ flowchart TD
     style VEC2     fill:#37474F,color:#fff,stroke:#263238
     style KG       fill:#37474F,color:#fff,stroke:#263238
     style DESIGN   fill:#2E7D32,color:#fff,stroke:#1B5E20
+    style QUAR     fill:#B71C1C,color:#fff,stroke:#7F0000
     style PROXVEC  fill:#ECEFF1,stroke:#37474F,color:#263238
 ```
 
@@ -660,7 +759,7 @@ All prompts are Handlebars YAML templates in `src/prompts/`. Edit them without a
 src/prompts/
 ├── supervisor/parse_goal.yaml
 ├── generation/ (5 templates — 4 strategies + query helper)
-├── reflection/ (5 templates)
+├── reflection/ (6 templates)
 ├── ranking/ (2 templates)
 ├── evolution/ (6 templates)
 ├── meta_review/ (2 templates)
