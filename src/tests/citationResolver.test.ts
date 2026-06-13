@@ -7,6 +7,7 @@ import {
   extractDoiFromUrl,
   type FetchFn,
   type HtmlFetchFn,
+  type ParallelExtractFn,
 } from "../tools/citationResolver.js";
 
 // The resolver cache is module-global; reset it between tests so cases that
@@ -223,11 +224,14 @@ describe("resolveCitation URL-to-DOI path", () => {
     const htmlFetcher = htmlResponse(htmlPage("", "<p>No meta tags</p>"));
     // Bibliographic fetch returns unrelated titles → no match
     const fetchFn: FetchFn = async () => crossrefSearch(["Quantum chromodynamics"]);
+    // Step 2b: Parallel extract returns null → skips to Step 3
+    const parallelFn: ParallelExtractFn = async () => null;
 
     const r = await resolveCitation(
       "https://example.com/no-doi-paper",
       fetchFn,
       htmlFetcher,
+      parallelFn,
     );
     // Falls through to bibliographic search which finds no match
     expect(r.status).toBe("unverified");
@@ -236,11 +240,14 @@ describe("resolveCitation URL-to-DOI path", () => {
   it("URL with page fetch network error → falls through gracefully → unverified", async () => {
     const htmlFetcher: HtmlFetchFn = async () => { throw new Error("connection refused"); };
     const fetchFn: FetchFn = async () => crossrefSearch(["Quantum chromodynamics"]);
+    // Step 2b: Parallel extract returns null → skips to Step 3
+    const parallelFn: ParallelExtractFn = async () => null;
 
     const r = await resolveCitation(
       "https://dead-site.example.com/paper",
       fetchFn,
       htmlFetcher,
+      parallelFn,
     );
     // Page fetch fails, falls to bibliographic search, no match
     expect(r.status).toBe("unverified");
@@ -255,5 +262,99 @@ describe("resolveCitation URL-to-DOI path", () => {
     const r = await resolveCitation("https://doi.org/10.1038/abc", fetchFn, htmlFetcher);
     expect(r.status).toBe("verified");
     expect(r.doi).toBe("10.1038/abc");
+  });
+});
+
+// ---- Parallel extract helpers ----
+
+function parallelResponse(title: string, content: string): ParallelExtractFn {
+  return async () => ({ title, content });
+}
+
+describe("resolveCitation Parallel extract fallback (Step 2b)", () => {
+  it("Parallel extract finds DOI in returned content → verified via Crossref", async () => {
+    // Step 2a (HTML fetch) finds nothing
+    const htmlFetcher = htmlResponse(htmlPage("", "<p>Cloudflare gate page — no meta tags</p>"));
+    // Step 2b (Parallel extract) finds a DOI in the markdown content
+    const parallelFn = parallelResponse(
+      "A Great Paper",
+      "# Abstract\n\nThis paper...\n\n## Citation\nDOI: 10.1038/s41598-025-95666-8",
+    );
+    const fetchFn: FetchFn = async () => crossrefWork("A Great Paper", "10.1038/s41598-025-95666-8");
+
+    const r = await resolveCitation(
+      "https://academic.oup.com/bioinformatics/article/39/Supplement_1/i318/7210446",
+      fetchFn,
+      htmlFetcher,
+      parallelFn,
+    );
+    expect(r.status).toBe("verified");
+    expect(r.doi).toBe("10.1038/s41598-025-95666-8");
+    expect(r.canonicalTitle).toBe("A Great Paper");
+    expect(r.source).toBe("crossref");
+  });
+
+  it("Parallel extract returns null → falls through to bibliographic search", async () => {
+    // Step 2a finds nothing, Step 2b returns null, Step 3 bibliographic search
+    const htmlFetcher = htmlResponse(htmlPage("", "<p>No meta tags</p>"));
+    const parallelFn: ParallelExtractFn = async () => null;
+    const fetchFn: FetchFn = async () => crossrefSearch(["The Real Paper Title"]);
+
+    const r = await resolveCitation(
+      "https://blocked.example.com/paper",
+      fetchFn,
+      htmlFetcher,
+      parallelFn,
+    );
+    // Falls to bibliographic search — depends on title match
+    expect(r.status).toBe("unverified");
+  });
+
+  it("Parallel extract throws → falls through to bibliographic search gracefully", async () => {
+    const htmlFetcher = htmlResponse(htmlPage("", "<p>No meta tags</p>"));
+    const parallelFn: ParallelExtractFn = async () => { throw new Error("API key invalid"); };
+    const fetchFn: FetchFn = async () => crossrefSearch(["Quantum chromodynamics"]);
+
+    const r = await resolveCitation(
+      "https://blocked.example.com/paper2",
+      fetchFn,
+      htmlFetcher,
+      parallelFn,
+    );
+    // Parallel fails, bibliographic finds no match
+    expect(r.status).toBe("unverified");
+  });
+
+  it("Parallel extract finds DOI but Crossref 404s it → fabricated", async () => {
+    const htmlFetcher = htmlResponse(htmlPage("", "<p>No meta tags</p>"));
+    const parallelFn = parallelResponse("Fake Paper", "DOI: 10.9999/nonexistent-doi");
+    const fetchFn: FetchFn = async () => ({ ok: false, status: 404, json: async () => ({}) });
+
+    const r = await resolveCitation(
+      "https://fake-journal.example.com/paper3",
+      fetchFn,
+      htmlFetcher,
+      parallelFn,
+    );
+    expect(r.status).toBe("fabricated");
+    expect(r.source).toBe("crossref");
+  });
+
+  it("Step 2a succeeds → Step 2b never called", async () => {
+    // When HTML fetch finds a DOI, Parallel extract is never invoked
+    const htmlFetcher = htmlResponse(
+      htmlPage(`<meta name="citation_doi" content="10.1038/from-meta">`),
+    );
+    const parallelFn: ParallelExtractFn = async () => { throw new Error("should not be called"); };
+    const fetchFn: FetchFn = async () => crossrefWork("From Meta Paper", "10.1038/from-meta");
+
+    const r = await resolveCitation(
+      "https://nature.com/articles/with-meta",
+      fetchFn,
+      htmlFetcher,
+      parallelFn,
+    );
+    expect(r.status).toBe("verified");
+    expect(r.doi).toBe("10.1038/from-meta");
   });
 });

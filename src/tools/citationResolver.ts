@@ -1,4 +1,5 @@
 import { logger } from "../config.js";
+import { getSearchTool } from "./search.js";
 
 export type CitationStatus = "verified" | "unverified" | "fabricated";
 
@@ -24,6 +25,8 @@ export type HtmlFetchFn = (url: string) => Promise<{
   status: number;
   text(): Promise<string>;
 }>;
+
+export type ParallelExtractFn = (url: string) => Promise<{ title: string; content: string } | null>;
 
 const CROSSREF_BASE = "https://api.crossref.org/works";
 const TITLE_MATCH_THRESHOLD = 0.7;
@@ -123,11 +126,12 @@ export function resolveCitation(
   raw: string,
   fetchFn: FetchFn = globalFetch,
   htmlFetchFn?: HtmlFetchFn,
+  parallelExtractFn?: ParallelExtractFn,
 ): Promise<CitationResolution> {
   const key = raw.trim().toLowerCase();
   const cached = _cache.get(key);
   if (cached) return cached;
-  const promise = _resolve(raw, fetchFn, htmlFetchFn);
+  const promise = _resolve(raw, fetchFn, htmlFetchFn, parallelExtractFn);
   _cache.set(key, promise);
   return promise;
 }
@@ -234,7 +238,64 @@ export async function extractDoiFromUrl(
   }
 }
 
-async function _resolve(raw: string, fetchFn: FetchFn, htmlFetchFn?: HtmlFetchFn): Promise<CitationResolution> {
+const PARALLEL_EXTRACT_TIMEOUT_MS = 15000;
+
+/**
+ * Fallback: use Parallel AI /v1/extract to fetch rendered content for a URL
+ * that may be behind a Cloudflare JS challenge or SPA-rendered (React/Next.js).
+ * Searches the returned markdown content for a DOI pattern.
+ *
+ * When PARALLEL_AI_API_KEY is not set, getSearchTool().extractPages() silently
+ * returns [] and we return null — graceful degradation.
+ *
+ * Returns null on any failure. Never throws.
+ */
+async function extractDoiFromUrlViaParallel(
+  url: string,
+  extractFn?: ParallelExtractFn,
+): Promise<string | null> {
+  try {
+    let result: { title: string; content: string } | null;
+    if (extractFn) {
+      result = await withTimeout(extractFn(url), PARALLEL_EXTRACT_TIMEOUT_MS, "parallel extract");
+    } else {
+      const pages = await withTimeout(
+        (async () => {
+          const st = getSearchTool();
+          const p = await st.extractPages([url], "Find the DOI of this academic paper", {
+            maxCharsPerPage: 5000,
+          });
+          if (p.length === 0) return null;
+          return { title: p[0].title, content: p[0].content };
+        })(),
+        PARALLEL_EXTRACT_TIMEOUT_MS,
+        "parallel extract",
+      );
+      result = pages;
+    }
+
+    if (!result) return null;
+
+    // Search title + content for a DOI pattern
+    const searchText = result.title + "\n" + result.content;
+    const doiMatch = searchText.match(/10\.\d{4,}\/[^\s"<>]+/);
+    if (doiMatch) return doiMatch[0].replace(/[.,;)\]]+$/, "");
+
+    return null;
+  } catch (err) {
+    logger.warn(
+      `[CitationResolver] Parallel extract failed for "${url.slice(0, 80)}": ${(err as Error).message}`,
+    );
+    return null;
+  }
+}
+
+async function _resolve(
+  raw: string,
+  fetchFn: FetchFn,
+  htmlFetchFn?: HtmlFetchFn,
+  parallelExtractFn?: ParallelExtractFn,
+): Promise<CitationResolution> {
   try {
     // Step 1: Direct DOI from the raw string itself (existing).
     const doi = extractDoi(raw);
@@ -242,11 +303,17 @@ async function _resolve(raw: string, fetchFn: FetchFn, htmlFetchFn?: HtmlFetchFn
       return await _resolveByDoi(doi, raw, fetchFn);
     }
 
-    // Step 2: URL — fetch page and look for DOI in metadata (new).
+    // Step 2a: URL — raw fetch + HTML regex for DOI in meta/JSON-LD (existing).
     if (isUrl(raw)) {
       const pageDoi = await extractDoiFromUrl(raw, htmlFetchFn);
       if (pageDoi) {
         return await _resolveByDoi(pageDoi, raw, fetchFn);
+      }
+
+      // Step 2b: URL — Parallel AI extract for Cloudflare/SPA-blocked pages (new).
+      const parallelDoi = await extractDoiFromUrlViaParallel(raw, parallelExtractFn);
+      if (parallelDoi) {
+        return await _resolveByDoi(parallelDoi, raw, fetchFn);
       }
     }
 

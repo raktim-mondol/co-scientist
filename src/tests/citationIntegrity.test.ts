@@ -15,7 +15,7 @@ import { getContextStore, resetContextStore } from "../memory/contextStore.js";
 import { resetConfig } from "../config.js";
 import { citationPenalty } from "../agents/citationIntegrity.js";
 import { CitationIntegrityAgent } from "../agents/citationIntegrity.js";
-import type { FetchFn, HtmlFetchFn } from "../tools/citationResolver.js";
+import type { FetchFn, HtmlFetchFn, ParallelExtractFn } from "../tools/citationResolver.js";
 
 let store: ReturnType<typeof getContextStore>;
 let sessionId: string;
@@ -224,5 +224,48 @@ describe("CitationIntegrityAgent.execute", () => {
     // f = (0 + 0)/2 = 0 → no penalty
     expect(penalty.f).toBe(0);
     expect(penalty.ratingDelta).toBe(0);
+  });
+
+  it("verifies URL citations via Parallel extract fallback (Step 2b)", async () => {
+    // Citation is a Cloudflare-blocked URL that Step 2a can't handle
+    const citations = ["https://academic.oup.com/bioinformatics/article/39/Supplement_1/i318/7210446"];
+    const h = store.saveHypothesis({
+      sessionId,
+      title: "Parallel Extract Hyp", summary: "s", content: "c", rationale: "r",
+      generationStrategy: "literature_exploration",
+      eloRating: 1200, ratingDeviation: 350, volatility: 0.06,
+      matchesPlayed: 0, wins: 0, losses: 0, draws: 0,
+      status: "reviewing", parentIds: [], generationRound: 1,
+      keyAssumptions: [],
+      citations,
+    });
+
+    // Crossref fetch: resolves the DOI found by Parallel extract
+    const fetchFn: FetchFn = async () =>
+      ({ ok: true, status: 200, json: async () => ({ message: { title: ["OUP Paper"], DOI: "10.1093/bioinformatics/btad410" } }) });
+
+    // HTML fetch (Step 2a): returns Cloudflare gate page — no DOI
+    const htmlFetchFn: HtmlFetchFn = async () => ({
+      ok: true,
+      status: 200,
+      text: async () => '<html><head><title>Just a moment...</title></head><body><p>Cloudflare</p></body></html>',
+    });
+
+    // Parallel extract (Step 2b): returns the rendered page with DOI
+    const parallelExtractFn: ParallelExtractFn = async () => ({
+      title: "OUP Paper Title",
+      content: "# Abstract\n\nThis is a paper about bioinformatics...\n\nDOI: 10.1093/bioinformatics/btad410",
+    });
+
+    const agent = new CitationIntegrityAgent(fetchFn, htmlFetchFn, parallelExtractFn);
+    const penalty = await agent.execute(sessionId, h);
+
+    const rows = store.getCitationVerifications(h.id);
+    expect(rows.length).toBe(1);
+    expect(rows[0].rawCitation).toBe(citations[0]);
+    expect(rows[0].status).toBe("verified");
+    expect(rows[0].doi).toBe("10.1093/bioinformatics/btad410");
+    expect(rows[0].canonicalTitle).toBe("OUP Paper");
+    expect(penalty.f).toBe(0);
   });
 });

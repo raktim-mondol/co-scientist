@@ -1,6 +1,6 @@
 import { BaseAgent } from "./base.js";
 import type { Hypothesis } from "../models/hypothesis.js";
-import { resolveCitation, type FetchFn, type HtmlFetchFn } from "../tools/citationResolver.js";
+import { resolveCitation, type FetchFn, type HtmlFetchFn, type ParallelExtractFn } from "../tools/citationResolver.js";
 
 /** Maximum rating points subtracted at a 100% (weighted) fabrication rate. */
 export const MAX_PENALTY = 150;
@@ -34,10 +34,13 @@ export class CitationIntegrityAgent extends BaseAgent {
   private fetchFn?: FetchFn;
   /** Optional injected HTML fetcher for URL-to-DOI extraction. */
   private htmlFetchFn?: HtmlFetchFn;
-  constructor(fetchFn?: FetchFn, htmlFetchFn?: HtmlFetchFn) {
+  /** Optional injected Parallel extract function for Cloudflare/SPA fallback. */
+  private parallelExtractFn?: ParallelExtractFn;
+  constructor(fetchFn?: FetchFn, htmlFetchFn?: HtmlFetchFn, parallelExtractFn?: ParallelExtractFn) {
     super();
     this.fetchFn = fetchFn;
     this.htmlFetchFn = htmlFetchFn;
+    this.parallelExtractFn = parallelExtractFn;
   }
 
   /**
@@ -53,7 +56,7 @@ export class CitationIntegrityAgent extends BaseAgent {
     if (citations.length === 0) return { f: 0, ratingDelta: 0, rdDelta: 0 };
 
     const resolutions = await Promise.all(
-      citations.map((c) => resolveCitation(c, this.fetchFn, this.htmlFetchFn))
+      citations.map((c) => resolveCitation(c, this.fetchFn, this.htmlFetchFn, this.parallelExtractFn))
     );
 
     this.memory.saveCitationVerifications(
