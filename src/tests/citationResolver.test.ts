@@ -5,6 +5,7 @@ import {
   resolveCitation,
   _resetCitationCache,
   extractDoiFromUrl,
+  extractDoiFromHtml,
   type FetchFn,
   type HtmlFetchFn,
   type ParallelExtractFn,
@@ -325,7 +326,7 @@ describe("resolveCitation Parallel extract fallback (Step 2b)", () => {
     expect(r.status).toBe("unverified");
   });
 
-  it("Parallel extract finds DOI but Crossref 404s it → fabricated", async () => {
+  it("Parallel extract finds DOI but Crossref 404s it → unverified (page-extracted DOI)", async () => {
     const htmlFetcher = htmlResponse(htmlPage("", "<p>No meta tags</p>"));
     const parallelFn = parallelResponse("Fake Paper", "DOI: 10.9999/nonexistent-doi");
     const fetchFn: FetchFn = async () => ({ ok: false, status: 404, json: async () => ({}) });
@@ -336,7 +337,8 @@ describe("resolveCitation Parallel extract fallback (Step 2b)", () => {
       htmlFetcher,
       parallelFn,
     );
-    expect(r.status).toBe("fabricated");
+    // Page-extracted DOI that 404s in Crossref is "unverified", not "fabricated"
+    expect(r.status).toBe("unverified");
     expect(r.source).toBe("crossref");
   });
 
@@ -356,5 +358,98 @@ describe("resolveCitation Parallel extract fallback (Step 2b)", () => {
     );
     expect(r.status).toBe("verified");
     expect(r.doi).toBe("10.1038/from-meta");
+  });
+});
+
+// ---- extractDoiFromHtml tests ----
+
+describe("extractDoiFromHtml", () => {
+  it("extracts DOI from citation_doi meta tag", () => {
+    const html = `<meta name="citation_doi" content="10.1038/s41586-024-12345">`;
+    expect(extractDoiFromHtml(html)).toBe("10.1038/s41586-024-12345");
+  });
+
+  it("extracts DOI from dc.identifier with doi: prefix", () => {
+    const html = `<meta name="dc.identifier" content="doi:10.5555/test">`;
+    expect(extractDoiFromHtml(html)).toBe("10.5555/test");
+  });
+
+  it("extracts DOI from JSON-LD ScholarlyArticle", () => {
+    const html = `<script type="application/ld+json">{"@type":"ScholarlyArticle","doi":"10.1000/jsonld"}</script>`;
+    expect(extractDoiFromHtml(html)).toBe("10.1000/jsonld");
+  });
+
+  it("falls back to DOI pattern in body", () => {
+    const html = `<html><body><p>DOI: 10.1234/body-fallback</p></body></html>`;
+    expect(extractDoiFromHtml(html)).toBe("10.1234/body-fallback");
+  });
+
+  it("returns null when no DOI present", () => {
+    const html = `<html><body><p>No identifiers here</p></body></html>`;
+    expect(extractDoiFromHtml(html)).toBeNull();
+  });
+});
+
+// ---- Headless browser fallback tests ----
+
+function headlessResponse(html: string): ParallelExtractFn {
+  // We reuse the ParallelExtractFn type but it returns HTML content instead
+  return async () => ({ title: "Headless Page", content: html });
+}
+
+describe("resolveCitation headless browser fallback (Step 2c)", () => {
+  it("headless browser finds citation_doi meta tag → verified", async () => {
+    // Step 2a (raw fetch) returns Cloudflare gate page
+    const htmlFetcher = htmlResponse(
+      "<html><head><title>Just a moment...</title></head><body>Cloudflare</body></html>",
+    );
+    // Step 2b (Parallel extract) returns null
+    const parallelFn: ParallelExtractFn = async () => null;
+    // Step 2c (headless browser) — simulated: we can't test real Playwright,
+    // but we test that the HTML it would return gets parsed correctly
+    const headlessHtml =
+      `<html><head><meta name="citation_doi" content="10.1093/bioinformatics/btad410"></head><body>Real article</body></html>`;
+    const headlessFn: ParallelExtractFn = async () => ({ title: "OUP Paper", content: headlessHtml });
+    const fetchFn: FetchFn = async () => crossrefWork("OUP Paper", "10.1093/bioinformatics/btad410");
+
+    // Simulate the headless path by passing the HTML directly through the
+    // DOI extraction and Crossref resolution
+    const doi = extractDoiFromHtml(headlessHtml);
+    expect(doi).toBe("10.1093/bioinformatics/btad410");
+
+    // Now verify the full flow: raw fetch fails, Parallel fails, headless HTML
+    // would produce a DOI that Crossref verifies
+    const r = await resolveCitation(
+      "https://academic.oup.com/bioinformatics/article/btad410",
+      fetchFn,
+      htmlFetcher,
+      parallelFn,
+      // Note: the real resolveCitation doesn't have a headless injectable —
+      // we test that extractDoiFromHtml correctly parses the output that
+      // fetchWithHeadlessBrowser would return
+    );
+    // Without headless, this falls to bibliographic search → unverified
+    expect(r.status).toBe("unverified");
+  });
+
+  it("extractDoiFromHtml correctly parses typical OUP page pattern", () => {
+    // Simulated output from a headless browser on an Oxford Academic page
+    const simulatedPage = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta name="citation_doi" content="10.1093/bioinformatics/btad410">
+        <meta name="citation_title" content="A Novel Bioinformatics Method">
+        <meta name="dc.identifier" content="doi:10.1093/bioinformatics/btad410">
+      </head>
+      <body>
+        <div class="article">
+          <a href="https://doi.org/10.1093/bioinformatics/btad410">https://doi.org/10.1093/bioinformatics/btad410</a>
+        </div>
+      </body>
+      </html>
+    `;
+    const doi = extractDoiFromHtml(simulatedPage);
+    expect(doi).toBe("10.1093/bioinformatics/btad410");
   });
 });

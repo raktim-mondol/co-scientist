@@ -1,5 +1,6 @@
-import { logger } from "../config.js";
+import { logger, getConfig } from "../config.js";
 import { getSearchTool } from "./search.js";
+import { fetchWithHeadlessBrowser } from "./headlessResolver.js";
 
 export type CitationStatus = "verified" | "unverified" | "fabricated";
 
@@ -95,10 +96,14 @@ async function _resolveByDoi(
   doi: string,
   raw: string,
   fetchFn: FetchFn,
+  doiSource: "raw" | "page" = "raw",
 ): Promise<CitationResolution> {
   const res = await withTimeout(fetchFn(`${CROSSREF_BASE}/${encodeURIComponent(doi)}?mailto=${MAILTO}`));
   if (res.status === 404) {
-    return { raw, status: "fabricated", matchScore: 0, source: "crossref" };
+    // DOI provided directly by the user → fabricated. DOI extracted from a
+    // fetched page → unverified (real page, just not in Crossref).
+    const status: CitationStatus = doiSource === "page" ? "unverified" : "fabricated";
+    return { raw, status, matchScore: 0, source: "crossref" };
   }
   if (res.ok) {
     const body = (await res.json()) as { message?: CrossrefItem };
@@ -153,12 +158,78 @@ const globalHtmlFetch: HtmlFetchFn = async (url) => {
 };
 
 /**
- * Fetch a URL's HTML and extract a DOI from page metadata.
+ * Extract a DOI from rendered HTML content (meta tags, JSON-LD, body regex).
  * Priority order:
  *   1. <meta name="citation_doi" content="...">
  *   2. <meta name="dc.identifier" content="doi:...">
  *   3. JSON-LD (ScholarlyArticle/Article with identifier or doi field)
  *   4. Any DOI pattern in the full HTML body (fallback)
+ *
+ * Returns the first DOI found, or null. Pure function — no I/O.
+ */
+export function extractDoiFromHtml(html: string): string | null {
+  // Priority 1: <meta name="citation_doi" content="10.xxxx/...">
+  const citationDoiMatch = html.match(
+    /<meta[^>]*?name=["']citation_doi["'][^>]*?content=["'](10\.\d{4,}\/[^"']+)["']/i,
+  );
+  if (citationDoiMatch) return citationDoiMatch[1];
+
+  // Priority 2: <meta name="dc.identifier" content="doi:10.xxxx/...">
+  const dcDoiMatch = html.match(
+    /<meta[^>]*?name=["']dc\.identifier["'][^>]*?content=["'(]*(?:doi:\s*)?(10\.\d{4,}\/[^"')\]]+)/i,
+  );
+  if (dcDoiMatch) return dcDoiMatch[1];
+
+  // Priority 3: JSON-LD in <script type="application/ld+json"> blocks
+  const ldJsonBlocks = html.matchAll(
+    /<script\s+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi,
+  );
+  for (const block of ldJsonBlocks) {
+    try {
+      const data = JSON.parse(block[1]);
+      const items = Array.isArray(data) ? data : [data];
+      for (const item of items) {
+        if (!item["@type"] || !/Article|Scholarly/i.test(String(item["@type"]))) continue;
+
+        // Check identifier (string value)
+        if (typeof item.identifier === "string") {
+          const doiFromId = item.identifier.match(/10\.\d{4,}\/[^\s"<>]+/);
+          if (doiFromId) return doiFromId[0];
+        }
+
+        // Check identifier (PropertyValue object)
+        if (
+          item.identifier &&
+          typeof item.identifier === "object" &&
+          item.identifier["@type"] === "PropertyValue" &&
+          /doi/i.test(String(item.identifier.propertyID ?? ""))
+        ) {
+          const doiVal = String(item.identifier.value ?? "");
+          const doiMatch = doiVal.match(/10\.\d{4,}\/[^\s"<>]+/);
+          if (doiMatch) return doiMatch[0];
+        }
+
+        // Check direct doi field
+        if (item.doi) {
+          const doiMatch = String(item.doi).match(/10\.\d{4,}\/[^\s"<>]+/);
+          if (doiMatch) return doiMatch[0];
+        }
+      }
+    } catch {
+      // Malformed JSON-LD — skip this block and continue
+    }
+  }
+
+  // Priority 4: Fallback — any DOI in the HTML body
+  const fallbackDoi = html.match(/10\.\d{4,}\/[^\s"<>]+/);
+  if (fallbackDoi) return fallbackDoi[0].replace(/[.,;)\]]+$/, "");
+
+  return null;
+}
+
+/**
+ * Fetch a URL's HTML and extract a DOI from page metadata.
+ * Uses raw fetch() — no JS rendering.
  *
  * Returns null on any failure (network error, non-OK status, no DOI found).
  * Never throws.
@@ -172,64 +243,7 @@ export async function extractDoiFromUrl(
     const res = await withTimeout(fetcher(url), HTML_FETCH_TIMEOUT_MS, "html fetch");
     if (!res.ok) return null;
     const html = await res.text();
-
-    // Priority 1: <meta name="citation_doi" content="10.xxxx/...">
-    const citationDoiMatch = html.match(
-      /<meta[^>]*?name=["']citation_doi["'][^>]*?content=["'](10\.\d{4,}\/[^"']+)["']/i,
-    );
-    if (citationDoiMatch) return citationDoiMatch[1];
-
-    // Priority 2: <meta name="dc.identifier" content="doi:10.xxxx/...">
-    const dcDoiMatch = html.match(
-      /<meta[^>]*?name=["']dc\.identifier["'][^>]*?content=["'(]*(?:doi:\s*)?(10\.\d{4,}\/[^"')\]]+)/i,
-    );
-    if (dcDoiMatch) return dcDoiMatch[1];
-
-    // Priority 3: JSON-LD in <script type="application/ld+json"> blocks
-    const ldJsonBlocks = html.matchAll(
-      /<script\s+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi,
-    );
-    for (const block of ldJsonBlocks) {
-      try {
-        const data = JSON.parse(block[1]);
-        const items = Array.isArray(data) ? data : [data];
-        for (const item of items) {
-          if (!item["@type"] || !/Article|Scholarly/i.test(String(item["@type"]))) continue;
-
-          // Check identifier (string value)
-          if (typeof item.identifier === "string") {
-            const doiFromId = item.identifier.match(/10\.\d{4,}\/[^\s"<>]+/);
-            if (doiFromId) return doiFromId[0];
-          }
-
-          // Check identifier (PropertyValue object)
-          if (
-            item.identifier &&
-            typeof item.identifier === "object" &&
-            item.identifier["@type"] === "PropertyValue" &&
-            /doi/i.test(String(item.identifier.propertyID ?? ""))
-          ) {
-            const doiVal = String(item.identifier.value ?? "");
-            const doiMatch = doiVal.match(/10\.\d{4,}\/[^\s"<>]+/);
-            if (doiMatch) return doiMatch[0];
-          }
-
-          // Check direct doi field
-          if (item.doi) {
-            const doiMatch = String(item.doi).match(/10\.\d{4,}\/[^\s"<>]+/);
-            if (doiMatch) return doiMatch[0];
-          }
-        }
-      } catch {
-        // Malformed JSON-LD — skip this block and continue
-      }
-    }
-
-    // Priority 4: Fallback — any DOI in the HTML body
-    const fallbackDoi = html.match(/10\.\d{4,}\/[^\s"<>]+/);
-    if (fallbackDoi) return fallbackDoi[0].replace(/[.,;)\]]+$/, "");
-
-    return null;
+    return extractDoiFromHtml(html);
   } catch (err) {
     logger.warn(
       `[CitationResolver] failed to fetch URL for DOI extraction "${url.slice(0, 80)}": ${(err as Error).message}`,
@@ -239,6 +253,7 @@ export async function extractDoiFromUrl(
 }
 
 const PARALLEL_EXTRACT_TIMEOUT_MS = 15000;
+const HEADLESS_BROWSER_TIMEOUT_MS = 25000;
 
 /**
  * Fallback: use Parallel AI /v1/extract to fetch rendered content for a URL
@@ -307,13 +322,29 @@ async function _resolve(
     if (isUrl(raw)) {
       const pageDoi = await extractDoiFromUrl(raw, htmlFetchFn);
       if (pageDoi) {
-        return await _resolveByDoi(pageDoi, raw, fetchFn);
+        return await _resolveByDoi(pageDoi, raw, fetchFn, "page");
       }
 
       // Step 2b: URL — Parallel AI extract for Cloudflare/SPA-blocked pages (new).
       const parallelDoi = await extractDoiFromUrlViaParallel(raw, parallelExtractFn);
       if (parallelDoi) {
-        return await _resolveByDoi(parallelDoi, raw, fetchFn);
+        return await _resolveByDoi(parallelDoi, raw, fetchFn, "page");
+      }
+
+      // Step 2c: URL — headless browser for JS-heavy pages (opt-in).
+      // Only activated when CITATION_HEADLESS_BROWSER=true and playwright is installed.
+      if (getConfig().tools.citationHeadlessBrowser) {
+        const headlessHtml = await withTimeout(
+          fetchWithHeadlessBrowser(raw),
+          HEADLESS_BROWSER_TIMEOUT_MS,
+          "headless browser",
+        );
+        if (headlessHtml) {
+          const headlessDoi = extractDoiFromHtml(headlessHtml);
+          if (headlessDoi) {
+            return await _resolveByDoi(headlessDoi, raw, fetchFn, "page");
+          }
+        }
       }
     }
 
