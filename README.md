@@ -435,15 +435,33 @@ The extracted DOI is resolved against the [Crossref REST API](https://api.crossr
 
 ### Headless browser fallback (Step 2c)
 
-Many major academic publishers (Oxford Academic, Frontiers) protect their pages with Cloudflare JS challenges that block plain `fetch()`. When both raw fetch and Parallel AI extract fail, an optional **headless Chromium** can render the page with full JavaScript execution:
+Many major academic publishers (Oxford Academic, Frontiers) protect their pages with Cloudflare JS challenges that block plain `fetch()`. When both raw fetch and Parallel AI extract fail, an optional **headless Chromium** can render the page with full JavaScript execution.
+
+> **This is optional.** If you don't install it, Step 2c is simply skipped — citation verification still works through Steps 1–3. Only URLs behind Cloudflare JS challenges will remain unverified.
+
+#### Installation
+
+The `playwright` npm package is already in `package.json` and installed with `bun install`. You only need to download the Chromium browser binary (~200MB, one-time):
 
 ```bash
-# Install Playwright + Chromium browser (~200MB, one-time)
-bun add playwright
 npx playwright install chromium
+```
 
-# Enable in .env
+#### Enable
+
+```bash
+# Add to .env
 CITATION_HEADLESS_BROWSER=true
+```
+
+#### Verify it's working
+
+```bash
+bun run -e "
+import { fetchWithHeadlessBrowser } from './src/tools/headlessResolver.js';
+const html = await fetchWithHeadlessBrowser('https://academic.oup.com/bioinformatics/article/39/7/btad410/7208864');
+console.log(html ? '✅ Headless browser working — got ' + html.length + ' chars' : '❌ Failed');
+"
 ```
 
 Playwright is lazy-loaded — zero startup cost unless Step 2c is actually triggered. It can handle non-interactive Cloudflare Turnstile challenges (JS execution + browser fingerprint) but cannot solve interactive CAPTCHAs (reCAPTCHA v2 checkbox, hCaptcha). Most academic publisher pages use only the non-interactive type.
