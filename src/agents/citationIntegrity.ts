@@ -1,6 +1,6 @@
 import { BaseAgent } from "./base.js";
 import type { Hypothesis } from "../models/hypothesis.js";
-import { resolveCitation, type FetchFn } from "../tools/citationResolver.js";
+import { resolveCitation, type FetchFn, type HtmlFetchFn } from "../tools/citationResolver.js";
 
 /** Maximum rating points subtracted at a 100% (weighted) fabrication rate. */
 export const MAX_PENALTY = 150;
@@ -32,9 +32,12 @@ export class CitationIntegrityAgent extends BaseAgent {
 
   /** Optional injected fetch — defaults to the resolver's global fetch. */
   private fetchFn?: FetchFn;
-  constructor(fetchFn?: FetchFn) {
+  /** Optional injected HTML fetcher for URL-to-DOI extraction. */
+  private htmlFetchFn?: HtmlFetchFn;
+  constructor(fetchFn?: FetchFn, htmlFetchFn?: HtmlFetchFn) {
     super();
     this.fetchFn = fetchFn;
+    this.htmlFetchFn = htmlFetchFn;
   }
 
   /**
@@ -50,7 +53,7 @@ export class CitationIntegrityAgent extends BaseAgent {
     if (citations.length === 0) return { f: 0, ratingDelta: 0, rdDelta: 0 };
 
     const resolutions = await Promise.all(
-      citations.map((c) => resolveCitation(c, this.fetchFn))
+      citations.map((c) => resolveCitation(c, this.fetchFn, this.htmlFetchFn))
     );
 
     this.memory.saveCitationVerifications(

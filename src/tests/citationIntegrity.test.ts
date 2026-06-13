@@ -15,7 +15,7 @@ import { getContextStore, resetContextStore } from "../memory/contextStore.js";
 import { resetConfig } from "../config.js";
 import { citationPenalty } from "../agents/citationIntegrity.js";
 import { CitationIntegrityAgent } from "../agents/citationIntegrity.js";
-import type { FetchFn } from "../tools/citationResolver.js";
+import type { FetchFn, HtmlFetchFn } from "../tools/citationResolver.js";
 
 let store: ReturnType<typeof getContextStore>;
 let sessionId: string;
@@ -168,5 +168,61 @@ describe("CitationIntegrityAgent.execute", () => {
     const penalty = await agent.execute(sessionId, h);
     expect(penalty.ratingDelta).toBe(0);
     expect(store.getCitationVerifications(h.id).length).toBe(0);
+  });
+
+  it("verifies URL citations via HTML DOI extraction", async () => {
+    const citations = [
+      "https://www.nature.com/articles/s41598-025-95666-8",  // no DOI in URL
+      "10.7777/known-doi",  // existing DOI path
+    ];
+    const h = store.saveHypothesis({
+      sessionId,
+      title: "URL-DOI Hyp", summary: "s", content: "c", rationale: "r",
+      generationStrategy: "literature_exploration",
+      eloRating: 1200, ratingDeviation: 350, volatility: 0.06,
+      matchesPlayed: 0, wins: 0, losses: 0, draws: 0,
+      status: "reviewing", parentIds: [], generationRound: 1,
+      keyAssumptions: [],
+      citations,
+    });
+
+    // Crossref fetch: resolves both DOIs (DOIs are URL-encoded, so check for
+    // the encoded form — / becomes %2F in encodeURIComponent).
+    const fetchFn: FetchFn = async (url: string) => {
+      if (url.includes("10.1038%2Fs41598-025-95666-8"))
+        return { ok: true, status: 200, json: async () => ({ message: { title: ["Nature Paper"], DOI: "10.1038/s41598-025-95666-8", author: [{ family: "Smith" }], issued: { "date-parts": [[2025]] } } }) };
+      if (url.includes("10.7777%2Fknown-doi"))
+        return { ok: true, status: 200, json: async () => ({ message: { title: ["Known Paper"], DOI: "10.7777/known-doi" } }) };
+      return { ok: false, status: 404, json: async () => ({}) };
+    };
+
+    // HTML fetch: returns page with citation_doi meta tag
+    const htmlFetchFn: HtmlFetchFn = async () => ({
+      ok: true,
+      status: 200,
+      text: async () =>
+        '<!DOCTYPE html><html><head><meta name="citation_doi" content="10.1038/s41598-025-95666-8"></head><body></body></html>',
+    });
+
+    const agent = new CitationIntegrityAgent(fetchFn, htmlFetchFn);
+    const penalty = await agent.execute(sessionId, h);
+
+    const rows = store.getCitationVerifications(h.id);
+    expect(rows.length).toBe(2);
+
+    const natureRow = rows.find((r) => r.rawCitation === citations[0]);
+    expect(natureRow).toBeDefined();
+    expect(natureRow!.status).toBe("verified");
+    expect(natureRow!.doi).toBe("10.1038/s41598-025-95666-8");
+    expect(natureRow!.canonicalTitle).toBe("Nature Paper");
+
+    const knownRow = rows.find((r) => r.rawCitation === citations[1]);
+    expect(knownRow).toBeDefined();
+    expect(knownRow!.status).toBe("verified");
+    expect(knownRow!.doi).toBe("10.7777/known-doi");
+
+    // f = (0 + 0)/2 = 0 → no penalty
+    expect(penalty.f).toBe(0);
+    expect(penalty.ratingDelta).toBe(0);
   });
 });
