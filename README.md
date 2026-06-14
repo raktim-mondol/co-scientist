@@ -834,11 +834,11 @@ src/prompts/
 ```
 
 ```bibtex
-@software{mondol2025coscientist,
+@software{mondol2026coscientist,
   author = {Mondol, Raktim},
   title  = {Co-Scientist: Open-source multi-agent AI for scientific hypothesis generation},
   url    = {https://github.com/raktim-mondol/co-scientist},
-  year   = {2025}
+  year   = {2026}
 }
 ```
 
