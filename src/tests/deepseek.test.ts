@@ -92,12 +92,13 @@ describe("config env parsing for deepseek.thinking", () => {
     resetConfig();
   });
 
-  test("defaults: enabled, high effort, 8000 budget", () => {
+  test("defaults: enabled, high effort, 8000 budget, stream on", () => {
     resetConfig();
     const t = getConfig().deepseek.thinking;
     expect(t.enabled).toBe(true);
     expect(t.reasoningEffort).toBe("high");
     expect(t.reasoningBudgetTokens).toBe(8000);
+    expect(t.streamThinking).toBe(true);
   });
 
   test("DEEPSEEK_THINKING=false disables", () => {
@@ -119,10 +120,13 @@ describe("config env parsing for deepseek.thinking", () => {
 describe("DeepSeekClient request wiring (stubbed network)", () => {
   afterEach(() => {
     delete process.env.DEEPSEEK_THINKING;
+    // Default is now true — non-streaming tests must opt out explicitly.
+    process.env.DEEPSEEK_STREAM_THINKING = "false";
     resetConfig();
   });
 
   test("reason() enables thinking with additive budget and drops temperature", async () => {
+    process.env.DEEPSEEK_STREAM_THINKING = "false";
     resetConfig();
     const c = new DeepSeekClient();
     const calls = stubCreate(c);
@@ -133,6 +137,7 @@ describe("DeepSeekClient request wiring (stubbed network)", () => {
   });
 
   test("chat() never enables thinking and keeps its budget", async () => {
+    process.env.DEEPSEEK_STREAM_THINKING = "false";
     resetConfig();
     const c = new DeepSeekClient();
     const calls = stubCreate(c);
@@ -143,6 +148,7 @@ describe("DeepSeekClient request wiring (stubbed network)", () => {
 
   test("DEEPSEEK_THINKING=false makes reason() behave like chat()", async () => {
     process.env.DEEPSEEK_THINKING = "false";
+    process.env.DEEPSEEK_STREAM_THINKING = "false";
     resetConfig();
     const c = new DeepSeekClient();
     const calls = stubCreate(c);
@@ -179,7 +185,7 @@ describe("DeepSeekClient streaming (DEEPSEEK_STREAM_THINKING)", () => {
   });
 
   test("stream disabled + thinking on → non-streaming path", async () => {
-    // DEEPSEEK_STREAM_THINKING defaults to false, so streaming should NOT trigger
+    process.env.DEEPSEEK_STREAM_THINKING = "false";
     resetConfig();
     const c = new DeepSeekClient();
     const calls = stubCreate(c);

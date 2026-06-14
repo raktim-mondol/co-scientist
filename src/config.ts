@@ -18,8 +18,8 @@ const ConfigSchema = z.object({
       reasoningEffort: z.enum(["high", "max"]).default("high"),
       reasoningBudgetTokens: z.number().int().nonnegative().default(8000),
       // Stream reasoning_content to stderr in real-time (light gray).
-      // Off by default — set DEEPSEEK_STREAM_THINKING=true to watch the model think.
-      streamThinking: z.boolean().default(false),
+      // On by default — set DEEPSEEK_STREAM_THINKING=false to disable.
+      streamThinking: z.boolean().default(true),
     }).default({}),
   }),
 
