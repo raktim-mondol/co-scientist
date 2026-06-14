@@ -13,6 +13,40 @@ const baseThinking: ThinkingConfig = {
 };
 const messages = [{ role: "user" as const, content: "hi" }];
 
+/** Stub the OpenAI create method to capture request bodies (non-streaming). */
+function stubCreate(client: DeepSeekClient): Array<Record<string, unknown>> {
+  const calls: Array<Record<string, unknown>> = [];
+  (client as unknown as { client: { chat: { completions: { create: unknown } } } }).client.chat.completions.create =
+    async (body: Record<string, unknown>) => {
+      calls.push(body);
+      return {
+        choices: [{ message: { content: '{"ok":true}' } }],
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+      };
+    };
+  return calls;
+}
+
+/** Stub the OpenAI create method to return a synthetic async iterable (streaming). */
+function stubStream(
+  client: DeepSeekClient,
+  chunks: Array<Record<string, unknown>>
+): Array<Record<string, unknown>> {
+  const calls: Array<Record<string, unknown>> = [];
+  (client as unknown as { client: { chat: { completions: { create: unknown } } } }).client.chat.completions.create =
+    async (body: Record<string, unknown>) => {
+      calls.push(body);
+      return {
+        [Symbol.asyncIterator]: async function* () {
+          for (const chunk of chunks) {
+            yield chunk;
+          }
+        },
+      };
+    };
+  return calls;
+}
+
 describe("buildRequestBody (pure request shaping)", () => {
   test("thinking on → enabled, effort set, additive budget, no temperature", () => {
     const body = buildRequestBody(
@@ -82,20 +116,6 @@ describe("config env parsing for deepseek.thinking", () => {
 });
 
 describe("DeepSeekClient request wiring (stubbed network)", () => {
-  function stubCreate(client: DeepSeekClient): Array<Record<string, unknown>> {
-    const calls: Array<Record<string, unknown>> = [];
-    // Replace the underlying OpenAI call so no network request is made.
-    (client as unknown as { client: { chat: { completions: { create: unknown } } } }).client.chat.completions.create =
-      async (body: Record<string, unknown>) => {
-        calls.push(body);
-        return {
-          choices: [{ message: { content: '{"ok":true}' } }],
-          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
-        };
-      };
-    return calls;
-  }
-
   afterEach(() => {
     delete process.env.DEEPSEEK_THINKING;
     resetConfig();
@@ -128,5 +148,86 @@ describe("DeepSeekClient request wiring (stubbed network)", () => {
     await c.reason({ messages, maxTokens: 2000 });
     expect((calls[0].thinking as { type: string }).type).toBe("disabled");
     expect(calls[0].max_tokens).toBe(2000);
+  });
+});
+
+describe("DeepSeekClient streaming (verbose mode)", () => {
+  afterEach(() => {
+    delete process.env.LOG_LEVEL;
+    delete process.env.DEEPSEEK_THINKING;
+    resetConfig();
+  });
+
+  test("verbose + thinking on → streaming path (stream: true in request)", async () => {
+    process.env.LOG_LEVEL = "debug";
+    resetConfig();
+    const c = new DeepSeekClient();
+    const calls = stubStream(c, []);
+    await c.reason({ messages, maxTokens: 1000 });
+    expect(calls[0].stream).toBe(true);
+  });
+
+  test("verbose + thinking off (chat) → non-streaming path", async () => {
+    process.env.LOG_LEVEL = "debug";
+    resetConfig();
+    const c = new DeepSeekClient();
+    // chat() always sets enableThinking: false, so it should NOT stream even in verbose
+    const calls = stubCreate(c);
+    await c.chat({ messages, maxTokens: 1000 });
+    expect(calls[0].stream).toBe(false);
+  });
+
+  test("non-verbose + thinking on → non-streaming path", async () => {
+    // Default LOG_LEVEL is "info", so streaming should NOT trigger
+    resetConfig();
+    const c = new DeepSeekClient();
+    const calls = stubCreate(c);
+    await c.reason({ messages, maxTokens: 1000 });
+    expect(calls[0].stream).toBe(false);
+  });
+
+  test("stream chunks: reasoning + content accumulated, usage captured", async () => {
+    process.env.LOG_LEVEL = "debug";
+    resetConfig();
+    const c = new DeepSeekClient();
+    stubStream(c, [
+      { choices: [{ delta: { reasoning_content: "Let me think" } }] },
+      { choices: [{ delta: { reasoning_content: " about this." } }] },
+      { choices: [{ delta: { content: "The answer" } }] },
+      { choices: [{ delta: { content: " is 42." } }] },
+      { usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 } },
+    ]);
+    const response = await c.reason({ messages, maxTokens: 1000 });
+    expect(response.content).toBe("The answer is 42.");
+    expect(response.reasoning).toBe("Let me think about this.");
+    expect(response.usage.totalTokens).toBe(30);
+    expect(response.usage.promptTokens).toBe(10);
+  });
+
+  test("stream with jsonMode → response_format present in request", async () => {
+    process.env.LOG_LEVEL = "debug";
+    resetConfig();
+    const c = new DeepSeekClient();
+    const calls = stubStream(c, [
+      { choices: [{ delta: { content: '{"ok":true}' } }] },
+      { usage: { prompt_tokens: 5, completion_tokens: 5, total_tokens: 10 } },
+    ]);
+    await c.reason({ messages, maxTokens: 500, jsonMode: true });
+    expect((calls[0].response_format as { type: string }).type).toBe("json_object");
+    expect((calls[0].thinking as { type: string }).type).toBe("enabled");
+    expect(calls[0].stream).toBe(true);
+  });
+
+  test("stream with empty content but reasoning present → content is empty string", async () => {
+    process.env.LOG_LEVEL = "debug";
+    resetConfig();
+    const c = new DeepSeekClient();
+    stubStream(c, [
+      { choices: [{ delta: { reasoning_content: "Just thinking..." } }] },
+      { usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 } },
+    ]);
+    const response = await c.reason({ messages, maxTokens: 1000 });
+    expect(response.content).toBe("");
+    expect(response.reasoning).toBe("Just thinking...");
   });
 });

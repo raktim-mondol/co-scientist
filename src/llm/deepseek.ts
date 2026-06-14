@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions.js";
+import chalk from "chalk";
 import { getConfig, logger } from "../config.js";
 
 export interface LLMUsage {
@@ -119,6 +120,17 @@ export class DeepSeekClient {
   }
 
   private async _call(params: DeepSeekChatParams): Promise<LLMResponse> {
+    // In verbose (debug) mode with thinking enabled, stream reasoning_content to
+    // stderr in real-time so the user can watch the chain-of-thought unfold.
+    const verbose = getConfig().logLevel === "debug";
+    if (verbose && params.enableThinking) {
+      return this._callStreaming(params);
+    }
+    return this._callNonStreaming(params);
+  }
+
+  /** Non-streaming call — current production path. */
+  private async _callNonStreaming(params: DeepSeekChatParams): Promise<LLMResponse> {
     const maxRetries = 3;
     let lastError: Error | null = null;
 
@@ -130,15 +142,8 @@ export class DeepSeekClient {
           await sleep(delay);
         }
 
-        // Build the request body. When thinking is enabled (reason() + config on),
-        // buildRequestBody adds reasoning headroom on top of max_tokens so the
-        // chain-of-thought can't starve the answer budget. When disabled, the body
-        // matches the previous non-thinking behavior. JSON mode requires the word
-        // "json" to appear somewhere in the prompt.
         const requestBody = buildRequestBody(this.model, params, this.thinking);
 
-        // Use the raw API call to pass DeepSeek-specific fields that the typed SDK
-        // does not expose (thinking, reasoning_content, etc.).
         const completion = await (this.client.chat.completions.create as Function)(
           requestBody
         ) as OpenAI.Chat.ChatCompletion & {
@@ -162,22 +167,95 @@ export class DeepSeekClient {
         );
 
         const message = completion.choices[0]?.message;
-        // Safety net: strip any residual <think> blocks if the API ever leaks them
-        // despite thinking: disabled.
         const rawContent = message?.content ?? "";
         const content = rawContent.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
         return {
           content,
           usage,
-          // With thinking explicitly disabled, reasoning_content should always
-          // be empty. We still read it as a safety net but don't expect it.
           reasoning: message?.reasoning_content || undefined,
         };
       } catch (error) {
         lastError = error as Error;
         logger.warn(`DeepSeek API error (attempt ${attempt + 1}): ${lastError.message}`);
 
-        // Don't retry on auth errors
+        if ((error as { status?: number }).status === 401) {
+          throw error;
+        }
+      }
+    }
+
+    throw lastError ?? new Error("DeepSeek API call failed after retries");
+  }
+
+  /**
+   * Streaming call — used in verbose mode (LOG_LEVEL=debug) with thinking enabled.
+   * Streams reasoning_content chunks to stderr in light gray as they arrive so the
+   * user can watch the chain-of-thought unfold in real-time.
+   */
+  private async _callStreaming(params: DeepSeekChatParams): Promise<LLMResponse> {
+    const maxRetries = 3;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        if (attempt > 0) {
+          const delay = Math.pow(2, attempt) * 1000;
+          logger.debug(`DeepSeek retry ${attempt}/${maxRetries}, waiting ${delay}ms`);
+          await sleep(delay);
+        }
+
+        const requestBody = buildRequestBody(this.model, params, this.thinking);
+        requestBody["stream"] = true;
+
+        const stream = await (this.client.chat.completions.create as Function)(
+          requestBody
+        ) as AsyncIterable<{
+          choices?: Array<{ delta?: { content?: string; reasoning_content?: string } }>;
+          usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+        }>;
+
+        let reasoningContent = "";
+        let content = "";
+        let usage: LLMUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+
+        for await (const chunk of stream) {
+          const delta = chunk.choices?.[0]?.delta;
+          if (delta?.reasoning_content) {
+            reasoningContent += delta.reasoning_content;
+            process.stderr.write(chalk.gray(delta.reasoning_content));
+          }
+          if (delta?.content) {
+            content += delta.content;
+          }
+          if (chunk.usage) {
+            usage = {
+              promptTokens: chunk.usage.prompt_tokens ?? 0,
+              completionTokens: chunk.usage.completion_tokens ?? 0,
+              totalTokens: chunk.usage.total_tokens ?? 0,
+            };
+          }
+        }
+
+        // Newline to separate the reasoning stream from the next log line
+        if (reasoningContent) {
+          process.stderr.write("\n");
+        }
+
+        this.totalTokensUsed += usage.totalTokens;
+        logger.debug(
+          `DeepSeek call: ${usage.totalTokens} tokens (total: ${this.totalTokensUsed})`
+        );
+
+        const cleanContent = content.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+        return {
+          content: cleanContent,
+          usage,
+          reasoning: reasoningContent || undefined,
+        };
+      } catch (error) {
+        lastError = error as Error;
+        logger.warn(`DeepSeek API error (attempt ${attempt + 1}): ${lastError.message}`);
+
         if ((error as { status?: number }).status === 401) {
           throw error;
         }
