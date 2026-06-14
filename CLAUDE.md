@@ -84,4 +84,6 @@ Reinforcement Learning from Experimental Feedback lives in `src/rlef/`:
 
 ### LLM Client
 
-`src/llm/deepseek.ts` uses the `openai` SDK pointed at the DeepSeek base URL. Two methods: `chat()` (faster, lower cost) and `reason()` (same model, intended for tasks needing careful reasoning). Thinking/reasoning fields are disabled at the API level — the `reasoning` field on `LLMResponse` is kept for interface compatibility only.
+`src/llm/deepseek.ts` uses the `openai` SDK pointed at the DeepSeek base URL. Two methods: `chat()` (always non-thinking — fast, lower cost) and `reason()` (runs in DeepSeek **thinking mode** when enabled). The `mode: chat` / `mode: reason` tag in each prompt YAML decides which is used, so thinking is scoped to reason-mode prompts (ranking, reflection, evolution, meta-review, debates) without touching generation/proximity.
+
+Thinking is controlled by `config.deepseek.thinking` (`DEEPSEEK_THINKING`, default on; `DEEPSEEK_REASONING_EFFORT` high|max; `DEEPSEEK_REASONING_BUDGET_TOKENS`). The chain-of-thought comes back in a separate `reasoning_content` field (surfaced as `LLMResponse.reasoning`) — it does not leak into `content`. Because `max_tokens` caps `reasoning + content` combined, `buildRequestBody()` (pure, exported for testing) adds `reasoningBudgetTokens` of headroom on top of the call's `max_tokens` when thinking is on, so reasoning can't starve the answer. Reasoning tokens are billed in `total_tokens`, so `COMPUTE_BUDGET_TOKENS` drains faster with thinking enabled.

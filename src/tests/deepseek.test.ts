@@ -1,0 +1,132 @@
+import { describe, test, expect, afterEach } from "bun:test";
+
+// Must be set before importing config (loadConfig requires a non-empty key).
+process.env.DEEPSEEK_API_KEY = "stub-for-tests";
+
+import { resetConfig, getConfig } from "../config.js";
+import { DeepSeekClient, buildRequestBody, type ThinkingConfig } from "../llm/deepseek.js";
+
+const baseThinking: ThinkingConfig = {
+  enabled: true,
+  reasoningEffort: "high",
+  reasoningBudgetTokens: 8000,
+};
+const messages = [{ role: "user" as const, content: "hi" }];
+
+describe("buildRequestBody (pure request shaping)", () => {
+  test("thinking on → enabled, effort set, additive budget, no temperature", () => {
+    const body = buildRequestBody(
+      "deepseek-v4-pro",
+      { messages, maxTokens: 1000, temperature: 0.7, enableThinking: true, jsonMode: true },
+      baseThinking
+    );
+    expect((body.thinking as { type: string }).type).toBe("enabled");
+    expect(body.reasoning_effort).toBe("high");
+    expect(body.max_tokens).toBe(9000); // 1000 + 8000 headroom
+    expect(body.temperature).toBeUndefined(); // ignored in thinking mode → omitted
+    expect((body.response_format as { type: string }).type).toBe("json_object");
+  });
+
+  test("thinking off → disabled, temperature kept, no budget added", () => {
+    const body = buildRequestBody(
+      "deepseek-v4-pro",
+      { messages, maxTokens: 1000, temperature: 0.5, enableThinking: false },
+      baseThinking
+    );
+    expect((body.thinking as { type: string }).type).toBe("disabled");
+    expect(body.max_tokens).toBe(1000);
+    expect(body.temperature).toBe(0.5);
+    expect(body.response_format).toBeUndefined();
+  });
+
+  test("effort falls back to config default when param omitted", () => {
+    const body = buildRequestBody(
+      "m",
+      { messages, enableThinking: true },
+      { ...baseThinking, reasoningEffort: "max" }
+    );
+    expect(body.reasoning_effort).toBe("max");
+  });
+});
+
+describe("config env parsing for deepseek.thinking", () => {
+  afterEach(() => {
+    delete process.env.DEEPSEEK_THINKING;
+    delete process.env.DEEPSEEK_REASONING_EFFORT;
+    delete process.env.DEEPSEEK_REASONING_BUDGET_TOKENS;
+    resetConfig();
+  });
+
+  test("defaults: enabled, high effort, 8000 budget", () => {
+    resetConfig();
+    const t = getConfig().deepseek.thinking;
+    expect(t.enabled).toBe(true);
+    expect(t.reasoningEffort).toBe("high");
+    expect(t.reasoningBudgetTokens).toBe(8000);
+  });
+
+  test("DEEPSEEK_THINKING=false disables", () => {
+    process.env.DEEPSEEK_THINKING = "false";
+    resetConfig();
+    expect(getConfig().deepseek.thinking.enabled).toBe(false);
+  });
+
+  test("effort + budget overrides parsed from env", () => {
+    process.env.DEEPSEEK_REASONING_EFFORT = "max";
+    process.env.DEEPSEEK_REASONING_BUDGET_TOKENS = "12000";
+    resetConfig();
+    const t = getConfig().deepseek.thinking;
+    expect(t.reasoningEffort).toBe("max");
+    expect(t.reasoningBudgetTokens).toBe(12000);
+  });
+});
+
+describe("DeepSeekClient request wiring (stubbed network)", () => {
+  function stubCreate(client: DeepSeekClient): Array<Record<string, unknown>> {
+    const calls: Array<Record<string, unknown>> = [];
+    // Replace the underlying OpenAI call so no network request is made.
+    (client as unknown as { client: { chat: { completions: { create: unknown } } } }).client.chat.completions.create =
+      async (body: Record<string, unknown>) => {
+        calls.push(body);
+        return {
+          choices: [{ message: { content: '{"ok":true}' } }],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        };
+      };
+    return calls;
+  }
+
+  afterEach(() => {
+    delete process.env.DEEPSEEK_THINKING;
+    resetConfig();
+  });
+
+  test("reason() enables thinking with additive budget and drops temperature", async () => {
+    resetConfig();
+    const c = new DeepSeekClient();
+    const calls = stubCreate(c);
+    await c.reason({ messages, maxTokens: 2000, temperature: 0.7, jsonMode: true });
+    expect((calls[0].thinking as { type: string }).type).toBe("enabled");
+    expect(calls[0].max_tokens).toBe(2000 + 8000);
+    expect(calls[0].temperature).toBeUndefined();
+  });
+
+  test("chat() never enables thinking and keeps its budget", async () => {
+    resetConfig();
+    const c = new DeepSeekClient();
+    const calls = stubCreate(c);
+    await c.chat({ messages, maxTokens: 2000, temperature: 0.7 });
+    expect((calls[0].thinking as { type: string }).type).toBe("disabled");
+    expect(calls[0].max_tokens).toBe(2000);
+  });
+
+  test("DEEPSEEK_THINKING=false makes reason() behave like chat()", async () => {
+    process.env.DEEPSEEK_THINKING = "false";
+    resetConfig();
+    const c = new DeepSeekClient();
+    const calls = stubCreate(c);
+    await c.reason({ messages, maxTokens: 2000 });
+    expect((calls[0].thinking as { type: string }).type).toBe("disabled");
+    expect(calls[0].max_tokens).toBe(2000);
+  });
+});

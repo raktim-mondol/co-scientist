@@ -10,6 +10,14 @@ const ConfigSchema = z.object({
     apiKey: z.string().min(1, "DEEPSEEK_API_KEY is required"),
     baseURL: z.string().url().default("https://api.deepseek.com"),
     model: z.string().default("deepseek-v4-pro"),
+    // Thinking (chain-of-thought) mode. Applies to reason() calls only — chat()
+    // is always non-thinking. reasoningBudgetTokens is added on top of a call's
+    // max_tokens so reasoning can't starve the answer (see DeepSeek client).
+    thinking: z.object({
+      enabled: z.boolean().default(true),
+      reasoningEffort: z.enum(["high", "max"]).default("high"),
+      reasoningBudgetTokens: z.number().int().nonnegative().default(8000),
+    }).default({}),
   }),
 
   // MCP Tools
@@ -97,6 +105,17 @@ function loadConfig(): AppConfig {
       apiKey: process.env.DEEPSEEK_API_KEY ?? "",
       baseURL: process.env.DEEPSEEK_BASE_URL,
       model: process.env.DEEPSEEK_MODEL,
+      thinking: {
+        // DEEPSEEK_THINKING=false disables; unset/other leaves the default (enabled).
+        enabled: process.env.DEEPSEEK_THINKING === "false" ? false : undefined,
+        reasoningEffort: (() => {
+          const v = process.env.DEEPSEEK_REASONING_EFFORT?.trim().toLowerCase();
+          return v === "high" || v === "max" ? v : undefined;
+        })(),
+        reasoningBudgetTokens: process.env.DEEPSEEK_REASONING_BUDGET_TOKENS
+          ? parseInt(process.env.DEEPSEEK_REASONING_BUDGET_TOKENS, 10)
+          : undefined,
+      },
     },
     tools: {
       parallelAi: {

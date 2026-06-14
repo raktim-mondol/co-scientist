@@ -11,26 +11,74 @@ export interface LLMUsage {
 export interface LLMResponse {
   content: string;
   usage: LLMUsage;
-  reasoning?: string; // Thinking trace (disabled — kept for interface compatibility)
+  reasoning?: string; // Chain-of-thought trace (populated when thinking is enabled)
 }
 
-// Thinking is disabled. This type is retained for interface compatibility only.
 export type ReasoningEffort = "high" | "max";
 
-// DeepSeek chat parameters (thinking/reasoning fields are intentionally omitted)
+/** Thinking-mode policy (mirrors config.deepseek.thinking). */
+export interface ThinkingConfig {
+  enabled: boolean;
+  reasoningEffort: ReasoningEffort;
+  /** Tokens added on top of a call's max_tokens to give reasoning its own headroom. */
+  reasoningBudgetTokens: number;
+}
+
 interface DeepSeekChatParams {
   messages: ChatCompletionMessageParam[];
   maxTokens?: number;
   temperature?: number;
-  reasoningEffort?: ReasoningEffort; // unused — kept for interface compatibility
-  enableThinking?: boolean;          // unused — thinking is disabled
+  /** Effort hint when thinking is enabled; falls back to the configured default. */
+  reasoningEffort?: ReasoningEffort;
+  /** Whether this call runs in thinking mode (set by chat()/reason()). */
+  enableThinking?: boolean;
   /** When true, instructs the model to return valid JSON via response_format */
   jsonMode?: boolean;
+}
+
+/**
+ * Build the DeepSeek request body. Pure and exported for testing.
+ *
+ * When thinking is enabled, reasoning_content shares the max_tokens budget with the
+ * answer (an empty/truncated answer results if reasoning consumes it all). To prevent
+ * that, we add `reasoningBudgetTokens` of headroom on top of the caller's max_tokens
+ * (approach A) so the declared budget stays fully available for the actual content.
+ */
+export function buildRequestBody(
+  model: string,
+  params: DeepSeekChatParams,
+  thinking: ThinkingConfig
+): Record<string, unknown> {
+  const baseMaxTokens = params.maxTokens ?? 8192;
+  const body: Record<string, unknown> = {
+    model,
+    messages: params.messages,
+    stream: false,
+  };
+
+  if (params.enableThinking) {
+    body["thinking"] = { type: "enabled" };
+    body["reasoning_effort"] = params.reasoningEffort ?? thinking.reasoningEffort;
+    body["max_tokens"] = baseMaxTokens + thinking.reasoningBudgetTokens;
+    // temperature/top_p/presence_penalty/frequency_penalty are silently ignored in
+    // thinking mode — omit temperature so we don't imply it has an effect.
+  } else {
+    body["thinking"] = { type: "disabled" };
+    body["max_tokens"] = baseMaxTokens;
+    if (params.temperature !== undefined) body["temperature"] = params.temperature;
+  }
+
+  if (params.jsonMode) {
+    body["response_format"] = { type: "json_object" };
+  }
+
+  return body;
 }
 
 export class DeepSeekClient {
   private client: OpenAI;
   private model: string;
+  private thinking: ThinkingConfig;
   private totalTokensUsed = 0;
   private _deltaBaseline = 0;
 
@@ -41,11 +89,12 @@ export class DeepSeekClient {
       apiKey: config.deepseek.apiKey,
     });
     this.model = config.deepseek.model;
+    this.thinking = config.deepseek.thinking;
   }
 
   /**
-   * Standard chat call — fast, lower cost, no thinking.
-   * Good for: generation, evolution, proximity tasks.
+   * Standard chat call — always non-thinking (fast, lower cost).
+   * Good for: generation, evolution, proximity, and other `mode: chat` prompts.
    */
   async chat(params: DeepSeekChatParams): Promise<LLMResponse> {
     return this._call({
@@ -56,12 +105,17 @@ export class DeepSeekClient {
   }
 
   /**
-   * Alias for `chat()`. Thinking is intentionally disabled for cost/latency —
-   * both methods call `_call()` identically.
-   * To re-enable DeepSeek reasoning, remove `thinking: { type: 'disabled' }` from `_call()`.
+   * Reasoning call — runs in DeepSeek thinking mode when enabled in config
+   * (DEEPSEEK_THINKING, default on). Used by `mode: reason` prompts (ranking,
+   * reflection, evolution, meta-review, debates). When thinking is disabled this
+   * behaves identically to chat().
    */
   async reason(params: DeepSeekChatParams): Promise<LLMResponse> {
-    return this.chat(params);
+    return this._call({
+      ...params,
+      enableThinking: this.thinking.enabled,
+      reasoningEffort: this.thinking.reasoningEffort,
+    });
   }
 
   private async _call(params: DeepSeekChatParams): Promise<LLMResponse> {
@@ -76,28 +130,12 @@ export class DeepSeekClient {
           await sleep(delay);
         }
 
-        // Base request body — thinking is EXPLICITLY disabled so reasoning
-        // models (e.g. deepseek-v4-pro) don't generate <think> blocks or
-        // reasoning_content. Without this, thinking is ON by default and
-        // the <think> blocks consume the max_tokens budget, truncating
-        // actual JSON output and causing extraction failures.
-        const requestBody: Record<string, unknown> = {
-          model: this.model,
-          messages: params.messages,
-          max_tokens: params.maxTokens ?? 8192,
-          stream: false,
-          thinking: { type: "disabled" },
-        };
-
-        // Include temperature for output control.
-        if (params.temperature !== undefined) {
-          requestBody["temperature"] = params.temperature;
-        }
-
-        // JSON output mode — requires the word "json" to appear in the prompt.
-        if (params.jsonMode) {
-          requestBody["response_format"] = { type: "json_object" };
-        }
+        // Build the request body. When thinking is enabled (reason() + config on),
+        // buildRequestBody adds reasoning headroom on top of max_tokens so the
+        // chain-of-thought can't starve the answer budget. When disabled, the body
+        // matches the previous non-thinking behavior. JSON mode requires the word
+        // "json" to appear somewhere in the prompt.
+        const requestBody = buildRequestBody(this.model, params, this.thinking);
 
         // Use the raw API call to pass DeepSeek-specific fields that the typed SDK
         // does not expose (thinking, reasoning_content, etc.).

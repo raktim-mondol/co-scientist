@@ -106,7 +106,7 @@ export abstract class BaseAgent {
 
     if (response.reasoning?.trim()) {
       const snippet = response.reasoning.trim().slice(0, 300).replace(/\n+/g, " ");
-      logger.debug(`[${this.agentName}] Thinking (unexpected): ${snippet}${response.reasoning.length > 300 ? "…" : ""}`);
+      logger.debug(`[${this.agentName}] Thinking trace (${response.reasoning.length} chars): ${snippet}${response.reasoning.length > 300 ? "…" : ""}`);
     }
 
     return response;
@@ -141,7 +141,7 @@ export abstract class BaseAgent {
 
     if (response.reasoning?.trim()) {
       const snippet = response.reasoning.trim().slice(0, 300).replace(/\n+/g, " ");
-      logger.debug(`[${this.agentName}] Thinking (unexpected): ${snippet}${response.reasoning.length > 300 ? "…" : ""}`);
+      logger.debug(`[${this.agentName}] Thinking trace (${response.reasoning.length} chars): ${snippet}${response.reasoning.length > 300 ? "…" : ""}`);
     }
 
     return response;
