@@ -23,6 +23,8 @@ export interface ThinkingConfig {
   reasoningEffort: ReasoningEffort;
   /** Tokens added on top of a call's max_tokens to give reasoning its own headroom. */
   reasoningBudgetTokens: number;
+  /** When true, stream reasoning_content to stderr in real-time (light gray). */
+  streamThinking: boolean;
 }
 
 interface DeepSeekChatParams {
@@ -120,10 +122,10 @@ export class DeepSeekClient {
   }
 
   private async _call(params: DeepSeekChatParams): Promise<LLMResponse> {
-    // In verbose (debug) mode with thinking enabled, stream reasoning_content to
-    // stderr in real-time so the user can watch the chain-of-thought unfold.
-    const verbose = getConfig().logLevel === "debug";
-    if (verbose && params.enableThinking) {
+    // When DEEPSEEK_STREAM_THINKING is enabled and thinking is on, stream
+    // reasoning_content to stderr in real-time so the user can watch the
+    // chain-of-thought unfold.
+    if (this.thinking.streamThinking && params.enableThinking) {
       return this._callStreaming(params);
     }
     return this._callNonStreaming(params);

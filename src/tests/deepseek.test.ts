@@ -10,6 +10,7 @@ const baseThinking: ThinkingConfig = {
   enabled: true,
   reasoningEffort: "high",
   reasoningBudgetTokens: 8000,
+  streamThinking: false,
 };
 const messages = [{ role: "user" as const, content: "hi" }];
 
@@ -151,15 +152,15 @@ describe("DeepSeekClient request wiring (stubbed network)", () => {
   });
 });
 
-describe("DeepSeekClient streaming (verbose mode)", () => {
+describe("DeepSeekClient streaming (DEEPSEEK_STREAM_THINKING)", () => {
   afterEach(() => {
-    delete process.env.LOG_LEVEL;
+    delete process.env.DEEPSEEK_STREAM_THINKING;
     delete process.env.DEEPSEEK_THINKING;
     resetConfig();
   });
 
-  test("verbose + thinking on → streaming path (stream: true in request)", async () => {
-    process.env.LOG_LEVEL = "debug";
+  test("stream enabled + thinking on → streaming path (stream: true in request)", async () => {
+    process.env.DEEPSEEK_STREAM_THINKING = "true";
     resetConfig();
     const c = new DeepSeekClient();
     const calls = stubStream(c, []);
@@ -167,18 +168,18 @@ describe("DeepSeekClient streaming (verbose mode)", () => {
     expect(calls[0].stream).toBe(true);
   });
 
-  test("verbose + thinking off (chat) → non-streaming path", async () => {
-    process.env.LOG_LEVEL = "debug";
+  test("stream enabled + thinking off (chat) → non-streaming path", async () => {
+    process.env.DEEPSEEK_STREAM_THINKING = "true";
     resetConfig();
     const c = new DeepSeekClient();
-    // chat() always sets enableThinking: false, so it should NOT stream even in verbose
+    // chat() always sets enableThinking: false, so it should NOT stream
     const calls = stubCreate(c);
     await c.chat({ messages, maxTokens: 1000 });
     expect(calls[0].stream).toBe(false);
   });
 
-  test("non-verbose + thinking on → non-streaming path", async () => {
-    // Default LOG_LEVEL is "info", so streaming should NOT trigger
+  test("stream disabled + thinking on → non-streaming path", async () => {
+    // DEEPSEEK_STREAM_THINKING defaults to false, so streaming should NOT trigger
     resetConfig();
     const c = new DeepSeekClient();
     const calls = stubCreate(c);
@@ -187,7 +188,7 @@ describe("DeepSeekClient streaming (verbose mode)", () => {
   });
 
   test("stream chunks: reasoning + content accumulated, usage captured", async () => {
-    process.env.LOG_LEVEL = "debug";
+    process.env.DEEPSEEK_STREAM_THINKING = "true";
     resetConfig();
     const c = new DeepSeekClient();
     stubStream(c, [
@@ -205,7 +206,7 @@ describe("DeepSeekClient streaming (verbose mode)", () => {
   });
 
   test("stream with jsonMode → response_format present in request", async () => {
-    process.env.LOG_LEVEL = "debug";
+    process.env.DEEPSEEK_STREAM_THINKING = "true";
     resetConfig();
     const c = new DeepSeekClient();
     const calls = stubStream(c, [
@@ -219,7 +220,7 @@ describe("DeepSeekClient streaming (verbose mode)", () => {
   });
 
   test("stream with empty content but reasoning present → content is empty string", async () => {
-    process.env.LOG_LEVEL = "debug";
+    process.env.DEEPSEEK_STREAM_THINKING = "true";
     resetConfig();
     const c = new DeepSeekClient();
     stubStream(c, [
