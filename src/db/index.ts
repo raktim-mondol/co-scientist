@@ -25,6 +25,10 @@ export function getDb(): BunSQLiteDatabase<typeof schema> {
     // Enable WAL mode for better concurrent performance
     _sqlite.exec("PRAGMA journal_mode = WAL");
     _sqlite.exec("PRAGMA foreign_keys = ON");
+    // Wait (up to 5s) for a lock instead of failing immediately with SQLITE_BUSY.
+    // Hardens against transient contention from multiple workers (MAX_WORKERS) and
+    // from overlapping connections on slow CI.
+    _sqlite.exec("PRAGMA busy_timeout = 5000");
 
     // Load sqlite-vec extension — provides vec0 virtual tables for ANN vector search
     sqliteVec.load(_sqlite);

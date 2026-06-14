@@ -1,0 +1,4 @@
+[test]
+# Runs before any test file (and before src/config.ts's dotenv import) so the
+# suite is isolated from the developer's .env. See src/tests/setup.ts.
+preload = ["./src/tests/setup.ts"]

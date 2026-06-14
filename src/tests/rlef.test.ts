@@ -21,8 +21,9 @@ process.env.DEEPSEEK_API_KEY = "stub-for-tests";
 
 // Imports must come AFTER env vars are set (modules read env at load time)
 import { runMigrations } from "../db/migrate.js";
-import { closeDb, getSqlite } from "../db/index.js";
-import { getContextStore } from "../memory/contextStore.js";
+import { closeDb, getSqlite, resetDb } from "../db/index.js";
+import { getContextStore, resetContextStore } from "../memory/contextStore.js";
+import { resetConfig } from "../config.js";
 import { extractRewardFromFeedback, applyRewardToElo, applyFeedbackAsGlicko2Match } from "../rlef/reward-signal.js";
 import { buildRLEFMetaReviewBlock } from "../rlef/prompt-injection.js";
 import { RewardStore } from "../rlef/reward-store.js";
@@ -30,9 +31,14 @@ import type { ExperimentalFeedback } from "../models/feedback.js";
 import type { Hypothesis } from "../models/hypothesis.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+// store/rewardStore are assigned in beforeAll AFTER resetting the DB singletons.
+// Bun runs all test files in one process, so acquiring these at module-eval time
+// would capture a stale ContextStore/connection from a previously-run file whose
+// temp DB directory has since been deleted (→ "disk I/O error" / SQLITE_BUSY).
 let sessionId: string;
 let hyp: Hypothesis;
-const store = getContextStore();
+let store: ReturnType<typeof getContextStore>;
+let rewardStore: RewardStore;
 
 function makeFeedback(
   hypothesisId: string,
@@ -58,6 +64,14 @@ function makeFeedback(
 }
 
 beforeAll(async () => {
+  // Establish a clean, isolated DB on THIS file's DB_PATH before any DB use,
+  // matching the pattern used by the other DB test files (safety, citation, etc.).
+  resetConfig();
+  resetDb();
+  resetContextStore();
+  store = getContextStore();
+  rewardStore = new RewardStore();
+
   await runMigrations();
 
   // Seed a session and hypothesis
@@ -219,7 +233,7 @@ describe("buildRLEFMetaReviewBlock", () => {
 
 // ── Task 7: RewardStore (keyword extraction + recordFeedback gate) ─────────────
 describe("RewardStore", () => {
-  const rewardStore = new RewardStore();
+  // rewardStore is constructed in beforeAll (after DB reset) — see top of file.
 
   it("extractKeywords filters stop-words and short words", () => {
     const kw = rewardStore.extractKeywords("Drug X reduces tumor volume via apoptosis pathway");
