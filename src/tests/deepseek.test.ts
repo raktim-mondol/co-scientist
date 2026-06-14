@@ -1,4 +1,4 @@
-import { describe, test, expect, afterEach } from "bun:test";
+import { describe, test, expect, afterEach, beforeEach } from "bun:test";
 
 // Must be set before importing config (loadConfig requires a non-empty key).
 process.env.DEEPSEEK_API_KEY = "stub-for-tests";
@@ -85,10 +85,18 @@ describe("buildRequestBody (pure request shaping)", () => {
 });
 
 describe("config env parsing for deepseek.thinking", () => {
+  beforeEach(() => {
+    delete process.env.DEEPSEEK_THINKING;
+    delete process.env.DEEPSEEK_REASONING_EFFORT;
+    delete process.env.DEEPSEEK_REASONING_BUDGET_TOKENS;
+    delete process.env.DEEPSEEK_STREAM_THINKING;
+  });
+
   afterEach(() => {
     delete process.env.DEEPSEEK_THINKING;
     delete process.env.DEEPSEEK_REASONING_EFFORT;
     delete process.env.DEEPSEEK_REASONING_BUDGET_TOKENS;
+    delete process.env.DEEPSEEK_STREAM_THINKING;
     resetConfig();
   });
 

@@ -320,6 +320,45 @@ export async function runMigrations() {
       // Column already exists — safe to ignore
     }
   }
+  // Add thinking_traces and session_activity tables for session logging
+  db.run(sql`
+    CREATE TABLE IF NOT EXISTS thinking_traces (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL REFERENCES sessions(id),
+      agent TEXT NOT NULL,
+      reasoning TEXT NOT NULL,
+      prompt_tokens INTEGER NOT NULL DEFAULT 0,
+      completion_tokens INTEGER NOT NULL DEFAULT 0,
+      total_tokens INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL
+    )
+  `);
+  db.run(sql`
+    CREATE INDEX IF NOT EXISTS idx_thinking_traces_session
+    ON thinking_traces(session_id)
+  `);
+
+  db.run(sql`
+    CREATE TABLE IF NOT EXISTS session_activity (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL REFERENCES sessions(id),
+      agent TEXT NOT NULL DEFAULT 'system',
+      type TEXT NOT NULL,
+      message TEXT NOT NULL,
+      detail_json TEXT,
+      tokens_in INTEGER,
+      tokens_out INTEGER,
+      created_at INTEGER NOT NULL
+    )
+  `);
+  db.run(sql`
+    CREATE INDEX IF NOT EXISTS idx_session_activity_session
+    ON session_activity(session_id)
+  `);
+  db.run(sql`
+    CREATE INDEX IF NOT EXISTS idx_session_activity_type
+    ON session_activity(session_id, type)
+  `);
 }
 
 // Run migrations when executed directly: `bun run src/db/migrate.ts`

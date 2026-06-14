@@ -1,6 +1,9 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions.js";
 import chalk from "chalk";
+import { homedir } from "os";
+import { join } from "path";
+import { appendFileSync, mkdirSync } from "fs";
 import { getConfig, logger } from "../config.js";
 
 export interface LLMUsage {
@@ -84,6 +87,36 @@ export class DeepSeekClient {
   private thinking: ThinkingConfig;
   private totalTokensUsed = 0;
   private _deltaBaseline = 0;
+
+  /**
+   * When false, _callStreaming will not write reasoning traces to stderr.
+   * Set to false by the TUI (src/cli/tui) since raw stderr writes corrupt
+   * Ink's ANSI cursor tracking. When stderr is disabled, traces are written
+   * to the thinking log file (streamLogPath) instead.
+   */
+  static stderrEnabled = true;
+
+  /** Base directory for thinking logs. */
+  static streamLogDir = join(homedir(), ".co-scientist");
+
+  /** Path to the current session's thinking log file. */
+  static streamLogPath = join(DeepSeekClient.streamLogDir, "thinking.log");
+
+  /**
+   * Set the thinking log path to a session-specific file.
+   * Call once at session start so each session gets its own log.
+   */
+  static setSessionLogPath(sessionId: string): void {
+    try {
+      mkdirSync(DeepSeekClient.streamLogDir, { recursive: true });
+    } catch {
+      // Best-effort.
+    }
+    DeepSeekClient.streamLogPath = join(
+      DeepSeekClient.streamLogDir,
+      `thinking-${sessionId}.log`
+    );
+  }
 
   constructor() {
     const config = getConfig();
@@ -171,10 +204,22 @@ export class DeepSeekClient {
         const message = completion.choices[0]?.message;
         const rawContent = message?.content ?? "";
         const content = rawContent.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+        const reasoning = message?.reasoning_content || undefined;
+
+        // When thinking is on but streaming is off, write reasoning to the log
+        // file so it's still available for inspection without console noise.
+        if (reasoning && !this.thinking.streamThinking && params.enableThinking) {
+          try {
+            appendFileSync(DeepSeekClient.streamLogPath, reasoning + "\n");
+          } catch {
+            // Best-effort.
+          }
+        }
+
         return {
           content,
           usage,
-          reasoning: message?.reasoning_content || undefined,
+          reasoning,
         };
       } catch (error) {
         lastError = error as Error;
@@ -224,7 +269,18 @@ export class DeepSeekClient {
           const delta = chunk.choices?.[0]?.delta;
           if (delta?.reasoning_content) {
             reasoningContent += delta.reasoning_content;
-            process.stderr.write(chalk.gray(delta.reasoning_content));
+            if (DeepSeekClient.stderrEnabled) {
+              // Non-TUI mode — write to stdout so thinking traces share a single
+              // stream with all other log output and don't interleave chaotically.
+              process.stdout.write(chalk.gray(delta.reasoning_content));
+            } else {
+              // TUI mode — write to log file to avoid corrupting Ink's ANSI rendering.
+              try {
+                appendFileSync(DeepSeekClient.streamLogPath, delta.reasoning_content);
+              } catch {
+                // Best-effort — silently skip if filesystem isn't available.
+              }
+            }
           }
           if (delta?.content) {
             content += delta.content;
@@ -240,7 +296,15 @@ export class DeepSeekClient {
 
         // Newline to separate the reasoning stream from the next log line
         if (reasoningContent) {
-          process.stderr.write("\n");
+          if (DeepSeekClient.stderrEnabled) {
+            process.stdout.write("\n");
+          } else {
+            try {
+              appendFileSync(DeepSeekClient.streamLogPath, "\n");
+            } catch {
+              // Best-effort.
+            }
+          }
         }
 
         this.totalTokensUsed += usage.totalTokens;

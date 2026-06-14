@@ -1072,6 +1072,106 @@ export class ContextStore {
     return rows.map(this._rowToFeedback);
   }
 
+  // ─── Thinking Traces ─────────────────────────────────────────────────────
+
+  /** Persist a DeepSeek reasoning trace to the DB. */
+  saveThinkingTrace(params: {
+    id: string;
+    sessionId: string;
+    agent: string;
+    reasoning: string;
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  }): void {
+    this.db.insert(schema.thinkingTraces).values({
+      id: params.id,
+      sessionId: params.sessionId,
+      agent: params.agent,
+      reasoning: params.reasoning,
+      promptTokens: params.promptTokens,
+      completionTokens: params.completionTokens,
+      totalTokens: params.totalTokens,
+      createdAt: new Date(),
+    }).run();
+  }
+
+  /** Get all thinking traces for a session. */
+  getThinkingTraces(sessionId: string): Array<{
+    id: string;
+    agent: string;
+    reasoning: string;
+    tokens: number;
+    createdAt: Date;
+  }> {
+    return (this.sqlite.query(`
+      SELECT id, agent, reasoning, total_tokens AS tokens, created_at AS createdAt
+      FROM thinking_traces
+      WHERE session_id = ?
+      ORDER BY created_at ASC
+    `).all(sessionId) as Array<{
+      id: string; agent: string; reasoning: string; tokens: number; createdAt: number;
+    }>).map((r) => ({ ...r, createdAt: new Date(r.createdAt) }));
+  }
+
+  /** Check if a session has any thinking traces. */
+  hasThinkingTraces(sessionId: string): boolean {
+    const row = this.sqlite.query(`
+      SELECT 1 FROM thinking_traces WHERE session_id = ? LIMIT 1
+    `).get(sessionId) as { 1: number } | undefined;
+    return row !== undefined;
+  }
+
+  // ─── Session Activity Log ─────────────────────────────────────────────────
+
+  /** Log a session activity entry. */
+  logActivity(params: {
+    id: string;
+    sessionId: string;
+    agent: string;
+    type: string;
+    message: string;
+    detailJson?: string;
+    tokensIn?: number;
+    tokensOut?: number;
+  }): void {
+    this.db.insert(schema.sessionActivity).values({
+      id: params.id,
+      sessionId: params.sessionId,
+      agent: params.agent,
+      type: params.type,
+      message: params.message,
+      detailJson: params.detailJson ?? null,
+      tokensIn: params.tokensIn ?? null,
+      tokensOut: params.tokensOut ?? null,
+      createdAt: new Date(),
+    }).run();
+  }
+
+  /** Get all activity entries for a session, ordered chronologically. */
+  getSessionActivity(sessionId: string): Array<{
+    id: string;
+    agent: string;
+    type: string;
+    message: string;
+    detailJson: string | null;
+    tokensIn: number | null;
+    tokensOut: number | null;
+    createdAt: Date;
+  }> {
+    return (this.sqlite.query(`
+      SELECT id, agent, type, message, detail_json AS detailJson,
+             tokens_in AS tokensIn, tokens_out AS tokensOut, created_at AS createdAt
+      FROM session_activity
+      WHERE session_id = ?
+      ORDER BY created_at ASC
+    `).all(sessionId) as Array<{
+      id: string; agent: string; type: string; message: string;
+      detailJson: string | null; tokensIn: number | null; tokensOut: number | null;
+      createdAt: number;
+    }>).map((r) => ({ ...r, createdAt: new Date(r.createdAt) }));
+  }
+
   // ─── Private helpers ──────────────────────────────────────────────────────
 
   private _rowToEvidence(r: typeof schema.evidenceSources.$inferSelect): EvidenceSource {

@@ -10,6 +10,7 @@ import { getContextStore } from "../../memory/contextStore.js";
 import { getMCPManager } from "../../tools/mcpClient.js";
 import { runMigrations } from "../../db/migrate.js";
 import { resetConfig, getConfig } from "../../config.js";
+import { DeepSeekClient } from "../../llm/deepseek.js";
 import { seedRng } from "../../util/rng.js";
 import type { ResearchGoal } from "../../models/researchGoal.js";
 import type { SessionStats } from "../../models/session.js";
@@ -137,6 +138,9 @@ export async function runCommand(options: RunOptions): Promise<void> {
   console.log(chalk.yellow("\n📋 Research Goal:\n") + chalk.white(rawGoal.trim()));
   console.log(chalk.yellow("\n🚀 Starting Co-Scientist...\n"));
 
+  // Each session gets its own thinking log: ~/.co-scientist/thinking-<sessionId>.log
+  DeepSeekClient.setSessionLogPath(sessionId);
+
   // Set up progress display
   const startTime = Date.now();
   const budgetTokens = getConfig().compute.budgetTokens;
@@ -147,6 +151,9 @@ export async function runCommand(options: RunOptions): Promise<void> {
   let lastStats: (SessionStats & { activity: string }) | null = null;
 
   if (useTui) {
+    // Suppress DeepSeek thinking stderr streaming — raw stderr writes corrupt
+    // Ink's ANSI cursor tracking and cause TUI flickering/ghosting.
+    DeepSeekClient.stderrEnabled = false;
     tui = renderTUI({
       emitter,
       memory: getContextStore(),

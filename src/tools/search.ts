@@ -6,8 +6,11 @@ import {
   RateLimitError,
   APIConnectionError,
 } from "parallel-web";
+import { v4 as uuidv4 } from "uuid";
 import { getMCPManager } from "./mcpClient.js";
 import { getConfig, logger } from "../config.js";
+import { getContextStore } from "../memory/contextStore.js";
+import { BaseAgent } from "../agents/base.js";
 
 export interface SearchResult {
   title: string;
@@ -298,6 +301,7 @@ export class SearchTool {
 
     const merged = this._deduplicate([...academicResults, ...webResults]);
     this._recordSearchOutcome(merged.length);
+    this._logSearchActivity(query, merged.length, `web+${acLabel}`);
     return merged;
   }
 
@@ -569,6 +573,24 @@ export class SearchTool {
           .join("\n");
       })
       .join("\n\n");
+  }
+
+  /** Log search activity to the session activity log. */
+  private _logSearchActivity(query: string, resultCount: number, source: string): void {
+    const sid = BaseAgent.currentSessionId;
+    if (!sid) return;
+    try {
+      getContextStore().logActivity({
+        id: uuidv4(),
+        sessionId: sid,
+        agent: "Search",
+        type: "search",
+        message: `${resultCount} results via ${source}: "${query.slice(0, 100)}${query.length > 100 ? "…" : ""}"`,
+        detailJson: JSON.stringify({ query, resultCount, source }),
+      });
+    } catch {
+      // Best-effort.
+    }
   }
 }
 

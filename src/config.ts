@@ -118,7 +118,7 @@ function loadConfig(): AppConfig {
         reasoningBudgetTokens: process.env.DEEPSEEK_REASONING_BUDGET_TOKENS
           ? parseInt(process.env.DEEPSEEK_REASONING_BUDGET_TOKENS, 10)
           : undefined,
-        streamThinking: process.env.DEEPSEEK_STREAM_THINKING === "true",
+        streamThinking: process.env.DEEPSEEK_STREAM_THINKING === "false" ? false : undefined,
       },
     },
     tools: {

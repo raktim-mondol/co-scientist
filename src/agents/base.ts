@@ -4,6 +4,7 @@ import { fileURLToPath } from "url";
 import Handlebars from "handlebars";
 import { parse as parseYaml } from "yaml";
 import { jsonrepair } from "jsonrepair";
+import { v4 as uuidv4 } from "uuid";
 import { getDeepSeekClient, type LLMResponse } from "../llm/deepseek.js";
 import { getSearchTool, type SearchResult } from "../tools/search.js";
 import { getContextStore } from "../memory/contextStore.js";
@@ -34,6 +35,9 @@ export abstract class BaseAgent {
   protected promptsDir = join(__dirname, "..", "prompts");
 
   abstract get agentName(): string;
+
+  /** Set by SupervisorAgent before dispatching — used for DB logging. */
+  static currentSessionId: string | null = null;
 
   /**
    * Load and compile a Handlebars YAML prompt template.
@@ -107,6 +111,50 @@ export abstract class BaseAgent {
     if (response.reasoning?.trim()) {
       const snippet = response.reasoning.trim().slice(0, 300).replace(/\n+/g, " ");
       logger.debug(`[${this.agentName}] Thinking trace (${response.reasoning.length} chars): ${snippet}${response.reasoning.length > 300 ? "…" : ""}`);
+
+      // Persist thinking trace to DB
+      const sid = BaseAgent.currentSessionId;
+      if (sid) {
+        try {
+          this.memory.saveThinkingTrace({
+            id: uuidv4(),
+            sessionId: sid,
+            agent: this.agentName,
+            reasoning: response.reasoning.trim(),
+            promptTokens: response.usage.promptTokens,
+            completionTokens: response.usage.completionTokens,
+            totalTokens: response.usage.totalTokens,
+          });
+        } catch {
+          // Best-effort — don't let DB errors break the agent.
+        }
+      }
+    }
+
+    // Log LLM call to session activity
+    const sid = BaseAgent.currentSessionId;
+    if (sid) {
+      try {
+        this.memory.logActivity({
+          id: uuidv4(),
+          sessionId: sid,
+          agent: this.agentName,
+          type: "llm_call",
+          message: `${mode} call: ${userPrompt.slice(0, 120)}${userPrompt.length > 120 ? "…" : ""}`,
+          detailJson: JSON.stringify({
+            system: system.slice(0, 500),
+            userPrompt: userPrompt.slice(0, 500),
+            response: response.content.slice(0, 500),
+            reasoningLen: response.reasoning?.length ?? 0,
+            mode,
+            jsonMode,
+          }),
+          tokensIn: response.usage.promptTokens,
+          tokensOut: response.usage.completionTokens,
+        });
+      } catch {
+        // Best-effort.
+      }
     }
 
     return response;
@@ -142,6 +190,46 @@ export abstract class BaseAgent {
     if (response.reasoning?.trim()) {
       const snippet = response.reasoning.trim().slice(0, 300).replace(/\n+/g, " ");
       logger.debug(`[${this.agentName}] Thinking trace (${response.reasoning.length} chars): ${snippet}${response.reasoning.length > 300 ? "…" : ""}`);
+
+      const sid = BaseAgent.currentSessionId;
+      if (sid) {
+        try {
+          this.memory.saveThinkingTrace({
+            id: uuidv4(),
+            sessionId: sid,
+            agent: this.agentName,
+            reasoning: response.reasoning.trim(),
+            promptTokens: response.usage.promptTokens,
+            completionTokens: response.usage.completionTokens,
+            totalTokens: response.usage.totalTokens,
+          });
+        } catch { /* best-effort */ }
+      }
+    }
+
+    // Log multi-turn LLM call
+    const sid = BaseAgent.currentSessionId;
+    if (sid) {
+      try {
+        const lastUserTurn = turns.filter((t) => t.role === "user").pop();
+        this.memory.logActivity({
+          id: uuidv4(),
+          sessionId: sid,
+          agent: this.agentName,
+          type: "llm_call",
+          message: `multi-turn ${mode}: ${(lastUserTurn?.content ?? "").slice(0, 120)}`,
+          detailJson: JSON.stringify({
+            system: system.slice(0, 500),
+            turns: turns.length,
+            response: response.content.slice(0, 500),
+            reasoningLen: response.reasoning?.length ?? 0,
+            mode,
+            jsonMode,
+          }),
+          tokensIn: response.usage.promptTokens,
+          tokensOut: response.usage.completionTokens,
+        });
+      } catch { /* best-effort */ }
     }
 
     return response;

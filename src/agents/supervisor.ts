@@ -92,7 +92,27 @@ export class SupervisorAgent extends BaseAgent {
     const maxRounds = this.config.compute.maxTournamentRounds;
     const metaReviewInterval = 25; // every N completed tasks
 
+    // Set session context for DB logging (thinking traces + activity log)
+    BaseAgent.currentSessionId = sessionId;
+
     this.log("info", `Starting orchestration for session ${sessionId}`);
+
+    // Log session lifecycle
+    try {
+      this.memory.logActivity({
+        id: uuidv4(),
+        sessionId,
+        agent: "Supervisor",
+        type: "session_lifecycle",
+        message: "Session started",
+        detailJson: JSON.stringify({
+          goal: this.goal?.text ?? "",
+          maxHypotheses: this.config.compute.maxHypotheses,
+          maxRounds: this.config.compute.maxTournamentRounds,
+          budgetTokens: this.config.compute.budgetTokens,
+        }),
+      });
+    } catch { /* best-effort */ }
 
     while (this.running && round < maxRounds) {
       // Idle here while paused so no new rounds advance until resume().
@@ -184,6 +204,22 @@ export class SupervisorAgent extends BaseAgent {
 
     this.emit("completed", this.memory.getSession(sessionId)?.researchOverview ?? "");
     this.log("info", "Session completed");
+
+    // Log session completion
+    try {
+      const topHyps = this.memory.getTopHypotheses(sessionId, 5);
+      this.memory.logActivity({
+        id: uuidv4(),
+        sessionId,
+        agent: "Supervisor",
+        type: "session_lifecycle",
+        message: `Session completed with ${topHyps.length} top hypotheses`,
+        detailJson: JSON.stringify({
+          topHypotheses: topHyps.map((h) => ({ title: h.title, elo: Math.round(h.eloRating) })),
+          totalRounds: round,
+        }),
+      });
+    } catch { /* best-effort */ }
   }
 
   stop(): void {

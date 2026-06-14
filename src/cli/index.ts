@@ -16,6 +16,8 @@ import { graphCommand } from "./commands/graph.js";
 import { compareCommand } from "./commands/compare.js";
 import { diffCommand } from "./commands/diff.js";
 import { safetyCommand } from "./commands/safety.js";
+import { thinkingCommand } from "./commands/thinking.js";
+import { activityCommand } from "./commands/activity.js";
 
 const program = new Command();
 
@@ -144,6 +146,16 @@ program
   .option("--by <name>", "Who is authorising the release", "operator")
   .action(safetyCommand);
 
+program
+  .command("thinking <sessionId>")
+  .description("Display the thinking trace (chain-of-thought) for a session")
+  .action(thinkingCommand);
+
+program
+  .command("activity <sessionId>")
+  .description("Display the full activity log for a session")
+  .action(activityCommand);
+
 program.action(() => {
   printBanner();
 
@@ -159,6 +171,7 @@ program.action(() => {
   console.log(c.bold.white("Session Management"));
   console.log(`  ${cmd("run")}                                  Start a new research session`);
   console.log(sub(opt("--goal <text>") + "  Research goal   " + opt("--max-hypotheses <n>") + "  " + opt("--budget <tokens>")));
+  console.log(sub(opt("--no-tui") + "  Plain log output (disable interactive terminal UI)"));
   console.log(`  ${cmd("resume")} ${arg("<sessionId>")}                Resume a paused session`);
   console.log(`  ${cmd("list")}                                 List all sessions`);
   console.log(`  ${cmd("delete")} ${arg("[sessionId]")}               Delete a session`);
@@ -174,6 +187,8 @@ program.action(() => {
   console.log(`  ${cmd("compare")} ${arg("<sessionId> <id1> <id2>")}   Head-to-head match`);
   console.log(`  ${cmd("safety")} ${arg("<sessionId>")}                 Review hypotheses withheld by the safety gate`);
   console.log(sub(opt("--release <id>") + "  Override quarantine   " + opt("--reason <text>") + "  Justification"));
+  console.log(`  ${cmd("thinking")} ${arg("<sessionId>")}              View chain-of-thought reasoning trace`);
+  console.log(`  ${cmd("activity")} ${arg("<sessionId>")}              View full session activity log`);
 
   console.log("\n" + c.bold.white("Feedback"));
   console.log(`  ${cmd("feedback")} ${arg("<sessionId>")} ${opt("--experimental")}   Empirical result ${dim("→ RLEF: updates Elo, injects into agents")}`);
