@@ -163,12 +163,12 @@ function buildMarkdown(
           if (detail.reasoningLen) lines.push(`- **Thinking:** ${detail.reasoningLen.toLocaleString()} chars`);
           if (detail.jsonMode) lines.push(`- **JSON mode:** yes`);
 
-          if (detail.reasoningSnippet) {
+          if (detail.reasoning) {
             lines.push("");
-            lines.push("<details><summary>Reasoning snippet</summary>");
+            lines.push("<details><summary>Reasoning (chain-of-thought)</summary>");
             lines.push("");
             lines.push("```");
-            lines.push(detail.reasoningSnippet);
+            lines.push(detail.reasoning);
             lines.push("```");
             lines.push("");
             lines.push("</details>");
