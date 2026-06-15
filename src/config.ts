@@ -35,10 +35,6 @@ const ConfigSchema = z.object({
     //   fallback — try first; only use next if first returns zero results or errors
     academicSearchMode: z.enum(["priority", "parallel", "fallback"]).default("priority"),
 
-    // Headless browser fallback for JS-heavy citation URLs (Cloudflare, SPAs).
-    // Requires: bun add playwright && npx playwright install chromium (~200MB).
-    // Disabled by default. Set CITATION_HEADLESS_BROWSER=true to enable.
-    citationHeadlessBrowser: z.boolean().default(false),
   }),
 
   // Database
@@ -112,7 +108,6 @@ function loadConfig(): AppConfig {
       },
       academicSearchProviders: process.env.ACADEMIC_SEARCH_PROVIDERS,
       academicSearchMode: process.env.ACADEMIC_SEARCH_MODE,
-      citationHeadlessBrowser: process.env.CITATION_HEADLESS_BROWSER === "true",
     },
     db: {
       path: process.env.DB_PATH,

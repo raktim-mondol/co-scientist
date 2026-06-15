@@ -1,6 +1,5 @@
-import { logger, getConfig } from "../config.js";
+import { logger } from "../config.js";
 import { getSearchTool } from "./search.js";
-import { fetchWithHeadlessBrowser } from "./headlessResolver.js";
 
 export type CitationStatus = "verified" | "unverified" | "fabricated";
 
@@ -262,7 +261,6 @@ export async function extractDoiFromUrl(
 }
 
 const PARALLEL_EXTRACT_TIMEOUT_MS = 15000;
-const HEADLESS_BROWSER_TIMEOUT_MS = 25000;
 
 /**
  * Fallback: use Parallel AI /v1/extract to fetch rendered content for a URL
@@ -340,21 +338,6 @@ async function _resolve(
         return await _resolveByDoi(parallelDoi, raw, fetchFn, "page");
       }
 
-      // Step 2c: URL — headless browser for JS-heavy pages (opt-in).
-      // Only activated when CITATION_HEADLESS_BROWSER=true and playwright is installed.
-      if (getConfig().tools.citationHeadlessBrowser) {
-        const headlessHtml = await withTimeout(
-          fetchWithHeadlessBrowser(raw),
-          HEADLESS_BROWSER_TIMEOUT_MS,
-          "headless browser",
-        );
-        if (headlessHtml) {
-          const headlessDoi = extractDoiFromHtml(headlessHtml);
-          if (headlessDoi) {
-            return await _resolveByDoi(headlessDoi, raw, fetchFn, "page");
-          }
-        }
-      }
     }
 
     // Step 3: Bibliographic title search fallback (existing).
