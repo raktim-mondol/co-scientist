@@ -281,11 +281,15 @@ export class SearchTool {
     const maxResults = options.maxResults ?? 10;
 
     if (mode === "academic") {
-      return this.searchAcademic(query, { maxResults });
+      const results = await this.searchAcademic(query, { maxResults });
+      this._logSearchActivity(query, results.length, this._academicProviderLabel(), results);
+      return results;
     }
 
     if (mode === "web") {
-      return this.searchWeb(query, { maxResults });
+      const results = await this.searchWeb(query, { maxResults });
+      this._logSearchActivity(query, results.length, "Parallel AI", results);
+      return results;
     }
 
     // Auto: run both in parallel, log a single summary line
@@ -301,7 +305,7 @@ export class SearchTool {
 
     const merged = this._deduplicate([...academicResults, ...webResults]);
     this._recordSearchOutcome(merged.length);
-    this._logSearchActivity(query, merged.length, `web+${acLabel}`);
+    this._logSearchActivity(query, merged.length, `web+${acLabel}`, merged);
     return merged;
   }
 
@@ -327,6 +331,7 @@ export class SearchTool {
       const acLabel = this._academicProviderLabel();
       logger.info(`[Search] ${acLabel} —\n${queryList}`);
       this._recordSearchOutcome(merged.length);
+      this._logSearchActivity(queries.join("; "), merged.length, acLabel, merged);
       return merged;
     }
 
@@ -382,6 +387,7 @@ export class SearchTool {
       const provider = client ? `Parallel AI + ${acLabel}` : acLabel;
       logger.info(`[Search] ${provider} —\n${queryList}`);
       this._recordSearchOutcome(merged.length);
+      this._logSearchActivity(queries.join("; "), merged.length, provider, merged);
       return merged;
     }
 
@@ -392,6 +398,7 @@ export class SearchTool {
       logger.info(`[Search] ${client ? "Parallel AI" : "Web (no results)"} —\n${queryList}`);
     }
     this._recordSearchOutcome(merged2.length);
+    this._logSearchActivity(queries.join("; "), merged2.length, "Parallel AI", merged2);
     return merged2;
   }
 
@@ -576,7 +583,12 @@ export class SearchTool {
   }
 
   /** Log search activity to the session activity log. */
-  private _logSearchActivity(query: string, resultCount: number, source: string): void {
+  private _logSearchActivity(
+    query: string,
+    resultCount: number,
+    source: string,
+    results: SearchResult[] = []
+  ): void {
     const sid = BaseAgent.currentSessionId;
     if (!sid) return;
     try {
@@ -586,7 +598,18 @@ export class SearchTool {
         agent: "Search",
         type: "search",
         message: `${resultCount} results via ${source}: "${query.slice(0, 100)}${query.length > 100 ? "…" : ""}"`,
-        detailJson: JSON.stringify({ query, resultCount, source }),
+        detailJson: JSON.stringify({
+          query,
+          resultCount,
+          source,
+          results: results.slice(0, 20).map((r) => ({
+            title: r.title,
+            url: r.url,
+            snippet: r.snippet?.slice(0, 200),
+            source: r.source,
+            year: r.year,
+          })),
+        }),
       });
     } catch {
       // Best-effort.
