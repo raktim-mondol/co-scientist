@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Text } from "ink";
+import { Box, Text, Spinner } from "ink";
 import type { ProgressStats } from "./useSessionData.js";
 
 interface HeaderProps {
@@ -36,7 +36,14 @@ export function Header({ sessionId, goal, stats, startTime, now, budgetTokens, p
       <Box justifyContent="space-between">
         <Text color="cyan" bold>co-scientist</Text>
         <Text color="gray">sess:{sessionId.slice(0, 8)}</Text>
-        <Text color={paused ? "yellow" : "green"}>{paused ? "PAUSED" : "running"}</Text>
+        {paused ? (
+  <Text color="yellow">PAUSED</Text>
+) : (
+  <Box>
+    <Spinner type="dots" />
+    <Text color="green"> running</Text>
+  </Box>
+)}
         <Text color="gray">{timeStr}</Text>
       </Box>
       <Text color="white">Goal: {goal.length > 70 ? goal.slice(0, 67) + "..." : goal}</Text>
