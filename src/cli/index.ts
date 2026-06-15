@@ -149,11 +149,13 @@ program
 program
   .command("thinking <sessionId>")
   .description("Display the thinking trace (chain-of-thought) for a session")
+  .option("--export <path>", "Export thinking traces to a markdown file")
   .action(thinkingCommand);
 
 program
   .command("activity <sessionId>")
   .description("Display the full activity log for a session")
+  .option("--export <path>", "Export activity log to a markdown file")
   .action(activityCommand);
 
 program.action(() => {
@@ -188,7 +190,9 @@ program.action(() => {
   console.log(`  ${cmd("safety")} ${arg("<sessionId>")}                 Review hypotheses withheld by the safety gate`);
   console.log(sub(opt("--release <id>") + "  Override quarantine   " + opt("--reason <text>") + "  Justification"));
   console.log(`  ${cmd("thinking")} ${arg("<sessionId>")}              View chain-of-thought reasoning trace`);
+  console.log(sub(opt("--export <path>") + "  Export to markdown file"));
   console.log(`  ${cmd("activity")} ${arg("<sessionId>")}              View full session activity log`);
+  console.log(sub(opt("--export <path>") + "  Export to markdown file"));
 
   console.log("\n" + c.bold.white("Feedback"));
   console.log(`  ${cmd("feedback")} ${arg("<sessionId>")} ${opt("--experimental")}   Empirical result ${dim("→ RLEF: updates Elo, injects into agents")}`);

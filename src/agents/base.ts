@@ -142,8 +142,8 @@ export abstract class BaseAgent {
           type: "llm_call",
           message: `${mode} call: ${userPrompt.slice(0, 120)}${userPrompt.length > 120 ? "…" : ""}`,
           detailJson: JSON.stringify({
-            system: system.slice(0, 2000),
-            userPrompt: userPrompt.slice(0, 2000),
+            system: system,
+            userPrompt: userPrompt,
             response: response.content,
             reasoningLen: response.reasoning?.length ?? 0,
             reasoning: response.reasoning ?? "",

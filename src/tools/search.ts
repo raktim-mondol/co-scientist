@@ -602,12 +602,14 @@ export class SearchTool {
           query,
           resultCount,
           source,
-          results: results.slice(0, 20).map((r) => ({
+          results: results.map((r) => ({
             title: r.title,
             url: r.url,
-            snippet: r.snippet?.slice(0, 200),
+            snippet: r.snippet ?? "",
             source: r.source,
             year: r.year,
+            citationCount: r.citationCount,
+            journal: r.journal,
           })),
         }),
       });
