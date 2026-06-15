@@ -8,5 +8,4 @@
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
 | #2446 | 2:55 AM | 🔄 | Removed headless browser test suite from citationResolver.test.ts | ~265 |
-| #2445 | 2:54 AM | 🔵 | Read test setup file to find remaining Playwright references | ~179 |
 </claude-mem-context>

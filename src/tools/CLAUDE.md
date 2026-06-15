@@ -7,7 +7,8 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
-| #2443 | 2:54 AM | 🔄 | Removed HEADLESS_BROWSER_TIMEOUT_MS constant from citationResolver.ts | ~207 |
+| #2444 | 2:54 AM | 🔄 | Removed headless browser step from citationResolver.ts resolution pipeline | ~265 |
+| #2443 | " | 🔄 | Removed HEADLESS_BROWSER_TIMEOUT_MS constant from citationResolver.ts | ~207 |
 | #2440 | " | 🔄 | New task: remove headless browser feature from co-scientist | ~335 |
 | #2438 | 2:53 AM | 🔵 | Citation resolver module inspected — multi-layer DOI extraction pipeline | ~408 |
 | #2431 | 1:52 AM | 🟣 | Rate limiter refactored into encapsulated _acquireCallGate() helper method | ~321 |
