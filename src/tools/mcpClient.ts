@@ -38,6 +38,32 @@ class MCPServerClient {
   /** Recursion guard — prevents infinite retry loops if refresh itself fails. */
   private _isRetryingAuth = false;
   /**
+   * Global per-provider mutex: serializes all outgoing MCP calls so only one
+   * is in-flight at a time. This prevents burst rate-limiting when multiple
+   * agents call Consensus concurrently — each call waits for the previous one
+   * to complete plus a 1-second inter-call delay.
+   */
+  private _callGate: Promise<void> = Promise.resolve();
+  private _releaseGate: (() => void) | null = null;
+
+  /** Acquire the rate-limiting gate. Returns a release function. */
+  private async _acquireCallGate(): Promise<(() => void) | null> {
+    if (this._isRetryingAuth) return null;
+    await this._callGate;
+    await new Promise((r) => setTimeout(r, 1000)); // inter-call spacing
+    return new Promise<() => void>((resolveRelease) => {
+      this._callGate = new Promise<void>((resolve) => {
+        this._releaseGate = resolve;
+      });
+      resolveRelease(() => {
+        if (this._releaseGate) {
+          this._releaseGate();
+          this._releaseGate = null;
+        }
+      });
+    });
+  }
+  /**
    * Map a generic search tool name ("search") to the provider-specific tool name.
    * Scite uses "search_literature"; Consensus uses "search".
    */
@@ -169,63 +195,70 @@ class MCPServerClient {
     toolName: string,
     args: Record<string, unknown>
   ): Promise<MCPToolResult> {
-    await this.connect();
+    // ── Global per-provider rate limiter ──────────────────────────────────
+    // Acquire the gate (no-op for recursive auth-retry calls to avoid deadlock).
+    const releaseGate = await this._acquireCallGate();
     try {
-      const result = await this.client!.callTool({ name: toolName, arguments: args });
-      // Detect application-level errors signaled via isError flag (e.g., Scite monthly limit).
-      if (result.isError) {
-        const errText =
-          result.content
-            ?.filter(
-              (c): c is { type: "text"; text: string } =>
-                c.type === "text" && typeof c.text === "string" && c.text.length > 0
-            )
-            .map((c) => c.text)
-            .join("\n") || `${this.serverName} returned an error with no details`;
-        // Try auth recovery for application-level auth errors
-        if (!this._isRetryingAuth && this._isAuthError(errText)) {
+      try {
+        await this.connect();
+        const result = await this.client!.callTool({ name: toolName, arguments: args });
+        // Detect application-level errors signaled via isError flag (e.g., Scite monthly limit).
+        if (result.isError) {
+          const errText =
+            result.content
+              ?.filter(
+                (c): c is { type: "text"; text: string } =>
+                  c.type === "text" && typeof c.text === "string" && c.text.length > 0
+              )
+              .map((c) => c.text)
+              .join("\n") || `${this.serverName} returned an error with no details`;
+          // Try auth recovery for application-level auth errors
+          if (!this._isRetryingAuth && this._isAuthError(errText)) {
+            return await this._retryAfterAuthRefresh(toolName, args);
+          }
+          throw new Error(errText);
+        }
+        return result as MCPToolResult;
+      } catch (error) {
+        const errMsg = (error as Error).message;
+        // Try auth recovery for SDK/JRPC-level auth errors (e.g., "User token has expired")
+        if (!this._isRetryingAuth && this._isAuthError(errMsg)) {
           return await this._retryAfterAuthRefresh(toolName, args);
         }
-        throw new Error(errText);
-      }
-      return result as MCPToolResult;
-    } catch (error) {
-      const errMsg = (error as Error).message;
-      // Try auth recovery for SDK/JRPC-level auth errors (e.g., "User token has expired")
-      if (!this._isRetryingAuth && this._isAuthError(errMsg)) {
-        return await this._retryAfterAuthRefresh(toolName, args);
-      }
-      // Rate limit errors: retry with exponential backoff (2s, 4s) before giving up.
-      // Log at INFO level — the upstream caller already has staggered delays to
-      // prevent bursting, so a rate limit here means the API is genuinely saturated.
-      if (this._isRateLimitError(errMsg)) {
-        for (let attempt = 1; attempt <= 2; attempt++) {
-          const delay = 2000 * attempt;
-          const level = attempt === 1 ? "info" : "warn";
-          logger[level](
-            `${this.serverName}: rate limited — retrying in ${delay / 1000}s (attempt ${attempt}/2)`
-          );
-          await new Promise((r) => setTimeout(r, delay));
-          try {
-            await this.connect(); // re-establish transport if needed
-            const retryResult = await this.client!.callTool({ name: toolName, arguments: args });
-            logger.info(`${this.serverName}: rate-limit retry succeeded (attempt ${attempt})`);
-            return retryResult as MCPToolResult;
-          } catch (retryErr) {
-            const retryMsg = (retryErr as Error).message;
-            if (!this._isRateLimitError(retryMsg)) throw retryErr; // different error — propagate
-            if (attempt === 2) {
-              logger.error(
-                `${this.serverName}: still rate limited after ${attempt} retries`
-              );
+        // Rate limit errors: retry with exponential backoff (2s, 4s) before giving up.
+        // With the global per-provider mutex above, these should be rare — they only
+        // occur when the upstream API is genuinely saturated, not from self-inflicted bursts.
+        if (this._isRateLimitError(errMsg)) {
+          for (let attempt = 1; attempt <= 2; attempt++) {
+            const delay = 2000 * attempt;
+            const level = attempt === 1 ? "info" : "warn";
+            logger[level](
+              `${this.serverName}: rate limited — retrying in ${delay / 1000}s (attempt ${attempt}/2)`
+            );
+            await new Promise((r) => setTimeout(r, delay));
+            try {
+              await this.connect(); // re-establish transport if needed
+              const retryResult = await this.client!.callTool({ name: toolName, arguments: args });
+              logger.info(`${this.serverName}: rate-limit retry succeeded (attempt ${attempt})`);
+              return retryResult as MCPToolResult;
+            } catch (retryErr) {
+              const retryMsg = (retryErr as Error).message;
+              if (!this._isRateLimitError(retryMsg)) throw retryErr; // different error — propagate
+              if (attempt === 2) {
+                logger.error(
+                  `${this.serverName}: still rate limited after ${attempt} retries`
+                );
+              }
             }
           }
         }
+        logger.error(
+          `${this.serverName} tool call failed (${toolName}): ${errMsg}`
+        );
+        throw error;
       }
-      logger.error(
-        `${this.serverName} tool call failed (${toolName}): ${errMsg}`
-      );
-      throw error;
+    } finally {
+      releaseGate?.(); // release the next waiter (null for auth-retry recursive calls)
     }
   }
 

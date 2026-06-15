@@ -16,7 +16,8 @@ interface ReviewResult {
   testabilityScore?: number | null;
   safetyFlag?: boolean;
   summary: string;
-  critique: string;
+  /** LLMs may return this as a string or a string array. Schema transforms to string. */
+  critique: string | string[];
   supportingEvidence?: string[];
 }
 
@@ -38,7 +39,11 @@ const ReviewResultSchema = z.object({
   testabilityScore: z.number().min(0).max(10).nullable().optional(),
   safetyFlag: z.boolean().default(false),
   summary: z.string(),
-  critique: z.string(),
+  // LLMs sometimes return critique as a string array (bullet points) instead of
+  // a single string. Accept both and join array elements with newlines.
+  critique: z.union([z.string(), z.array(z.string())]).transform(
+    (v) => (Array.isArray(v) ? v.join("\n") : v)
+  ),
   supportingEvidence: z.array(z.string()).default([]),
 });
 
@@ -341,11 +346,12 @@ export class ReflectionAgent extends BaseAgent {
    * persisting through `ContextStore.saveReview()`, whose schema expects
    * `number | undefined` (not `number | null`) and a required `string[]`.
    */
-  private _normaliseScores(r: ReviewResult): Omit<ReviewResult, "noveltyScore" | "correctnessScore" | "testabilityScore" | "supportingEvidence"> & {
+  private _normaliseScores(r: ReviewResult): Omit<ReviewResult, "noveltyScore" | "correctnessScore" | "testabilityScore" | "supportingEvidence" | "critique"> & {
     noveltyScore?: number;
     correctnessScore?: number;
     testabilityScore?: number;
     supportingEvidence: string[];
+    critique: string;
   } {
     return {
       ...r,
@@ -353,6 +359,7 @@ export class ReflectionAgent extends BaseAgent {
       correctnessScore: r.correctnessScore ?? undefined,
       testabilityScore: r.testabilityScore ?? undefined,
       supportingEvidence: r.supportingEvidence ?? [],
+      critique: Array.isArray(r.critique) ? r.critique.join("\n") : r.critique,
     };
   }
 

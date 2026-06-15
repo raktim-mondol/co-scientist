@@ -31,6 +31,6 @@ user: |
     "testabilityScore": 0-10,
     "safetyFlag": false,
     "summary": "One sentence overall verdict",
-    "critique": "Detailed 3-5 sentence review covering all four dimensions",
+    "critique": "Single string: detailed 3-5 sentence review covering all four dimensions (do NOT use an array)",
     "supportingEvidence": ["url1", "url2"]
   }

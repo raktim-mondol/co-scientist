@@ -340,6 +340,30 @@ export class SearchTool {
   ): Promise<SearchResult[]> {
     if (queries.length === 0) return [];
 
+    // ── Multi-search cache: skip the entire call if the same query set was
+    // used within the TTL window. Individual queries are already cached by
+    // _cachedSearch in searchAcademic/searchWeb, but this avoids redundant
+    // Parallel AI batch calls and duplicate log noise.
+    const msKey = `multi::${mode}::${[...queries].sort().map(q => q.trim().toLowerCase()).join("|||")}`;
+    const cached = _searchCache.get(msKey);
+    if (cached && (!cached.resolvedAt || Date.now() - cached.resolvedAt < CACHE_TTL_MS)) {
+      logger.debug(`[Search:cache] multiSearch hit for ${queries.length} queries`);
+      return cached.promise;
+    }
+
+    const promise = this._multiSearchInternal(queries, mode);
+    _searchCache.set(msKey, { promise });
+    const results = await promise;
+    const entry = _searchCache.get(msKey);
+    if (entry) entry.resolvedAt = Date.now();
+    return results;
+  }
+
+  /** Internal implementation — callers should use the caching multiSearch() wrapper. */
+  private async _multiSearchInternal(
+    queries: string[],
+    mode: SearchMode
+  ): Promise<SearchResult[]> {
     const queryList = queries.map((q) => `  • "${q}"`).join("\n");
 
     if (mode === "academic") {

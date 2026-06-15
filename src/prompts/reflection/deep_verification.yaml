@@ -28,6 +28,6 @@ user: |
     "testabilityScore": null,
     "safetyFlag": false,
     "summary": "Summary of assumption verification outcome",
-    "critique": "Detailed breakdown of which assumptions hold and which are problematic",
+    "critique": "Single string: detailed breakdown of which assumptions hold and which are problematic (do NOT use an array)",
     "supportingEvidence": []
   }

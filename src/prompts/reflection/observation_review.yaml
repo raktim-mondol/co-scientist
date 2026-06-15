@@ -35,6 +35,6 @@ user: |
     "testabilityScore": null,
     "safetyFlag": false,
     "summary": "Whether and how well the hypothesis explains known anomalous observations",
-    "critique": "Specific observations explained, specific observations not explained, and what the gaps imply",
+    "critique": "Single string: specific observations explained, specific observations not explained, and what the gaps imply (do NOT use an array)",
     "supportingEvidence": []
   }

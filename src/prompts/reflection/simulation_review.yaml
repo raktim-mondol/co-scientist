@@ -25,6 +25,6 @@ user: |
     "testabilityScore": 0-10,
     "safetyFlag": false,
     "summary": "Simulation outcome summary",
-    "critique": "Key failure modes identified and their severity",
+    "critique": "Single string: key failure modes identified and their severity (do NOT use an array)",
     "supportingEvidence": []
   }

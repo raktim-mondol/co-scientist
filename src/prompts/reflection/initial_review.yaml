@@ -28,7 +28,7 @@ user: |
     "testabilityScore": 0-10,
     "safetyFlag": true | false,
     "summary": "One sentence verdict summary",
-    "critique": "2-3 sentences explaining the assessment",
+    "critique": "Single string: 2-3 sentences explaining the assessment (do NOT use an array)",
     "supportingEvidence": []
   }
 
