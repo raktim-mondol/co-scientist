@@ -1,4 +1,4 @@
-mode: reason
+mode: chat
 max_tokens: 4096
 system: |
   You are a senior scientific reviewer conducting a thorough peer review of a research hypothesis.

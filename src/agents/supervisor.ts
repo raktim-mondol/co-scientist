@@ -9,8 +9,6 @@ import { EvolutionAgent } from "./evolution.js";
 import { MetaReviewAgent } from "./metaReview.js";
 import { ExperimentDesignAgent } from "./experimentDesign.js";
 import { KnowledgeGraphAgent } from "./knowledgeGraph.js";
-import { runMigrations } from "../db/migrate.js";
-import { getMCPManager } from "../tools/mcpClient.js";
 import { getRewardStore } from "../rlef/reward-store.js";
 import type { ResearchGoal } from "../models/researchGoal.js";
 import type { SessionStats } from "../models/session.js";
@@ -59,8 +57,10 @@ export class SupervisorAgent extends BaseAgent {
    * Initialize a new research session.
    */
   async initSession(goal: ResearchGoal, name: string): Promise<string> {
-    await runMigrations();
-    await getMCPManager().initialize();
+    // NOTE: runMigrations() and MCP init are already called by the CLI entrypoint
+    // (src/cli/commands/run.ts) before this method. We skip them here to avoid
+    // redundant DDL and the edge case where DDL runs immediately before DML,
+    // which can trigger "database is locked" in WAL mode on some filesystems.
 
     const sessionId = this.memory.createSession(name, goal);
     this.sessionId = sessionId;
@@ -279,7 +279,7 @@ export class SupervisorAgent extends BaseAgent {
       this.log("warn", `Could not load cross-session priors: ${(err as Error).message}`);
     }
 
-    const response = await this.callLLM(system, userPrompt + priorsBlock, { mode: "reason" });
+    const response = await this.callLLM(system, userPrompt + priorsBlock, {});
 
     const parsed = this.extractJSON<{
       title: string;

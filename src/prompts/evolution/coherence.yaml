@@ -1,4 +1,4 @@
-mode: reason
+mode: chat
 max_tokens: 5000
 system: |
   You are an expert at improving the logical coherence and experimental feasibility of scientific hypotheses. JSON only.

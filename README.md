@@ -59,10 +59,6 @@ PARALLEL_AI_API_KEY=your_token_here
 # Optional (defaults shown)
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-v4-pro
-DEEPSEEK_THINKING=true                       # CoT for reason() calls; false to disable
-DEEPSEEK_REASONING_EFFORT=high               # high | max
-DEEPSEEK_REASONING_BUDGET_TOKENS=8000        # headroom added so reasoning won't starve the answer
-DEEPSEEK_STREAM_THINKING=false               # stream reasoning to stderr in real-time (light gray); on by default
 CONSENSUS_MCP_URL=https://mcp.consensus.app/mcp
 
 # Scite MCP — academic search fallback (OAuth PKCE, no key required)

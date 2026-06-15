@@ -71,6 +71,10 @@ class MCPServerClient {
     return /expired|unauthorized|invalid.*token|token.*(?:invalid|expir)/i.test(message);
   }
 
+  private _isRateLimitError(message: string): boolean {
+    return /rate.limit|too many requests|rate exceeded/i.test(message);
+  }
+
   /** Refresh the auth token by calling the provider-specific token function. */
   private async _refreshAuth(): Promise<void> {
     if (this.serverName === "Scite") {
@@ -190,6 +194,33 @@ class MCPServerClient {
       // Try auth recovery for SDK/JRPC-level auth errors (e.g., "User token has expired")
       if (!this._isRetryingAuth && this._isAuthError(errMsg)) {
         return await this._retryAfterAuthRefresh(toolName, args);
+      }
+      // Rate limit errors: retry with exponential backoff (2s, 4s) before giving up.
+      // Log at INFO level — the upstream caller already has staggered delays to
+      // prevent bursting, so a rate limit here means the API is genuinely saturated.
+      if (this._isRateLimitError(errMsg)) {
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          const delay = 2000 * attempt;
+          const level = attempt === 1 ? "info" : "warn";
+          logger[level](
+            `${this.serverName}: rate limited — retrying in ${delay / 1000}s (attempt ${attempt}/2)`
+          );
+          await new Promise((r) => setTimeout(r, delay));
+          try {
+            await this.connect(); // re-establish transport if needed
+            const retryResult = await this.client!.callTool({ name: toolName, arguments: args });
+            logger.info(`${this.serverName}: rate-limit retry succeeded (attempt ${attempt})`);
+            return retryResult as MCPToolResult;
+          } catch (retryErr) {
+            const retryMsg = (retryErr as Error).message;
+            if (!this._isRateLimitError(retryMsg)) throw retryErr; // different error — propagate
+            if (attempt === 2) {
+              logger.error(
+                `${this.serverName}: still rate limited after ${attempt} retries`
+              );
+            }
+          }
+        }
       }
       logger.error(
         `${this.serverName} tool call failed (${toolName}): ${errMsg}`

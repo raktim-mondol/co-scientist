@@ -1,4 +1,4 @@
-mode: reason
+mode: chat
 max_tokens: 4096
 system: |
   You are an expert scientific logician who decomposes hypotheses into fundamental assumptions

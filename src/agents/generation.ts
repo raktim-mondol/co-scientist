@@ -195,7 +195,7 @@ export class GenerationAgent extends BaseAgent {
       // Use JSON mode so the model returns {"queries": [...]} — no ambiguity with
       // inline reasoning text that fools plain-text line parsers.
       let parsed = await this.callLLMForJSON<{ queries: string[] }>(qSystem, qUserPrompt, {
-        mode: "chat",
+
         maxTokens: 600,
       });
 
@@ -272,7 +272,7 @@ export class GenerationAgent extends BaseAgent {
     });
 
     const hypothesis = await this.callLLMForJSON<ParsedHypothesis>(system, userPrompt, {
-      mode: "chat",
+
       maxTokens: 6000,
     });
     if (hypothesis && researched) {
@@ -294,7 +294,7 @@ export class GenerationAgent extends BaseAgent {
     });
 
     // Multi-turn debate: Scientist A proposes → Scientist B critiques → A refines
-    const turn1 = await this.callLLM(system, userPrompt, { mode: "reason" });
+    const turn1 = await this.callLLM(system, userPrompt, {});
 
     const turn2Response = await this.callLLMMultiTurn(
       system,
@@ -307,13 +307,13 @@ export class GenerationAgent extends BaseAgent {
             "As Scientist B, critically challenge the above proposal. Identify weaknesses, missing evidence, and alternative interpretations. Then as Scientist A, refine and strengthen the hypothesis in response. Finally, produce the refined hypothesis as JSON.",
         },
       ],
-      { mode: "reason", maxTokens: 8000, jsonMode: true }
+      { maxTokens: 8000, jsonMode: true }
     );
 
     return this.extractJSON<ParsedHypothesis>(turn2Response.content)
       ?? await this.callLLMForJSON<ParsedHypothesis>(system,
           `${userPrompt}\n\nPrevious response could not be parsed. Output ONLY the JSON object.`,
-          { mode: "reason", maxTokens: 8000 });
+          { maxTokens: 8000 });
   }
 
   // ─── Strategy: Assumption Chaining ────────────────────────────────────────
@@ -329,7 +329,7 @@ export class GenerationAgent extends BaseAgent {
     });
 
     return this.callLLMForJSON<ParsedHypothesis>(system, userPrompt, {
-      mode: "reason",
+
       maxTokens: 6000,
     });
   }
@@ -362,7 +362,7 @@ export class GenerationAgent extends BaseAgent {
     });
 
     return this.callLLMForJSON<ParsedHypothesis>(system, userPrompt, {
-      mode: "chat",
+
       maxTokens: 6000,
     });
   }

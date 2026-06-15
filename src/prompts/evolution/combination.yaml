@@ -1,4 +1,4 @@
-mode: reason
+mode: chat
 max_tokens: 6000
 system: |
   You are an expert at synthesizing multiple scientific hypotheses into a more powerful unified hypothesis. JSON only.

@@ -100,6 +100,12 @@ beforeAll(async () => {
     keyAssumptions: ["Bcl-2 is overexpressed in TNBC"],
     citations: [],
   });
+
+  // Pre-seed a dummy embedding so recordFeedback() doesn't call the LLM.
+  // The embed() API is not available in tests (DEEPSEEK_API_KEY is a stub).
+  // A zero-filled Float32Array of length 384 matches the all-MiniLM-L6-v2
+  // dimensionality used by the production embedding pipeline.
+  store.saveEmbedding(hyp.id, new Array(384).fill(0));
 });
 
 afterAll(() => {

@@ -1,4 +1,4 @@
-mode: reason
+mode: chat
 max_tokens: 3000
 system: |
   You are a scientific simulation expert. You mentally simulate proposed mechanisms and experiments

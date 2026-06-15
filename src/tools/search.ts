@@ -140,6 +140,25 @@ function _logParallelError(context: string, error: unknown): string | null {
   }
 }
 
+// ── Concurrency helper ─────────────────────────────────────────────────────────
+
+/**
+ * Run async tasks one-by-one with a fixed delay between each to avoid
+ * triggering burst rate-limiters on academic APIs (e.g. Consensus MCP).
+ * Task 0 starts immediately, task 1 after `delayMs`, task 2 after `2 × delayMs`.
+ */
+async function sequentialWithDelay<T>(
+  tasks: Array<() => Promise<T>>,
+  delayMs = 1000
+): Promise<T[]> {
+  const results: T[] = [];
+  for (let i = 0; i < tasks.length; i++) {
+    if (i > 0) await new Promise((r) => setTimeout(r, delayMs));
+    results.push(await tasks[i]());
+  }
+  return results;
+}
+
 export class SearchTool {
   private mcpManager = getMCPManager();
 
@@ -324,8 +343,8 @@ export class SearchTool {
     const queryList = queries.map((q) => `  • "${q}"`).join("\n");
 
     if (mode === "academic") {
-      const results = await Promise.all(
-        queries.map((q) => this.searchAcademic(q, { maxResults: 5, silent: true }))
+      const results = await sequentialWithDelay(
+        queries.map((q) => () => this.searchAcademic(q, { maxResults: 5, silent: true }))
       );
       const merged = this._deduplicate(results.flat());
       const acLabel = this._academicProviderLabel();
@@ -380,8 +399,8 @@ export class SearchTool {
     const acLabel = this._academicProviderLabel();
 
     if (mode === "auto") {
-      const academicResults = await Promise.all(
-        queries.map((q) => this.searchAcademic(q, { maxResults: 3, silent: true }))
+      const academicResults = await sequentialWithDelay(
+        queries.map((q) => () => this.searchAcademic(q, { maxResults: 3, silent: true }))
       );
       const merged = this._deduplicate([...webResults, ...academicResults.flat()]);
       const provider = client ? `Parallel AI + ${acLabel}` : acLabel;

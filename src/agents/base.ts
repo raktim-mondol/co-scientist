@@ -17,7 +17,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 interface PromptTemplate {
   system: string;
   user: string;
-  mode: "chat" | "reason";
+  mode?: "chat" | "reason";   // kept for backward compat with existing YAMLs; ignored at runtime
   max_tokens?: number;
 }
 
@@ -47,7 +47,7 @@ export abstract class BaseAgent {
     category: string,
     name: string,
     vars: Record<string, unknown> = {}
-  ): { system: string; userPrompt: string; mode: "chat" | "reason"; maxTokens: number } {
+  ): { system: string; userPrompt: string; maxTokens: number } {
     const filePath = join(this.promptsDir, category, `${name}.yaml`);
     try {
       const raw = readFileSync(filePath, "utf-8");
@@ -59,7 +59,6 @@ export abstract class BaseAgent {
       return {
         system: compileSystem(vars),
         userPrompt: compileUser(vars),
-        mode: template.mode ?? "chat",
         maxTokens: template.max_tokens ?? 8192,
       };
     } catch (err) {
@@ -68,7 +67,6 @@ export abstract class BaseAgent {
       return {
         system: "You are a scientific research assistant. Respond with valid json only.",
         userPrompt: `Respond with valid json.\n\n${JSON.stringify(vars)}`,
-        mode: "chat",
         maxTokens: 4096,
       };
     }
@@ -81,62 +79,20 @@ export abstract class BaseAgent {
     system: string,
     userPrompt: string,
     options: {
-      mode?: "chat" | "reason";
       maxTokens?: number;
       temperature?: number;
-      /** Set true when the response must be valid JSON (enables json_object mode for chat calls) */
+      /** Set true when the response must be valid JSON (enables json_object mode) */
       jsonMode?: boolean;
     } = {}
   ): Promise<LLMResponse> {
-    const { mode = "chat", maxTokens = 8192, temperature = 0.7, jsonMode = false } = options;
+    const { maxTokens = 8192, temperature = 0.7, jsonMode = false } = options;
 
     const messages = [
       { role: "system" as const, content: system },
       { role: "user" as const, content: userPrompt },
     ];
 
-    let response: LLMResponse;
-    if (mode === "reason") {
-      response = await this.llm.reason({ messages, maxTokens, temperature, jsonMode });
-    } else {
-      response = await this.llm.chat({ messages, maxTokens, temperature, jsonMode });
-    }
-
-    // DeepSeek thinking mode can return empty content when the model produces
-    // reasoning but no final answer (e.g., token budget exhaustion).  Fall back to
-    // reasoning_content only for free-text calls — swapping prose into content on a
-    // jsonMode call guarantees extractJSON will fail, so let the retry handle it.
-    if (!response.content?.trim() && response.reasoning?.trim()) {
-      if (jsonMode) {
-        logger.info(`[${this.agentName}] Thinking consumed entire token budget — content empty, will trigger retry with thinking disabled`);
-      } else {
-        logger.debug(`[${this.agentName}] Empty content, falling back to reasoning field (non-JSON mode)`);
-        response = { ...response, content: response.reasoning };
-      }
-    }
-
-    if (response.reasoning?.trim()) {
-      const snippet = response.reasoning.trim().slice(0, 300).replace(/\n+/g, " ");
-      logger.debug(`[${this.agentName}] Thinking trace (${response.reasoning.length} chars): ${snippet}${response.reasoning.length > 300 ? "…" : ""}`);
-
-      // Persist thinking trace to DB
-      const sid = BaseAgent.currentSessionId;
-      if (sid) {
-        try {
-          this.memory.saveThinkingTrace({
-            id: uuidv4(),
-            sessionId: sid,
-            agent: this.agentName,
-            reasoning: response.reasoning.trim(),
-            promptTokens: response.usage.promptTokens,
-            completionTokens: response.usage.completionTokens,
-            totalTokens: response.usage.totalTokens,
-          });
-        } catch {
-          // Best-effort — don't let DB errors break the agent.
-        }
-      }
-    }
+    const response = await this.llm.call({ messages, maxTokens, temperature, jsonMode });
 
     // Log LLM call to session activity
     const sid = BaseAgent.currentSessionId;
@@ -147,14 +103,11 @@ export abstract class BaseAgent {
           sessionId: sid,
           agent: this.agentName,
           type: "llm_call",
-          message: `${mode} call: ${userPrompt.slice(0, 120)}${userPrompt.length > 120 ? "…" : ""}`,
+          message: `call: ${userPrompt.slice(0, 120)}${userPrompt.length > 120 ? "…" : ""}`,
           detailJson: JSON.stringify({
             system: system,
             userPrompt: userPrompt,
             response: response.content,
-            reasoningLen: response.reasoning?.length ?? 0,
-            reasoning: response.reasoning ?? "",
-            mode,
             jsonMode,
           }),
           tokensIn: response.usage.promptTokens,
@@ -174,51 +127,15 @@ export abstract class BaseAgent {
   protected async callLLMMultiTurn(
     system: string,
     turns: Array<{ role: "user" | "assistant"; content: string }>,
-    options: { mode?: "chat" | "reason"; maxTokens?: number; jsonMode?: boolean } = {}
+    options: { maxTokens?: number; jsonMode?: boolean } = {}
   ): Promise<LLMResponse> {
-    const { mode = "reason", maxTokens = 8192, jsonMode = false } = options;
+    const { maxTokens = 8192, jsonMode = false } = options;
     const messages = [
       { role: "system" as const, content: system },
       ...turns,
     ];
 
-    let response: LLMResponse;
-    if (mode === "reason") {
-      response = await this.llm.reason({ messages, maxTokens, jsonMode });
-    } else {
-      response = await this.llm.chat({ messages, maxTokens, jsonMode });
-    }
-
-    // Same empty-content fallback as callLLM — skip for jsonMode
-    // (swapping prose into content guarantees extractJSON failure).
-    if (!response.content?.trim() && response.reasoning?.trim()) {
-      if (jsonMode) {
-        logger.info(`[${this.agentName}] Thinking consumed entire token budget (multi-turn) — content empty, will trigger retry with thinking disabled`);
-      } else {
-        logger.debug(`[${this.agentName}] Empty content (multi-turn), falling back to reasoning field (non-JSON mode)`);
-        response = { ...response, content: response.reasoning };
-      }
-    }
-
-    if (response.reasoning?.trim()) {
-      const snippet = response.reasoning.trim().slice(0, 300).replace(/\n+/g, " ");
-      logger.debug(`[${this.agentName}] Thinking trace (${response.reasoning.length} chars): ${snippet}${response.reasoning.length > 300 ? "…" : ""}`);
-
-      const sid = BaseAgent.currentSessionId;
-      if (sid) {
-        try {
-          this.memory.saveThinkingTrace({
-            id: uuidv4(),
-            sessionId: sid,
-            agent: this.agentName,
-            reasoning: response.reasoning.trim(),
-            promptTokens: response.usage.promptTokens,
-            completionTokens: response.usage.completionTokens,
-            totalTokens: response.usage.totalTokens,
-          });
-        } catch { /* best-effort */ }
-      }
-    }
+    const response = await this.llm.call({ messages, maxTokens, jsonMode });
 
     // Log multi-turn LLM call
     const sid = BaseAgent.currentSessionId;
@@ -230,14 +147,11 @@ export abstract class BaseAgent {
           sessionId: sid,
           agent: this.agentName,
           type: "llm_call",
-          message: `multi-turn ${mode}: ${(lastUserTurn?.content ?? "").slice(0, 120)}`,
+          message: `multi-turn: ${(lastUserTurn?.content ?? "").slice(0, 120)}`,
           detailJson: JSON.stringify({
             system: system.slice(0, 2000),
             turns: turns.length,
             response: response.content,
-            reasoningLen: response.reasoning?.length ?? 0,
-            reasoning: response.reasoning ?? "",
-            mode,
             jsonMode,
           }),
           tokensIn: response.usage.promptTokens,
@@ -258,7 +172,6 @@ export abstract class BaseAgent {
     system: string,
     userPrompt: string,
     options: {
-      mode?: "chat" | "reason";
       maxTokens?: number;
       temperature?: number;
       /** Optional Zod schema for validation. When provided, only objects that
@@ -266,41 +179,52 @@ export abstract class BaseAgent {
       schema?: z.ZodType<T>;
     } = {}
   ): Promise<T | null> {
-    const mode = options.mode ?? "chat";
-    const hasThinking = mode === "reason";
-    logger.info(
-      `[${this.agentName}] JSON call → ${hasThinking ? "thinking ON (json_object skipped, relying on extractJSON parser)" : "chat mode (json_object enforced)"}`
-    );
-
     const response = await this.callLLM(system, userPrompt, {
       ...options,
       jsonMode: true,
     });
 
     const result = this.extractJSON<T>(response.content, options.schema);
-    if (result !== null) {
-      logger.info(`[${this.agentName}] ✓ JSON extracted on first attempt${hasThinking ? " (thinking mode)" : ""}`);
-      return result;
-    }
+    if (result !== null) return result;
 
-    // Retry: ask the model to output only the JSON, feeding back the bad response.
-    // Always use chat mode (thinking disabled) so json_object enforcement works.
+    // ── Retry 1: ask the model to reformat the bad response as clean JSON ────
     logger.warn(
-      `[${this.agentName}] ✗ JSON extraction failed (${response.content.length} chars) — retrying with thinking DISABLED + json_object enforced`
+      `[${this.agentName}] JSON parse failed (${response.content.length} chars) — retrying`
     );
     const retrySystem = "You are a JSON formatter. Output only valid JSON with no markdown, no commentary, and no code fences.";
     const retryPrompt = `The following text should be a JSON object but could not be parsed. Extract and output ONLY the JSON object:\n\n${response.content.slice(0, 4000)}`;
     const retryResponse = await this.callLLM(retrySystem, retryPrompt, {
-      mode: "chat",
       maxTokens: options.maxTokens ?? 8192,
       jsonMode: true,
     });
 
-    const retryResult = this.extractJSON<T>(retryResponse.content, options.schema);
+    let retryResult = this.extractJSON<T>(retryResponse.content, options.schema);
     if (retryResult !== null) {
-      logger.info(`[${this.agentName}] ✓ JSON extracted on retry (chat mode)`);
-    } else {
-      logger.error(`[${this.agentName}] ✗ JSON extraction failed even after retry — returning null`);
+      logger.info(`[${this.agentName}] JSON recovered on retry`);
+      return retryResult;
+    }
+
+    // ── Retry 2: regenerate from semantic content instead of mechanically extracting ──
+    logger.warn(
+      `[${this.agentName}] Retry also failed (${retryResponse.content.length} chars) — ` +
+      `content: ${retryResponse.content.slice(0, 400)}`
+    );
+    logger.warn(
+      `[${this.agentName}] Attempting second-chance retry: regenerating JSON from semantic content`
+    );
+    const retry2System = "You are a JSON generator. Given a piece of scientific text, output a JSON review object with these fields: verdict (one of: pass, fail, uncertain), noveltyScore (0-10 or null), correctnessScore (0-10 or null), testabilityScore (0-10 or null), safetyFlag (boolean), summary (string), critique (string), supportingEvidence (array of strings). Output ONLY valid JSON, no markdown, no commentary.";
+    const retry2Prompt = `Extract the key assessment from this text and output it as a clean JSON review object:\n\n${response.content.slice(0, 4000)}`;
+    const retry2Response = await this.callLLM(retry2System, retry2Prompt, {
+      maxTokens: options.maxTokens ?? 8192,
+      jsonMode: true,
+    });
+
+    retryResult = this.extractJSON<T>(retry2Response.content, options.schema);
+    if (retryResult === null) {
+      logger.error(
+        `[${this.agentName}] JSON extraction failed after all retries — returning null. ` +
+        `Last content: ${retry2Response.content.slice(0, 400)}`
+      );
     }
     return retryResult;
   }
@@ -332,7 +256,15 @@ export abstract class BaseAgent {
         const parsed = JSON.parse(raw) as T;
         if (!schema) return parsed;
         const result = schema.safeParse(parsed);
-        return result.success ? (result.data as T) : null;
+        if (result.success) return result.data as T;
+        // Schema validation failed — log at WARN so the reason is visible
+        // even without LOG_LEVEL=debug (e.g. `null` where a number was
+        // expected, missing required field, wrong enum value, etc.).
+        logger.warn(
+          `[${this.agentName}] JSON parsed but schema rejected: ` +
+          result.error.issues.map(i => `${i.path.join(".") || "(root)"}: ${i.message} (received ${JSON.stringify(i.code)})`).join("; ")
+        );
+        return null;
       } catch {
         return null;
       }

@@ -150,6 +150,15 @@ const globalHtmlFetch: HtmlFetchFn = async (url) => {
   const res = await fetch(url, {
     headers: { "User-Agent": UA, Accept: "text/html" },
   });
+  // Reject non-HTML responses (PDFs, binaries) — parsing them as text
+  // wastes time and never yields a DOI.  A server that ignores Accept
+  // and returns application/pdf will be caught here.
+  if (res.ok) {
+    const ct = res.headers.get("content-type") ?? "";
+    if (!/text\/html|application\/xhtml\+xml/i.test(ct)) {
+      return { ok: false, status: 415, text: async () => "" };
+    }
+  }
   return {
     ok: res.ok,
     status: res.status,

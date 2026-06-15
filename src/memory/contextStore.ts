@@ -1,6 +1,6 @@
 import { eq, desc, and, sql, asc } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
-import { getDb, getSqlite, schema } from "../db/index.js";
+import { getDb, getSqlite, withRetry, schema } from "../db/index.js";
 import type { Hypothesis } from "../models/hypothesis.js";
 import type { HypothesisReview } from "../models/hypothesis.js";
 import type { TournamentMatch } from "../models/tournament.js";
@@ -34,15 +34,19 @@ export class ContextStore {
   createSession(name: string, goal: ResearchGoal): string {
     const id = uuidv4();
     const now = new Date();
-    this.db.insert(schema.sessions).values({
-      id,
-      name,
-      status: "initializing",
-      researchGoalJson: JSON.stringify(goal),
-      statsJson: JSON.stringify({}),
-      createdAt: now,
-      updatedAt: now,
-    }).run();
+    // Retry on transient "database is locked" — can happen when a previous
+    // session's WAL checkpoint hasn't fully released the write lock.
+    withRetry(() => {
+      this.db.insert(schema.sessions).values({
+        id,
+        name,
+        status: "initializing",
+        researchGoalJson: JSON.stringify(goal),
+        statsJson: JSON.stringify({}),
+        createdAt: now,
+        updatedAt: now,
+      }).run();
+    });
     return id;
   }
 
@@ -190,30 +194,32 @@ export class ContextStore {
       updatedAt: now,
     } as Hypothesis;
 
-    this.db.insert(schema.hypotheses).values({
-      id,
-      sessionId: fullHyp.sessionId,
-      title: fullHyp.title,
-      summary: fullHyp.summary,
-      content: fullHyp.content,
-      rationale: fullHyp.rationale,
-      experimentalPlan: fullHyp.experimentalPlan ?? null,
-      noveltyAssessment: fullHyp.noveltyAssessment ?? null,
-      keyAssumptionsJson: JSON.stringify(fullHyp.keyAssumptions),
-      citationsJson: JSON.stringify(fullHyp.citations),
-      generationStrategy: fullHyp.generationStrategy,
-      eloRating: fullHyp.eloRating,
-      ratingDeviation: fullHyp.ratingDeviation ?? 350,
-      volatility: fullHyp.volatility ?? 0.06,
-      matchesPlayed: fullHyp.matchesPlayed,
-      wins: fullHyp.wins,
-      losses: fullHyp.losses,
-      status: fullHyp.status,
-      parentIdsJson: JSON.stringify(fullHyp.parentIds),
-      generationRound: fullHyp.generationRound,
-      createdAt: now,
-      updatedAt: now,
-    }).run();
+    withRetry(() => {
+      this.db.insert(schema.hypotheses).values({
+        id,
+        sessionId: fullHyp.sessionId,
+        title: fullHyp.title,
+        summary: fullHyp.summary,
+        content: fullHyp.content,
+        rationale: fullHyp.rationale,
+        experimentalPlan: fullHyp.experimentalPlan ?? null,
+        noveltyAssessment: fullHyp.noveltyAssessment ?? null,
+        keyAssumptionsJson: JSON.stringify(fullHyp.keyAssumptions),
+        citationsJson: JSON.stringify(fullHyp.citations),
+        generationStrategy: fullHyp.generationStrategy,
+        eloRating: fullHyp.eloRating,
+        ratingDeviation: fullHyp.ratingDeviation ?? 350,
+        volatility: fullHyp.volatility ?? 0.06,
+        matchesPlayed: fullHyp.matchesPlayed,
+        wins: fullHyp.wins,
+        losses: fullHyp.losses,
+        status: fullHyp.status,
+        parentIdsJson: JSON.stringify(fullHyp.parentIds),
+        generationRound: fullHyp.generationRound,
+        createdAt: now,
+        updatedAt: now,
+      }).run();
+    });
 
     return fullHyp;
   }

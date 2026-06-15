@@ -1,4 +1,4 @@
-mode: reason
+mode: chat
 max_tokens: 8000
 system: |
   You are an expert scientific synthesizer who creates comprehensive research overviews.

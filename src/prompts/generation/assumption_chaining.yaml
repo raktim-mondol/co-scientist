@@ -1,4 +1,4 @@
-mode: reason
+mode: chat
 max_tokens: 6000
 system: |
   You are an expert in scientific reasoning, skilled at building chains of testable intermediate assumptions

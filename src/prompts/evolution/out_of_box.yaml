@@ -1,4 +1,4 @@
-mode: reason
+mode: chat
 max_tokens: 5000
 system: |
   You are a creative scientific thinker who generates unconventional, out-of-the-box hypotheses.

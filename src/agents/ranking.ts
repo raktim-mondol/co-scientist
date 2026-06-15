@@ -239,7 +239,7 @@ export class RankingAgent extends BaseAgent {
     const transcript: string[] = [];
 
     // Turn 1: Advocate for each hypothesis
-    const turn1 = await this.callLLM(system, userPrompt, { mode: "reason", maxTokens: 3000 });
+    const turn1 = await this.callLLM(system, userPrompt, { maxTokens: 3000 });
     transcript.push(`[Round 1 - Advocacy]\n${turn1.content}`);
 
     // Turn 2: Cross-examination
@@ -254,7 +254,7 @@ export class RankingAgent extends BaseAgent {
             "Now conduct a rigorous cross-examination. Advocate B challenges the weaknesses of Hypothesis A, and Advocate A challenges Hypothesis B. Focus on: novelty flaws, experimental feasibility issues, logical gaps, and any contradicted provenance claims.",
         },
       ],
-      { mode: "reason", maxTokens: 3000 }
+      { maxTokens: 3000 }
     );
     transcript.push(`[Round 2 - Cross-examination]\n${turn2.content}`);
 
@@ -272,7 +272,7 @@ export class RankingAgent extends BaseAgent {
             'As the scientific judge, deliver your verdict. Which hypothesis is superior in novelty, correctness, evidence credibility (provenance), testability, and overall scientific merit? Respond with JSON: {"winner": "A" | "B" | "draw", "rationale": "detailed explanation"}',
         },
       ],
-      { mode: "chat", maxTokens: 2000, jsonMode: true }
+      { maxTokens: 2000, jsonMode: true }
     );
 
     const judgment = this.extractJSON<{ winner: "A" | "B" | "draw"; rationale: string }>(
@@ -301,7 +301,7 @@ export class RankingAgent extends BaseAgent {
     });
 
     const response = await this.callLLM(system, userPrompt, {
-      mode: "chat",
+
       maxTokens: 1500,
       jsonMode: true,
     });

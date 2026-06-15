@@ -106,7 +106,7 @@ export class LiteratureResearchAgent extends BaseAgent {
         urlsPerRound: cfg.urlsPerRound,
       });
       const plan = await this.callLLMForJSON<PlanDecision>(system, userPrompt, {
-        mode: "chat",
+
         maxTokens,
       });
       if (!plan) break;
@@ -135,7 +135,7 @@ export class LiteratureResearchAgent extends BaseAgent {
           rationale: string;
           evidence: string;
           summary: string;
-        }>(ext.system, ext.userPrompt, { mode: "chat", maxTokens: ext.maxTokens });
+        }>(ext.system, ext.userPrompt, { maxTokens: ext.maxTokens });
         if (!extracted?.summary?.trim()) {
           this.log("warn", `Extraction failed for ${page.url} — skipping source`);
           continue;

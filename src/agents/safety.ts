@@ -134,7 +134,7 @@ export class SafetyAgent extends BaseAgent {
     });
 
     return this.callLLMForJSON<SafetyClassification>(system, userPrompt, {
-      mode: "chat",
+
       maxTokens: 1500,
     });
   }

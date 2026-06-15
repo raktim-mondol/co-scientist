@@ -59,7 +59,7 @@ export class ProvenanceAgent extends BaseAgent {
       `TITLE: ${hyp.title}\nCONTENT: ${hyp.content}\nRATIONALE: ${hyp.rationale}\n\n` +
       `Output ONLY this json object and nothing else:\n{"claims": ["claim 1", "claim 2", ...]}`;
 
-    const response = await this.callLLM(system, userPrompt, { mode: "chat", maxTokens: 512, jsonMode: true });
+    const response = await this.callLLM(system, userPrompt, { maxTokens: 512, jsonMode: true });
     let parsed = this.extractJSON<{ claims: string[] }>(response.content);
 
     // Fallback: re-prompt with ultra-strict extraction if JSON parsing failed
@@ -67,7 +67,7 @@ export class ProvenanceAgent extends BaseAgent {
       const fallbackResponse = await this.callLLM(
         "You are a JSON extractor. Output ONLY a raw JSON object, no explanation, no markdown.",
         `Extract the factual claims from the text below and return ONLY valid JSON in this exact format:\n{"claims": ["<first claim>", "<second claim>", ...]}\n\nReplace the placeholders with the actual claim sentences from the text. Do not include any explanation.\n\nText:\n${response.content}`,
-        { mode: "chat", maxTokens: 512, jsonMode: true }
+        { maxTokens: 512, jsonMode: true }
       );
       parsed = this.extractJSON<{ claims: string[] }>(fallbackResponse.content);
     }
@@ -122,7 +122,7 @@ export class ProvenanceAgent extends BaseAgent {
       `Output ONLY this json object and nothing else:\n` +
       `{"support":"supports"|"contradicts"|"unaddressed","confidence":0.0,"reason":"one sentence"}`;
 
-    const response = await this.callLLM(system, userPrompt, { mode: "chat", maxTokens: 512, jsonMode: true });
+    const response = await this.callLLM(system, userPrompt, { maxTokens: 512, jsonMode: true });
 
     const parsed = this.extractJSON<{
       support: "supports" | "contradicts" | "unaddressed";

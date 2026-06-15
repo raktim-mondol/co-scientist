@@ -67,6 +67,12 @@ SQLite at `~/.co-scientist/co-scientist.db` (override with `DB_PATH` env var). S
 
 `ContextStore` (`src/memory/contextStore.ts`) is the only layer that touches the DB. All agents use `this.memory.*` methods rather than querying directly.
 
+**Concurrency guards** (`src/db/index.ts`):
+- **PID lock file** (`co-scientist.db.lock`) — prevents concurrent instances from corrupting the DB. On startup, if a lock file exists and the PID is alive, the new instance errors with a clear message. Stopped/zombie processes are auto-killed. Stale locks (dead PID) are auto-replaced. Cleaned up on normal exit via `closeDb()` and `process.on("exit")`.
+- **WAL checkpoint on startup** — `PRAGMA wal_checkpoint(TRUNCATE)` runs when the connection opens, folding stale WAL pages from a crashed session back into the main DB.
+- **`withRetry(fn, maxRetries)`** — wraps DB writes with exponential-backoff retry (100ms → 200ms → 400ms) on transient `SQLITE_LOCKED` errors. Used by `createSession()` and `saveHypothesis()`.
+- **`busy_timeout = 5000`** — SQLite-level retry for `SQLITE_BUSY` (separate from `SQLITE_LOCKED`).
+
 Two storage mechanisms for embeddings:
 - `embedding_cache` table — raw Float32Array blob for retrieval
 - `vec_embeddings` sqlite-vec virtual table — FLOAT[384] columns for KNN/ANN search; accessed via raw prepared statements (Drizzle does not support virtual tables)

@@ -1,4 +1,4 @@
-mode: reason
+mode: chat
 max_tokens: 3500
 system: |
   You are a scientific analyst specialising in explanatory power assessment. Your task is to test

@@ -40,7 +40,7 @@ export class MetaReviewAgent extends BaseAgent {
     });
 
     const response = await this.callLLM(system, userPrompt, {
-      mode: "reason",
+
       maxTokens: 4000,
     });
 
@@ -80,7 +80,7 @@ export class MetaReviewAgent extends BaseAgent {
     });
 
     const response = await this.callLLM(system, userPrompt, {
-      mode: "reason",
+
       maxTokens: 8000,
     });
 

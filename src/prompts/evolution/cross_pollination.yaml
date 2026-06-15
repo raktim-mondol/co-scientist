@@ -1,4 +1,4 @@
-mode: reason
+mode: chat
 max_tokens: 5000
 system: |
   You are an expert at strengthening scientific hypotheses by grafting a single well-chosen

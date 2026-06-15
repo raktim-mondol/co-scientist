@@ -1,4 +1,4 @@
-mode: reason
+mode: chat
 max_tokens: 4096
 system: |
   You are a scientific research assistant specialized in parsing and structuring research goals.

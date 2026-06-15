@@ -9,8 +9,8 @@ import { SupervisorAgent } from "../../agents/supervisor.js";
 import { getContextStore } from "../../memory/contextStore.js";
 import { getMCPManager } from "../../tools/mcpClient.js";
 import { runMigrations } from "../../db/migrate.js";
+import { closeDb } from "../../db/index.js";
 import { resetConfig, getConfig } from "../../config.js";
-import { DeepSeekClient } from "../../llm/deepseek.js";
 import { seedRng } from "../../util/rng.js";
 import type { ResearchGoal } from "../../models/researchGoal.js";
 import type { SessionStats } from "../../models/session.js";
@@ -138,9 +138,6 @@ export async function runCommand(options: RunOptions): Promise<void> {
   console.log(chalk.yellow("\n📋 Research Goal:\n") + chalk.white(rawGoal.trim()));
   console.log(chalk.yellow("\n🚀 Starting Co-Scientist...\n"));
 
-  // Each session gets its own thinking log: ~/.co-scientist/thinking-<sessionId>.log
-  DeepSeekClient.setSessionLogPath(sessionId);
-
   // Set up progress display
   const startTime = Date.now();
   const budgetTokens = getConfig().compute.budgetTokens;
@@ -151,9 +148,6 @@ export async function runCommand(options: RunOptions): Promise<void> {
   let lastStats: (SessionStats & { activity: string }) | null = null;
 
   if (useTui) {
-    // Suppress DeepSeek thinking stderr streaming — raw stderr writes corrupt
-    // Ink's ANSI cursor tracking and cause TUI flickering/ghosting.
-    DeepSeekClient.stderrEnabled = false;
     tui = renderTUI({
       emitter,
       memory: getContextStore(),
@@ -207,20 +201,45 @@ export async function runCommand(options: RunOptions): Promise<void> {
   }
   void lastActivity;
 
-  // Handle graceful shutdown
-  process.on("SIGINT", () => {
+  // ── Graceful shutdown handler ──────────────────────────────────────────────
+  // Ensures WAL is checkpointed, DB connection is closed, and the PID lock
+  // file is removed — so the next session starts cleanly even after Ctrl+C.
+  let shuttingDown = false;
+  const gracefulShutdown = (signal: string) => {
+    if (shuttingDown) return; // Prevent double-cleanup races
+    shuttingDown = true;
+
     if (tui) tui.unmount();
-    console.log(chalk.yellow("\n\n⏸  Pausing session... (data saved to SQLite)"));
+    console.log(chalk.yellow(`\n\n⏸  ${signal} received — pausing session...`));
+
     supervisor.stop();
 
     const memory = getContextStore();
-    memory.updateSessionStatus(sessionId, "paused");
+    try {
+      memory.updateSessionStatus(sessionId, "paused");
+      console.log(chalk.gray("  Session status saved."));
+    } catch (err) {
+      console.log(chalk.gray(`  (Could not update session status: ${(err as Error).message})`));
+    }
+
+    // Checkpoint WAL + close DB + remove PID lock file
+    try {
+      closeDb();
+      console.log(chalk.gray("  Database checkpointed and closed."));
+    } catch (err) {
+      console.log(chalk.gray(`  (Database cleanup: ${(err as Error).message})`));
+    }
 
     console.log(
-      chalk.cyan(`Resume later with: co-scientist resume ${sessionId}`)
+      chalk.cyan(`\n  Resume later with: co-scientist resume ${sessionId}`)
     );
     process.exit(0);
-  });
+  };
+
+  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+  // SIGHUP: terminal closed / SSH disconnected — best-effort cleanup
+  process.on("SIGHUP", () => gracefulShutdown("SIGHUP"));
 
   // Run the main orchestration loop
   try {

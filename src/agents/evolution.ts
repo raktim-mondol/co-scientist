@@ -137,7 +137,7 @@ export class EvolutionAgent extends BaseAgent {
     });
 
     return this.callLLMForJSON<EvolvedHypothesis>(system, userPrompt, {
-      mode: "reason",
+
       maxTokens: 5000,
     });
   }
@@ -151,7 +151,7 @@ export class EvolutionAgent extends BaseAgent {
     });
 
     return this.callLLMForJSON<EvolvedHypothesis>(system, userPrompt, {
-      mode: "reason",
+
       maxTokens: 5000,
     });
   }
@@ -172,7 +172,7 @@ export class EvolutionAgent extends BaseAgent {
     });
 
     return this.callLLMForJSON<EvolvedHypothesis>(system, userPrompt, {
-      mode: "reason",
+
       maxTokens: 5000,
     });
   }
@@ -189,7 +189,7 @@ export class EvolutionAgent extends BaseAgent {
     });
 
     return this.callLLMForJSON<EvolvedHypothesis>(system, userPrompt, {
-      mode: "reason",
+
       maxTokens: 6000,
     });
   }
@@ -202,7 +202,7 @@ export class EvolutionAgent extends BaseAgent {
     });
 
     return this.callLLMForJSON<EvolvedHypothesis>(system, userPrompt, {
-      mode: "chat",
+
       maxTokens: 4000,
     });
   }
@@ -218,7 +218,7 @@ export class EvolutionAgent extends BaseAgent {
     });
 
     return this.callLLMForJSON<EvolvedHypothesis>(system, userPrompt + metaCritique, {
-      mode: "reason",
+
       maxTokens: 5000,
     });
   }

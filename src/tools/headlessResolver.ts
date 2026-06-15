@@ -2,6 +2,19 @@ import { logger } from "../config.js";
 
 const HEADLESS_TIMEOUT_MS = 20_000;
 
+/** File extensions that are never HTML — navigating to these in a browser
+ *  triggers a download rather than rendering a DOM, so `page.content()`
+ *  would hang until timeout. */
+const NON_HTML_EXT = /\.(pdf|djvu|epub|zip|gz|tar|mp4|mp3|avi|mov|exe|dmg|bin)$/i;
+
+function isNonHtmlUrl(url: string): boolean {
+  try {
+    return NON_HTML_EXT.test(new URL(url).pathname);
+  } catch {
+    return false; // malformed URL — let the browser attempt it
+  }
+}
+
 /**
  * Fetch a URL's rendered HTML using a headless Chromium browser via Playwright.
  *
@@ -24,6 +37,10 @@ const HEADLESS_TIMEOUT_MS = 20_000;
  * Returns the rendered page HTML, or null on any failure. Never throws.
  */
 export async function fetchWithHeadlessBrowser(url: string): Promise<string | null> {
+  // Skip known non-HTML extensions (PDFs, binaries) — navigating to these
+  // triggers a download that never resolves `waitUntil`.
+  if (isNonHtmlUrl(url)) return null;
+
   try {
     const { chromium } = await import("playwright");
 
@@ -46,11 +63,22 @@ export async function fetchWithHeadlessBrowser(url: string): Promise<string | nu
 
     const page = await context.newPage();
     const response = await page.goto(url, {
-      waitUntil: "networkidle",
+      // domcontentloaded is sufficient — DOIs live in <meta> tags and JSON-LD
+      // blocks in <head>, available as soon as the DOM is parsed.  We don't
+      // need CSS, fonts, or analytics scripts to finish loading.
+      waitUntil: "domcontentloaded",
       timeout: HEADLESS_TIMEOUT_MS,
     });
 
     if (!response || !response.ok()) {
+      await browser.close();
+      return null;
+    }
+
+    // Double-check that the server actually sent HTML (catches PDFs served
+    // without a .pdf extension, e.g. /download?article=123).
+    const contentType = response.headers()["content-type"] ?? "";
+    if (!/text\/html|application\/xhtml\+xml/i.test(contentType)) {
       await browser.close();
       return null;
     }

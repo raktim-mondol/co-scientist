@@ -1,7 +1,7 @@
 import { BaseAgent } from "./base.js";
 import type { Hypothesis } from "../models/hypothesis.js";
 import type { ReviewVerdict } from "../models/hypothesis.js";
-import { HypothesisReviewSchema } from "../models/hypothesis.js";
+import { ReviewVerdictSchema } from "../models/hypothesis.js";
 import { z } from "zod";
 import { seededGlicko2Rating } from "../models/tournament.js";
 import { ProvenanceAgent } from "./provenance.js";
@@ -11,25 +11,35 @@ import { buildRLEFMetaReviewBlock } from "../rlef/prompt-injection.js";
 
 interface ReviewResult {
   verdict: ReviewVerdict;
-  noveltyScore?: number;
-  correctnessScore?: number;
-  testabilityScore?: number;
+  noveltyScore?: number | null;
+  correctnessScore?: number | null;
+  testabilityScore?: number | null;
   safetyFlag?: boolean;
   summary: string;
   critique: string;
-  supportingEvidence: string[];
+  supportingEvidence?: string[];
 }
 
-/** Zod schema that validates required ReviewResult fields are present. */
-const ReviewResultSchema = HypothesisReviewSchema.pick({
-  verdict: true,
-  noveltyScore: true,
-  correctnessScore: true,
-  testabilityScore: true,
-  safetyFlag: true,
-  summary: true,
-  critique: true,
-  supportingEvidence: true,
+/**
+ * Zod schema that validates required ReviewResult fields are present.
+ *
+ * Several reflection prompts (deep_verification, observation_review,
+ * simulation_review) instruct the LLM to output `"noveltyScore": null` and
+ * `"testabilityScore": null` when those dimensions are not assessed.  We
+ * therefore accept `null` (in addition to a 0–10 number or `undefined`) for
+ * the three score fields — otherwise schema validation fails, extractJSON
+ * returns null, and the review is discarded even though the LLM obeyed the
+ * prompt correctly.
+ */
+const ReviewResultSchema = z.object({
+  verdict: ReviewVerdictSchema,
+  noveltyScore: z.number().min(0).max(10).nullable().optional(),
+  correctnessScore: z.number().min(0).max(10).nullable().optional(),
+  testabilityScore: z.number().min(0).max(10).nullable().optional(),
+  safetyFlag: z.boolean().default(false),
+  summary: z.string(),
+  critique: z.string(),
+  supportingEvidence: z.array(z.string()).default([]),
 });
 
 export class ReflectionAgent extends BaseAgent {
@@ -62,7 +72,7 @@ export class ReflectionAgent extends BaseAgent {
     this.memory.updateHypothesisStatus(hyp.id, "reviewing");
 
     // Step 1: Quick initial review (no search)
-    const initial = await this._initialReview(hyp, rlefBlock);
+    const initial = this._normaliseScores(await this._initialReview(hyp, rlefBlock));
     this.memory.saveReview({
       hypothesisId: hyp.id,
       sessionId,
@@ -90,7 +100,7 @@ export class ReflectionAgent extends BaseAgent {
     }
 
     // Step 2: Full review with literature search
-    const full = await this._fullReview(hyp);
+    const full = this._normaliseScores(await this._fullReview(hyp));
     this.memory.saveReview({
       hypothesisId: hyp.id,
       sessionId,
@@ -112,7 +122,7 @@ export class ReflectionAgent extends BaseAgent {
     const citePenalty = await this.citationIntegrity.execute(sessionId, hyp);
 
     // Step 3: Deep verification — each sub-claim holds independently?
-    const deepReview = await this._deepVerificationReview(hyp);
+    const deepReview = this._normaliseScores(await this._deepVerificationReview(hyp));
     this.memory.saveReview({
       hypothesisId: hyp.id,
       sessionId,
@@ -122,7 +132,7 @@ export class ReflectionAgent extends BaseAgent {
     });
 
     // Step 4: Simulation — at which mechanistic step does it break?
-    const simReview = await this._simulationReview(hyp);
+    const simReview = this._normaliseScores(await this._simulationReview(hyp));
     this.memory.saveReview({
       hypothesisId: hyp.id,
       sessionId,
@@ -135,7 +145,7 @@ export class ReflectionAgent extends BaseAgent {
     // fail/uncertain here does NOT auto-reject: these are nuanced reviews that
     // contribute to the seeded Glicko-2 rating but the hypothesis still enters
     // the tournament so debates can surface the weaknesses.
-    const obsReview = await this._observationReview(hyp);
+    const obsReview = this._normaliseScores(await this._observationReview(hyp));
     this.memory.saveReview({
       hypothesisId: hyp.id,
       sessionId,
@@ -183,7 +193,7 @@ export class ReflectionAgent extends BaseAgent {
     });
 
     const response = await this.callLLM(system, userPrompt + rlefBlock, {
-      mode: "chat",
+
       maxTokens: 2048,
       jsonMode: true,
     });
@@ -216,7 +226,7 @@ export class ReflectionAgent extends BaseAgent {
     });
 
     const parsed = await this.callLLMForJSON<ReviewResult>(system, userPrompt, {
-      mode: "reason",
+
       maxTokens: 4096,
       schema: ReviewResultSchema,
     });
@@ -241,7 +251,7 @@ export class ReflectionAgent extends BaseAgent {
     });
 
     const parsed = await this.callLLMForJSON<ReviewResult>(system, userPrompt, {
-      mode: "reason",
+
       maxTokens: 4096,
       schema: ReviewResultSchema,
     });
@@ -269,7 +279,7 @@ export class ReflectionAgent extends BaseAgent {
     });
 
     return this.callLLMForJSON<ReviewResult>(system, userPrompt, {
-      mode: "reason",
+
       maxTokens: 3500,
       schema: ReviewResultSchema,
     }).then((parsed) => parsed ?? {
@@ -282,7 +292,7 @@ export class ReflectionAgent extends BaseAgent {
 
   /** Public on-demand entry point (CLI / external callers). */
   async runObservationReview(sessionId: string, hyp: Hypothesis): Promise<void> {
-    const result = await this._observationReview(hyp);
+    const result = this._normaliseScores(await this._observationReview(hyp));
     this.memory.saveReview({
       hypothesisId: hyp.id,
       sessionId,
@@ -301,7 +311,7 @@ export class ReflectionAgent extends BaseAgent {
     });
 
     return this.callLLMForJSON<ReviewResult>(system, userPrompt, {
-      mode: "reason",
+
       maxTokens: 3000,
       schema: ReviewResultSchema,
     }).then((parsed) => parsed ?? {
@@ -314,7 +324,7 @@ export class ReflectionAgent extends BaseAgent {
 
   /** Public on-demand entry point (CLI / external callers). */
   async runSimulationReview(sessionId: string, hyp: Hypothesis): Promise<void> {
-    const result = await this._simulationReview(hyp);
+    const result = this._normaliseScores(await this._simulationReview(hyp));
     this.memory.saveReview({
       hypothesisId: hyp.id,
       sessionId,
@@ -327,11 +337,31 @@ export class ReflectionAgent extends BaseAgent {
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
   /**
+   * Normalise `null` score fields and optional `supportingEvidence` before
+   * persisting through `ContextStore.saveReview()`, whose schema expects
+   * `number | undefined` (not `number | null`) and a required `string[]`.
+   */
+  private _normaliseScores(r: ReviewResult): Omit<ReviewResult, "noveltyScore" | "correctnessScore" | "testabilityScore" | "supportingEvidence"> & {
+    noveltyScore?: number;
+    correctnessScore?: number;
+    testabilityScore?: number;
+    supportingEvidence: string[];
+  } {
+    return {
+      ...r,
+      noveltyScore: r.noveltyScore ?? undefined,
+      correctnessScore: r.correctnessScore ?? undefined,
+      testabilityScore: r.testabilityScore ?? undefined,
+      supportingEvidence: r.supportingEvidence ?? [],
+    };
+  }
+
+  /**
    * Return the highest defined score from an array of optional numbers.
    * Using the best (most optimistic) score across review stages rewards
    * hypotheses that excelled in at least one review dimension.
    */
-  private _bestScore(scores: (number | undefined)[]): number | undefined {
+  private _bestScore(scores: (number | null | undefined)[]): number | undefined {
     const defined = scores.filter((s): s is number => s !== undefined && s !== null);
     if (defined.length === 0) return undefined;
     return Math.max(...defined);

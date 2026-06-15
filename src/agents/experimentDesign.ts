@@ -63,7 +63,7 @@ export class ExperimentDesignAgent extends BaseAgent {
     const parsed = await this.callLLMForJSON<
       Omit<ExperimentProtocol, "hypothesisId" | "hypothesisTitle" | "generatedAt">
     >(system, userPrompt, {
-      mode: "reason",
+
       maxTokens: 6000,
     });
 
