@@ -49,7 +49,7 @@ function stubStream(
 }
 
 describe("buildRequestBody (pure request shaping)", () => {
-  test("thinking on → enabled, effort set, additive budget, no temperature", () => {
+  test("thinking on → enabled, effort set, additive budget, no temperature, NO json_object (incompatible)", () => {
     const body = buildRequestBody(
       "deepseek-v4-pro",
       { messages, maxTokens: 1000, temperature: 0.7, enableThinking: true, jsonMode: true },
@@ -59,7 +59,7 @@ describe("buildRequestBody (pure request shaping)", () => {
     expect(body.reasoning_effort).toBe("high");
     expect(body.max_tokens).toBe(9000); // 1000 + 8000 headroom
     expect(body.temperature).toBeUndefined(); // ignored in thinking mode → omitted
-    expect((body.response_format as { type: string }).type).toBe("json_object");
+    expect(body.response_format).toBeUndefined(); // incompatible with thinking → skipped
   });
 
   test("thinking off → disabled, temperature kept, no budget added", () => {
@@ -72,6 +72,16 @@ describe("buildRequestBody (pure request shaping)", () => {
     expect(body.max_tokens).toBe(1000);
     expect(body.temperature).toBe(0.5);
     expect(body.response_format).toBeUndefined();
+  });
+
+  test("thinking off + jsonMode → json_object set (compatible)", () => {
+    const body = buildRequestBody(
+      "deepseek-v4-pro",
+      { messages, maxTokens: 1000, enableThinking: false, jsonMode: true },
+      baseThinking
+    );
+    expect((body.thinking as { type: string }).type).toBe("disabled");
+    expect((body.response_format as { type: string }).type).toBe("json_object");
   });
 
   test("effort falls back to config default when param omitted", () => {
@@ -219,7 +229,7 @@ describe("DeepSeekClient streaming (DEEPSEEK_STREAM_THINKING)", () => {
     expect(response.usage.promptTokens).toBe(10);
   });
 
-  test("stream with jsonMode → response_format present in request", async () => {
+  test("stream with jsonMode + thinking → response_format skipped (incompatible)", async () => {
     process.env.DEEPSEEK_STREAM_THINKING = "true";
     resetConfig();
     const c = new DeepSeekClient();
@@ -228,7 +238,7 @@ describe("DeepSeekClient streaming (DEEPSEEK_STREAM_THINKING)", () => {
       { usage: { prompt_tokens: 5, completion_tokens: 5, total_tokens: 10 } },
     ]);
     await c.reason({ messages, maxTokens: 500, jsonMode: true });
-    expect((calls[0].response_format as { type: string }).type).toBe("json_object");
+    expect(calls[0].response_format).toBeUndefined(); // incompatible with thinking
     expect((calls[0].thinking as { type: string }).type).toBe("enabled");
     expect(calls[0].stream).toBe(true);
   });

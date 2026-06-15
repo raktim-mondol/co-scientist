@@ -1,6 +1,8 @@
 import { BaseAgent } from "./base.js";
 import type { Hypothesis } from "../models/hypothesis.js";
 import type { ReviewVerdict } from "../models/hypothesis.js";
+import { HypothesisReviewSchema } from "../models/hypothesis.js";
+import { z } from "zod";
 import { seededGlicko2Rating } from "../models/tournament.js";
 import { ProvenanceAgent } from "./provenance.js";
 import { CitationIntegrityAgent } from "./citationIntegrity.js";
@@ -17,6 +19,18 @@ interface ReviewResult {
   critique: string;
   supportingEvidence: string[];
 }
+
+/** Zod schema that validates required ReviewResult fields are present. */
+const ReviewResultSchema = HypothesisReviewSchema.pick({
+  verdict: true,
+  noveltyScore: true,
+  correctnessScore: true,
+  testabilityScore: true,
+  safetyFlag: true,
+  summary: true,
+  critique: true,
+  supportingEvidence: true,
+});
 
 export class ReflectionAgent extends BaseAgent {
   get agentName() { return "Reflection"; }
@@ -174,7 +188,7 @@ export class ReflectionAgent extends BaseAgent {
       jsonMode: true,
     });
 
-    const parsed = this.extractJSON<ReviewResult>(response.content);
+    const parsed = this.extractJSON<ReviewResult>(response.content, ReviewResultSchema);
     return parsed ?? {
       verdict: "uncertain",
       summary: "Could not parse review",
@@ -201,20 +215,18 @@ export class ReflectionAgent extends BaseAgent {
       literatureContext: context,
     });
 
-    const response = await this.callLLM(system, userPrompt, {
+    const parsed = await this.callLLMForJSON<ReviewResult>(system, userPrompt, {
       mode: "reason",
       maxTokens: 4096,
-      jsonMode: true,
+      schema: ReviewResultSchema,
     });
-
-    const parsed = this.extractJSON<ReviewResult>(response.content);
     if (parsed) {
       parsed.supportingEvidence = results.slice(0, 5).map((r) => r.url).filter(Boolean);
     }
     return parsed ?? {
       verdict: "uncertain",
       summary: "Full review parsing failed",
-      critique: response.content.slice(0, 500),
+      critique: "",
       supportingEvidence: [],
     };
   }
@@ -228,17 +240,15 @@ export class ReflectionAgent extends BaseAgent {
       rationale: hyp.rationale,
     });
 
-    const response = await this.callLLM(system, userPrompt, {
+    const parsed = await this.callLLMForJSON<ReviewResult>(system, userPrompt, {
       mode: "reason",
       maxTokens: 4096,
-      jsonMode: true,
+      schema: ReviewResultSchema,
     });
-
-    const parsed = this.extractJSON<ReviewResult>(response.content);
     return parsed ?? {
       verdict: "uncertain",
       summary: "Deep verification inconclusive",
-      critique: response.content.slice(0, 500),
+      critique: "",
       supportingEvidence: [],
     };
   }
@@ -258,18 +268,16 @@ export class ReflectionAgent extends BaseAgent {
       observations: context,
     });
 
-    const response = await this.callLLM(system, userPrompt, {
+    return this.callLLMForJSON<ReviewResult>(system, userPrompt, {
       mode: "reason",
       maxTokens: 3500,
-      jsonMode: true,
-    });
-
-    return this.extractJSON<ReviewResult>(response.content) ?? {
-      verdict: "uncertain",
+      schema: ReviewResultSchema,
+    }).then((parsed) => parsed ?? {
+      verdict: "uncertain" as const,
       summary: "Observation review inconclusive",
-      critique: response.content.slice(0, 500),
+      critique: "",
       supportingEvidence: [],
-    };
+    });
   }
 
   /** Public on-demand entry point (CLI / external callers). */
@@ -292,18 +300,16 @@ export class ReflectionAgent extends BaseAgent {
       experimentalPlan: hyp.experimentalPlan ?? "Not specified",
     });
 
-    const response = await this.callLLM(system, userPrompt, {
+    return this.callLLMForJSON<ReviewResult>(system, userPrompt, {
       mode: "reason",
       maxTokens: 3000,
-      jsonMode: true,
-    });
-
-    return this.extractJSON<ReviewResult>(response.content) ?? {
-      verdict: "uncertain",
+      schema: ReviewResultSchema,
+    }).then((parsed) => parsed ?? {
+      verdict: "uncertain" as const,
       summary: "Simulation review inconclusive",
-      critique: response.content.slice(0, 500),
+      critique: "",
       supportingEvidence: [],
-    };
+    });
   }
 
   /** Public on-demand entry point (CLI / external callers). */

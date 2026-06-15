@@ -68,14 +68,21 @@ export function buildRequestBody(
     body["max_tokens"] = baseMaxTokens + thinking.reasoningBudgetTokens;
     // temperature/top_p/presence_penalty/frequency_penalty are silently ignored in
     // thinking mode — omit temperature so we don't imply it has an effect.
+    //
+    // response_format: json_object is NOT compatible with thinking mode — DeepSeek
+    // silently ignores it and outputs free-form text instead of valid JSON.  Skip it
+    // here; extractJSON() handles prose-embedded JSON reliably with its multi-strategy
+    // parser (markdown code blocks, balanced-brace scan, jsonrepair).
+    if (params.jsonMode) {
+      logger.debug("thinking mode active — skipping response_format json_object (incompatible); relying on extractJSON parser");
+    }
   } else {
     body["thinking"] = { type: "disabled" };
     body["max_tokens"] = baseMaxTokens;
     if (params.temperature !== undefined) body["temperature"] = params.temperature;
-  }
-
-  if (params.jsonMode) {
-    body["response_format"] = { type: "json_object" };
+    if (params.jsonMode) {
+      body["response_format"] = { type: "json_object" };
+    }
   }
 
   return body;

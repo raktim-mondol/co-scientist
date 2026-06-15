@@ -60,18 +60,15 @@ export class ExperimentDesignAgent extends BaseAgent {
       literatureContext,
     });
 
-    const response = await this.callLLM(system, userPrompt, {
+    const parsed = await this.callLLMForJSON<
+      Omit<ExperimentProtocol, "hypothesisId" | "hypothesisTitle" | "generatedAt">
+    >(system, userPrompt, {
       mode: "reason",
       maxTokens: 6000,
-      jsonMode: true,
     });
 
-    const parsed = this.extractJSON<Omit<ExperimentProtocol, "hypothesisId" | "hypothesisTitle" | "generatedAt">>(
-      response.content
-    );
-
     if (!parsed) {
-      this.log("error", "Failed to parse protocol JSON from LLM response");
+      this.log("error", "Failed to parse protocol JSON from LLM response (even after retry)");
       return null;
     }
 

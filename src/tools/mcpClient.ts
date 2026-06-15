@@ -29,20 +29,98 @@ class MCPServerClient {
   private connected = false;
   /** Set true after an unrecoverable failure — stops all future connect attempts. */
   private permanentlyFailed = false;
+  /**
+   * Promise for an in-progress auth refresh.  Concurrent callers that hit an
+   * auth error await this instead of kicking off their own refresh, so a
+   * single token refresh serves all queued callers.  `null` when idle.
+   */
+  private _authRefreshPromise: Promise<void> | null = null;
+  /** Recursion guard — prevents infinite retry loops if refresh itself fails. */
+  private _isRetryingAuth = false;
+  /**
+   * Map a generic search tool name ("search") to the provider-specific tool name.
+   * Scite uses "search_literature"; Consensus uses "search".
+   */
+  searchToolName: string;
+  /**
+   * Transform args from the generic { query } shape into provider-specific
+   * parameter names (Scite uses "term" instead of "query").
+   */
+  mapSearchArgs: (args: Record<string, unknown>) => Record<string, unknown>;
 
   constructor(
     serverName: string,
     url: string,
-    headers: Record<string, string> = {}
+    headers: Record<string, string> = {},
+    opts?: { searchToolName?: string; mapSearchArgs?: (args: Record<string, unknown>) => Record<string, unknown> }
   ) {
     this.serverName = serverName;
     this.url = url;
     this.headers = { "Content-Type": "application/json", ...headers };
+    this.searchToolName = opts?.searchToolName ?? "search";
+    this.mapSearchArgs = opts?.mapSearchArgs ?? ((args) => args);
   }
 
   /** Update the Authorization header (e.g. after a token refresh). */
   setAuthHeader(token: string): void {
     this.headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  /** Check if an error message indicates an auth/token-expiry issue. */
+  private _isAuthError(message: string): boolean {
+    return /expired|unauthorized|invalid.*token|token.*(?:invalid|expir)/i.test(message);
+  }
+
+  /** Refresh the auth token by calling the provider-specific token function. */
+  private async _refreshAuth(): Promise<void> {
+    if (this.serverName === "Scite") {
+      const token = await getSciteAccessToken();
+      this.setAuthHeader(token);
+    } else if (this.serverName === "Consensus") {
+      const token = await getConsensusAccessToken();
+      this.setAuthHeader(token);
+    } else {
+      throw new Error(`No auth refresh provider for ${this.serverName}`);
+    }
+  }
+
+  /**
+   * Refresh the auth token, reset the connection, and retry the call.
+   *
+   * Uses `_authRefreshPromise` so concurrent callers share a single refresh
+   * instead of racing each other.  Uses `_isRetryingAuth` to prevent infinite
+   * recursion when the retry itself also fails with an auth error.
+   */
+  private async _retryAfterAuthRefresh(
+    toolName: string,
+    args: Record<string, unknown>
+  ): Promise<MCPToolResult> {
+    this._isRetryingAuth = true;
+    try {
+      // Start or join a shared refresh
+      if (!this._authRefreshPromise) {
+        logger.info(`${this.serverName}: auth error detected — refreshing token and retrying...`);
+        this._authRefreshPromise = this._refreshAuth()
+          .then(() => { this.reset(); })
+          .finally(() => { this._authRefreshPromise = null; });
+      } else {
+        logger.info(`${this.serverName}: auth error detected — waiting for in-progress token refresh...`);
+      }
+
+      await this._authRefreshPromise;
+
+      // Retry with the refreshed token (now in this.headers).
+      const result = await this.callTool(toolName, args);
+      logger.info(`${this.serverName}: token refresh succeeded — call retry successful.`);
+      return result;
+    } catch (err) {
+      logger.error(
+        `${this.serverName} tool call failed after token refresh (${toolName}): ${(err as Error).message}`
+      );
+      throw err;
+    } finally {
+      this._isRetryingAuth = false;
+    }
   }
 
   /** Always create a fresh Client + Transport — the SDK forbids reusing a started transport. */
@@ -91,7 +169,6 @@ class MCPServerClient {
     try {
       const result = await this.client!.callTool({ name: toolName, arguments: args });
       // Detect application-level errors signaled via isError flag (e.g., Scite monthly limit).
-      // These are valid JSON-RPC responses that the SDK returns normally without throwing.
       if (result.isError) {
         const errText =
           result.content
@@ -101,12 +178,21 @@ class MCPServerClient {
             )
             .map((c) => c.text)
             .join("\n") || `${this.serverName} returned an error with no details`;
+        // Try auth recovery for application-level auth errors
+        if (!this._isRetryingAuth && this._isAuthError(errText)) {
+          return await this._retryAfterAuthRefresh(toolName, args);
+        }
         throw new Error(errText);
       }
       return result as MCPToolResult;
     } catch (error) {
+      const errMsg = (error as Error).message;
+      // Try auth recovery for SDK/JRPC-level auth errors (e.g., "User token has expired")
+      if (!this._isRetryingAuth && this._isAuthError(errMsg)) {
+        return await this._retryAfterAuthRefresh(toolName, args);
+      }
       logger.error(
-        `${this.serverName} tool call failed (${toolName}): ${(error as Error).message}`
+        `${this.serverName} tool call failed (${toolName}): ${errMsg}`
       );
       throw error;
     }
@@ -174,9 +260,23 @@ export class MCPClientManager {
       "Consensus",
       config.tools.consensus.url
     );
+    // Scite uses "search_literature" as the primary literature search tool
+    // and expects "term" instead of "query" for the search parameter.
     this.scite = new MCPServerClient(
       "Scite",
-      config.tools.scite.url
+      config.tools.scite.url,
+      {},
+      {
+        searchToolName: "search_literature",
+        mapSearchArgs: (args) => {
+          const mapped: Record<string, unknown> = { ...args };
+          if ("query" in mapped) {
+            mapped["term"] = mapped["query"];
+            delete mapped["query"];
+          }
+          return mapped;
+        },
+      }
     );
   }
 
@@ -337,10 +437,12 @@ export class MCPClientManager {
         continue;
       }
       try {
+        const resolvedTool = client.searchToolName || toolName;
+        const resolvedArgs = client.mapSearchArgs(args);
         if (name !== priority[0]) {
-          logger.info(`${name}: falling back for academic search ("${toolName}")`);
+          logger.info(`${name}: falling back for academic search ("${resolvedTool}")`);
         }
-        const result = await client.callTool(toolName, args);
+        const result = await client.callTool(resolvedTool, resolvedArgs);
         // Guard: if provider returns empty content, try next provider (defense-in-depth
         // alongside the isError→throw check in callTool()).
         const hasContent = result.content?.some(
@@ -378,13 +480,16 @@ export class MCPClientManager {
     const calls = priority
       .filter((name) => this.clientFor(name).isAvailable())
       .map(async (name): Promise<ProviderResult | null> => {
+        const client = this.clientFor(name);
+        const resolvedTool = client.searchToolName || toolName;
+        const resolvedArgs = client.mapSearchArgs(args);
         try {
-          const result = await this.clientFor(name).callTool(toolName, args);
+          const result = await client.callTool(resolvedTool, resolvedArgs);
           const hasContent = result.content?.some(
             (b) => b.type === "text" && (b.text?.trim() ?? "").length > 0
           );
           if (hasContent) {
-            logger.info(`${name}: returned results for ("${toolName}")`);
+            logger.info(`${name}: returned results for ("${resolvedTool}")`);
           }
           return { name, content: hasContent ? result.content : [] };
         } catch (err) {
@@ -443,10 +548,12 @@ export class MCPClientManager {
         continue;
       }
       try {
+        const resolvedTool = client.searchToolName || toolName;
+        const resolvedArgs = client.mapSearchArgs(args);
         if (i > 0) {
-          logger.info(`${name}: falling back for academic search ("${toolName}")`);
+          logger.info(`${name}: falling back for academic search ("${resolvedTool}")`);
         }
-        const result = await client.callTool(toolName, args);
+        const result = await client.callTool(resolvedTool, resolvedArgs);
 
         // Check if the result has any substantive text content
         const hasContent = result.content?.some(

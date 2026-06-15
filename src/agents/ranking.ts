@@ -272,7 +272,7 @@ export class RankingAgent extends BaseAgent {
             'As the scientific judge, deliver your verdict. Which hypothesis is superior in novelty, correctness, evidence credibility (provenance), testability, and overall scientific merit? Respond with JSON: {"winner": "A" | "B" | "draw", "rationale": "detailed explanation"}',
         },
       ],
-      { mode: "reason", maxTokens: 2000, jsonMode: true }
+      { mode: "chat", maxTokens: 2000, jsonMode: true }
     );
 
     const judgment = this.extractJSON<{ winner: "A" | "B" | "draw"; rationale: string }>(

@@ -18,6 +18,8 @@ import { diffCommand } from "./commands/diff.js";
 import { safetyCommand } from "./commands/safety.js";
 import { thinkingCommand } from "./commands/thinking.js";
 import { activityCommand } from "./commands/activity.js";
+import { loginCommand } from "./commands/login.js";
+import { logoutCommand } from "./commands/logout.js";
 
 const program = new Command();
 
@@ -158,6 +160,24 @@ program
   .option("--export <path>", "Export activity log to a markdown file")
   .action(activityCommand);
 
+program
+  .command("login")
+  .description(
+    "Sign in to Scite and/or Consensus via OAuth\n" +
+    "  --provider <name>   consensus | scite | all (default: all)"
+  )
+  .option("-p, --provider <name>", "Provider to log in to: consensus | scite | all", "all")
+  .action(loginCommand);
+
+program
+  .command("logout")
+  .description(
+    "Sign out of Scite and/or Consensus\n" +
+    "  --provider <name>   consensus | scite | all (default: all)"
+  )
+  .option("-p, --provider <name>", "Provider to log out of: consensus | scite | all", "all")
+  .action(logoutCommand);
+
 program.action(() => {
   printBanner();
 
@@ -193,6 +213,12 @@ program.action(() => {
   console.log(sub(opt("--export <path>") + "  Export to markdown file"));
   console.log(`  ${cmd("activity")} ${arg("<sessionId>")}              View full session activity log`);
   console.log(sub(opt("--export <path>") + "  Export to markdown file"));
+
+  console.log("\n" + c.bold.white("Authentication"));
+  console.log(`  ${cmd("login")}                                 Sign in to Scite/Consensus via OAuth`);
+  console.log(sub(opt("--provider <name>") + "  consensus | scite | all (default: all)"));
+  console.log(`  ${cmd("logout")}                                Sign out of Scite/Consensus`);
+  console.log(sub(opt("--provider <name>") + "  consensus | scite | all (default: all)"));
 
   console.log("\n" + c.bold.white("Feedback"));
   console.log(`  ${cmd("feedback")} ${arg("<sessionId>")} ${opt("--experimental")}   Empirical result ${dim("→ RLEF: updates Elo, injects into agents")}`);

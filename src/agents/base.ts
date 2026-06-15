@@ -5,6 +5,7 @@ import Handlebars from "handlebars";
 import { parse as parseYaml } from "yaml";
 import { jsonrepair } from "jsonrepair";
 import { v4 as uuidv4 } from "uuid";
+import { z } from "zod";
 import { getDeepSeekClient, type LLMResponse } from "../llm/deepseek.js";
 import { getSearchTool, type SearchResult } from "../tools/search.js";
 import { getContextStore } from "../memory/contextStore.js";
@@ -101,11 +102,17 @@ export abstract class BaseAgent {
       response = await this.llm.chat({ messages, maxTokens, temperature, jsonMode });
     }
 
-    // DeepSeek thinking mode can return empty content when the model exhausts its
-    // token budget inside <think> blocks. Fall back to reasoning_content in that case.
+    // DeepSeek thinking mode can return empty content when the model produces
+    // reasoning but no final answer (e.g., token budget exhaustion).  Fall back to
+    // reasoning_content only for free-text calls — swapping prose into content on a
+    // jsonMode call guarantees extractJSON will fail, so let the retry handle it.
     if (!response.content?.trim() && response.reasoning?.trim()) {
-      logger.debug(`[${this.agentName}] Empty content, falling back to reasoning field`);
-      response = { ...response, content: response.reasoning };
+      if (jsonMode) {
+        logger.info(`[${this.agentName}] Thinking consumed entire token budget — content empty, will trigger retry with thinking disabled`);
+      } else {
+        logger.debug(`[${this.agentName}] Empty content, falling back to reasoning field (non-JSON mode)`);
+        response = { ...response, content: response.reasoning };
+      }
     }
 
     if (response.reasoning?.trim()) {
@@ -182,10 +189,15 @@ export abstract class BaseAgent {
       response = await this.llm.chat({ messages, maxTokens, jsonMode });
     }
 
-    // Same empty-content fallback
+    // Same empty-content fallback as callLLM — skip for jsonMode
+    // (swapping prose into content guarantees extractJSON failure).
     if (!response.content?.trim() && response.reasoning?.trim()) {
-      logger.debug(`[${this.agentName}] Empty content (multi-turn), falling back to reasoning field`);
-      response = { ...response, content: response.reasoning };
+      if (jsonMode) {
+        logger.info(`[${this.agentName}] Thinking consumed entire token budget (multi-turn) — content empty, will trigger retry with thinking disabled`);
+      } else {
+        logger.debug(`[${this.agentName}] Empty content (multi-turn), falling back to reasoning field (non-JSON mode)`);
+        response = { ...response, content: response.reasoning };
+      }
     }
 
     if (response.reasoning?.trim()) {
@@ -249,18 +261,33 @@ export abstract class BaseAgent {
       mode?: "chat" | "reason";
       maxTokens?: number;
       temperature?: number;
+      /** Optional Zod schema for validation. When provided, only objects that
+       *  pass schema.safeParse() are returned — failures continue to next strategy. */
+      schema?: z.ZodType<T>;
     } = {}
   ): Promise<T | null> {
+    const mode = options.mode ?? "chat";
+    const hasThinking = mode === "reason";
+    logger.info(
+      `[${this.agentName}] JSON call → ${hasThinking ? "thinking ON (json_object skipped, relying on extractJSON parser)" : "chat mode (json_object enforced)"}`
+    );
+
     const response = await this.callLLM(system, userPrompt, {
       ...options,
       jsonMode: true,
     });
 
-    const result = this.extractJSON<T>(response.content);
-    if (result !== null) return result;
+    const result = this.extractJSON<T>(response.content, options.schema);
+    if (result !== null) {
+      logger.info(`[${this.agentName}] ✓ JSON extracted on first attempt${hasThinking ? " (thinking mode)" : ""}`);
+      return result;
+    }
 
-    // Retry: ask the model to output only the JSON, feeding back the bad response
-    logger.warn(`[${this.agentName}] JSON extraction failed — retrying with explicit JSON prompt`);
+    // Retry: ask the model to output only the JSON, feeding back the bad response.
+    // Always use chat mode (thinking disabled) so json_object enforcement works.
+    logger.warn(
+      `[${this.agentName}] ✗ JSON extraction failed (${response.content.length} chars) — retrying with thinking DISABLED + json_object enforced`
+    );
     const retrySystem = "You are a JSON formatter. Output only valid JSON with no markdown, no commentary, and no code fences.";
     const retryPrompt = `The following text should be a JSON object but could not be parsed. Extract and output ONLY the JSON object:\n\n${response.content.slice(0, 4000)}`;
     const retryResponse = await this.callLLM(retrySystem, retryPrompt, {
@@ -269,50 +296,72 @@ export abstract class BaseAgent {
       jsonMode: true,
     });
 
-    return this.extractJSON<T>(retryResponse.content);
+    const retryResult = this.extractJSON<T>(retryResponse.content, options.schema);
+    if (retryResult !== null) {
+      logger.info(`[${this.agentName}] ✓ JSON extracted on retry (chat mode)`);
+    } else {
+      logger.error(`[${this.agentName}] ✗ JSON extraction failed even after retry — returning null`);
+    }
+    return retryResult;
   }
 
   /**
    * Extract JSON from LLM response (handles markdown code blocks, trailing text,
    * and common LLM formatting artifacts).
+   *
+   * When an optional Zod `schema` is provided, each successfully-parsed object
+   * is validated against it.  If validation fails, the extractor continues to
+   * the next strategy instead of returning an object with missing/invalid fields
+   * — so callers that use a `?? fallback` get the fallback, not a partial object.
    */
-  protected extractJSON<T>(text: string): T | null {
+  protected extractJSON<T>(text: string, schema?: z.ZodType<T>): T | null {
     if (!text || !text.trim()) return null;
 
     // Pre-process: strip <think>...</think> reasoning blocks that some models
     // (e.g. DeepSeek, QwQ) prepend to their output before the JSON.
     const stripped = text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
     if (stripped && stripped !== text) {
-      // Recurse on the cleaned text first; avoids the expensive strategies below
-      const fromStripped = this.extractJSON<T>(stripped);
+      const fromStripped = this.extractJSON<T>(stripped, schema);
       if (fromStripped !== null) return fromStripped;
     }
 
+    // Local helper: parse JSON and optionally validate against schema.
+    // Returns null on parse failure or schema validation failure.
+    const _parse = (raw: string): T | null => {
+      try {
+        const parsed = JSON.parse(raw) as T;
+        if (!schema) return parsed;
+        const result = schema.safeParse(parsed);
+        return result.success ? (result.data as T) : null;
+      } catch {
+        return null;
+      }
+    };
+
     // Strategy 1: direct parse
-    try {
-      return JSON.parse(text) as T;
-    } catch { /* continue */ }
+    { const r = _parse(text); if (r !== null) return r; }
 
     // Strategy 2: extract from ```json ... ``` or ``` ... ``` code blocks
     const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
     if (codeBlockMatch) {
       const inner = codeBlockMatch[1].trim();
-      try { return JSON.parse(inner) as T; } catch { /* continue */ }
-      try { return JSON.parse(jsonrepair(inner)) as T; } catch { /* continue */ }
+      { const r = _parse(inner); if (r !== null) return r; }
+      { const r = _parse(jsonrepair(inner)); if (r !== null) return r; }
     }
 
     // Strategy 3: scan for the first balanced {...} or [...] respecting strings
     const span = this._findFirstBalancedJson(text);
     if (span) {
-      try { return JSON.parse(span) as T; } catch { /* continue */ }
-      try { return JSON.parse(jsonrepair(span)) as T; } catch { /* continue */ }
+      { const r = _parse(span); if (r !== null) return r; }
+      { const r = _parse(jsonrepair(span)); if (r !== null) return r; }
     }
 
-    // Strategy 4: jsonrepair on the whole text (final fallback — handles many LLM artifacts)
+    // Strategy 4: jsonrepair on the whole text (final fallback)
     try {
-      const repaired = jsonrepair(text);
-      return JSON.parse(repaired) as T;
-    } catch { /* continue */ }
+      { const r = _parse(jsonrepair(text)); if (r !== null) return r; }
+    } catch {
+      // jsonrepair threw on irreparable text — nothing left to try
+    }
 
     logger.warn(`[${this.agentName}] Could not extract JSON from response (${text.length} chars) — retrying with fallback prompt may help`);
     logger.debug(`[${this.agentName}] Raw response (first 800):\n${text.slice(0, 800)}`);

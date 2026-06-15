@@ -389,8 +389,8 @@ export class ContextStore {
       correctnessScore: review.correctnessScore ?? null,
       testabilityScore: review.testabilityScore ?? null,
       safetyFlag: review.safetyFlag,
-      summary: review.summary,
-      critique: review.critique,
+      summary: review.summary ?? "No summary provided",
+      critique: review.critique ?? "",
       supportingEvidenceJson: JSON.stringify(review.supportingEvidence),
       createdAt: new Date(),
     }).run();
