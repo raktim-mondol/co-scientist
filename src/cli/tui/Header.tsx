@@ -1,5 +1,6 @@
 import React from "react";
-import { Box, Text, Spinner } from "ink";
+import { Box, Text } from "ink";
+import { Spinner } from "./Spinner.js";
 import type { ProgressStats } from "./useSessionData.js";
 
 interface HeaderProps {
