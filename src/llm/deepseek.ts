@@ -74,9 +74,12 @@ export class DeepSeekClient {
 
         const requestBody = buildRequestBody(this.model, params);
 
-        const completion = await (this.client.chat.completions.create as Function)(
-          requestBody
-        ) as OpenAI.Chat.ChatCompletion;
+        // buildRequestBody returns Record<string,unknown> so we can pass the
+        // non-standard `thinking` field — cast through unknown to satisfy the
+        // OpenAI SDK types while keeping the method itself typed.
+        const completion = await this.client.chat.completions.create(
+          requestBody as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming
+        );
 
         const usage: LLMUsage = {
           promptTokens: completion.usage?.prompt_tokens ?? 0,

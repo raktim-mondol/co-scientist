@@ -79,6 +79,8 @@ export class ExperimentDesignAgent extends BaseAgent {
       ...parsed,
     };
 
+    // Cast needed because ExperimentProtocol lacks an index signature; the
+    // receiving method accepts Record<string,unknown> which is equivalent at runtime.
     this.memory.saveExperimentProtocol(hypothesis.id, protocol as unknown as Record<string, unknown>);
     this.log("info", `Protocol saved for hypothesis ${hypothesis.id}`);
 

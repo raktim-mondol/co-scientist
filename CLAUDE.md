@@ -25,7 +25,7 @@ The CLI entry point is `src/cli/index.ts`. When running in dev mode use `bun run
 `SupervisorAgent` (`src/agents/supervisor.ts`) orchestrates all other agents using a priority queue (`AgentTaskQueue`) and a weighted sampler (`TaskScheduler`). Each iteration of the supervisor loop samples one task type (generation, reflection, ranking, evolution, proximity, meta_review) using dynamic weights that shift based on session state (hypothesis count, pending reviews, Elo plateau). Termination is triggered by token budget exhaustion, Elo plateau detection, or hypothesis cap + all-ranked.
 
 Agents:
-- **GenerationAgent** — produces new hypotheses via 5 strategies (literature exploration, scientific debate, assumption chaining, research expansion, generate_queries)
+- **GenerationAgent** — produces new hypotheses via 4 strategies (literature exploration, scientific debate, assumption chaining, research expansion). The `generate_queries` prompt is a sub-step within `literature_exploration`, not a separate strategy.
 - **LiteratureResearchAgent** — bounded DeepResearch-style loop (search → plan → read → bank); builds the per-session evidence bank that grounds `literature_exploration` with actual page content instead of search snippets
 - **ReflectionAgent** — 3-stage review pipeline (initial → full → deep verification), runs `ProvenanceAgent` inline to fact-check claims against literature
 - **RankingAgent** — Glicko-2 tournament; runs multi-turn LLM debates between hypothesis pairs

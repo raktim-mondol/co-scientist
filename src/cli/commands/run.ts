@@ -144,7 +144,6 @@ export async function runCommand(options: RunOptions): Promise<void> {
   const useTui = options.tui !== false && Boolean(process.stdout.isTTY);
 
   let tui: { unmount: () => void; waitUntilExit: () => Promise<void> } | null = null;
-  let lastActivity = "Initializing...";
   let lastStats: (SessionStats & { activity: string }) | null = null;
 
   if (useTui) {
@@ -171,7 +170,6 @@ export async function runCommand(options: RunOptions): Promise<void> {
   } else {
     emitter.on("progress", (stats: SessionStats & { activity: string }) => {
       lastStats = stats;
-      lastActivity = stats.activity;
       printProgress(stats, startTime);
     });
 
@@ -199,7 +197,6 @@ export async function runCommand(options: RunOptions): Promise<void> {
       console.error(chalk.red(`\n❌ Error: ${err.message}`));
     });
   }
-  void lastActivity;
 
   // ── Graceful shutdown handler ──────────────────────────────────────────────
   // Ensures WAL is checkpointed, DB connection is closed, and the PID lock

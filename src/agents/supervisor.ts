@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { BaseAgent } from "./base.js";
 import { AgentTaskQueue, TaskScheduler } from "../taskQueue/queue.js";
+import type { TaskType } from "../models/agentTask.js";
 import { GenerationAgent } from "./generation.js";
 import { ReflectionAgent } from "./reflection.js";
 import { RankingAgent } from "./ranking.js";
@@ -343,7 +344,7 @@ export class SupervisorAgent extends BaseAgent {
 
   private async _enqueueTask(
     sessionId: string,
-    taskType: string,
+    taskType: TaskType,
     round: number,
     stats: SessionStats
   ): Promise<void> {
@@ -364,7 +365,7 @@ export class SupervisorAgent extends BaseAgent {
     await this.queue.enqueue({
       id: taskId,
       sessionId,
-      type: taskType as any,
+      type: taskType,
       priority,
       payload: { round },
       execute: async () => {
@@ -417,7 +418,7 @@ export class SupervisorAgent extends BaseAgent {
           const tokensUsed = this.llm.getTokensDelta();
           this.memory.logTask({
             sessionId,
-            type: taskType as any,
+            type: taskType,
             status: "completed",
             priority,
             payload: { round },
@@ -431,7 +432,7 @@ export class SupervisorAgent extends BaseAgent {
           this.log("error", `Task ${taskType} failed: ${(err as Error).message}`);
           this.memory.logTask({
             sessionId,
-            type: taskType as any,
+            type: taskType,
             status: "failed",
             priority,
             payload: { round },

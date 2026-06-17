@@ -261,20 +261,6 @@ export class ContextStore {
   }
 
   /**
-   * @deprecated Use updateHypothesisRating instead.
-   * Kept for backward compatibility — only updates the rating column.
-   */
-  updateHypothesisElo(
-    id: string,
-    elo: number,
-    wins: number,
-    losses: number,
-    matchesPlayed: number
-  ): void {
-    this.updateHypothesisRating(id, elo, 350, 0.06, wins, losses, matchesPlayed);
-  }
-
-  /**
    * Atomic read-compute-write for Glicko-2 rating updates.
    * Reads fresh state inside a transaction, applies the compute function,
    * and writes back — preventing concurrent matches from overwriting each other.

@@ -2,7 +2,7 @@ import { describe, it, expect } from "bun:test";
 import { computeEloUpdate, computeGlicko2Update, seededGlicko2FromReviewScores, type Glicko2State } from "../models/tournament.js";
 import { TaskScheduler } from "../taskQueue/queue.js";
 import { z } from "zod";
-import { extractRewardFromFeedback, applyRewardToElo, applyFeedbackAsGlicko2Match } from "../rlef/reward-signal.js";
+import { extractRewardFromFeedback, applyFeedbackAsGlicko2Match } from "../rlef/reward-signal.js";
 import {
   HypothesisSchema,
   HypothesisStatusSchema,
@@ -636,30 +636,6 @@ describe("extractRewardFromFeedback", () => {
     // Positive text but very low scores → net negative
     const r = extractRewardFromFeedback("confirmed validated", 1, 1, 1);
     expect(r).toBeLessThan(0);
-  });
-});
-
-describe("applyRewardToElo", () => {
-  it("reward=+1 → gains K/2 points", () => {
-    expect(applyRewardToElo(1200, 1, 48)).toBeCloseTo(1224);
-  });
-
-  it("reward=-1 → loses K/2 points", () => {
-    expect(applyRewardToElo(1200, -1, 48)).toBeCloseTo(1176);
-  });
-
-  it("reward=0 → no change", () => {
-    expect(applyRewardToElo(1200, 0, 48)).toBeCloseTo(1200);
-  });
-
-  it("default K=48 is higher than tournament K=32", () => {
-    const k48 = applyRewardToElo(1200, 0.5, 48) - 1200;
-    const k32 = applyRewardToElo(1200, 0.5, 32) - 1200;
-    expect(k48).toBeGreaterThan(k32);
-  });
-
-  it("respects custom kFactor", () => {
-    expect(applyRewardToElo(1200, 1, 64)).toBeCloseTo(1232);
   });
 });
 

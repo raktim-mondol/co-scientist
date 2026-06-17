@@ -21,8 +21,7 @@ export class KnowledgeGraphAgent extends BaseAgent {
     const hypotheses = this.memory.getAllActiveHypotheses(sessionId);
     if (hypotheses.length === 0) return;
 
-    const proximityEdges = this.memory.getKgEdges(sessionId); // existing edges (for dedup)
-    void proximityEdges; // we use deterministic IDs so upsert handles dedup
+    // Deterministic IDs mean upsert handles dedup — no need to pre-fetch existing edges.
 
     // ── 1. Hypothesis nodes ──────────────────────────────────────────────────
     for (const h of hypotheses) {

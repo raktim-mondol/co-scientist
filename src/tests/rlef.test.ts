@@ -24,7 +24,7 @@ import { runMigrations } from "../db/migrate.js";
 import { closeDb, getSqlite, resetDb } from "../db/index.js";
 import { getContextStore, resetContextStore } from "../memory/contextStore.js";
 import { resetConfig } from "../config.js";
-import { extractRewardFromFeedback, applyRewardToElo, applyFeedbackAsGlicko2Match } from "../rlef/reward-signal.js";
+import { extractRewardFromFeedback, applyFeedbackAsGlicko2Match } from "../rlef/reward-signal.js";
 import { buildRLEFMetaReviewBlock } from "../rlef/prompt-injection.js";
 import { RewardStore } from "../rlef/reward-store.js";
 import type { ExperimentalFeedback } from "../models/feedback.js";
@@ -137,24 +137,28 @@ describe("RLEF reward extraction", () => {
   });
 });
 
-// ── Task 3: Elo Update ────────────────────────────────────────────────────────
-describe("RLEF Elo update", () => {
+// ── Task 3: Glicko-2 Feedback Update ──────────────────────────────────────────
+describe("RLEF Glicko-2 update", () => {
   it("positive reward raises Elo", () => {
-    expect(applyRewardToElo(1200, 0.5)).toBeGreaterThan(1200);
+    const updated = applyFeedbackAsGlicko2Match({
+      rating: 1200, rd: 350, volatility: 0.06, matchesPlayed: 0, wins: 0, losses: 0, draws: 0,
+    }, 0.5);
+    expect(updated.rating).toBeGreaterThan(1200);
   });
 
   it("negative reward lowers Elo", () => {
-    expect(applyRewardToElo(1200, -0.5)).toBeLessThan(1200);
+    const updated = applyFeedbackAsGlicko2Match({
+      rating: 1200, rd: 350, volatility: 0.06, matchesPlayed: 0, wins: 0, losses: 0, draws: 0,
+    }, -0.5);
+    expect(updated.rating).toBeLessThan(1200);
   });
 
-  it("zero reward leaves Elo unchanged", () => {
-    expect(applyRewardToElo(1200, 0)).toBeCloseTo(1200);
-  });
-
-  it("K=48 produces larger swing than K=32", () => {
-    const k48 = applyRewardToElo(1200, 0.8, 48) - 1200;
-    const k32 = applyRewardToElo(1200, 0.8, 32) - 1200;
-    expect(k48).toBeGreaterThan(k32);
+  it("zero reward leaves Elo roughly unchanged", () => {
+    const updated = applyFeedbackAsGlicko2Match({
+      rating: 1200, rd: 350, volatility: 0.06, matchesPlayed: 0, wins: 0, losses: 0, draws: 0,
+    }, 0);
+    // Near-identical since the virtual opponent has low RD (50) and K is 48
+    expect(Math.abs(updated.rating - 1200)).toBeLessThan(1);
   });
 });
 

@@ -8,9 +8,9 @@
  *     reward     = 0.4 * sentiment + 0.6 * scoreAvg
  *   When scores are absent the weight shifts entirely to sentiment.
  *
- * applyRewardToElo: applies the reward to a hypothesis Elo rating using a
- *   virtual opponent at 1200 and K=48 (higher than debate K=16-32):
- *     newElo = currentElo + K * ((reward + 1) / 2 - 0.5)
+ * applyFeedbackAsGlicko2Match: applies the reward to a hypothesis via a
+ *   Glicko-2 match against a virtual opponent at 1200, updating rating, RD,
+ *   and volatility (replaces the old Elo-only applyRewardToElo).
  */
 
 // ─── Sentiment lexicon ────────────────────────────────────────────────────────
@@ -34,13 +34,21 @@ const NEGATIVE_TERMS = [
   "toxic", "harmful", "dangerous", "unsafe",
 ];
 
-/** Returns a sentiment score in [-1, +1] based on keyword counting. */
+/** Returns a sentiment score in [-1, +1] based on keyword counting.
+ * Uses word-boundary matching to avoid substring collisions (e.g. "inconsistent"
+ * would otherwise also match the positive term "consistent"). */
 function analyzeSentiment(text: string): number {
   const lower = text.toLowerCase();
+  // Split on non-word characters to get discrete tokens for exact matching
+  const words = new Set(lower.split(/\W+/));
   let pos = 0;
   let neg = 0;
-  for (const t of POSITIVE_TERMS) if (lower.includes(t)) pos++;
-  for (const t of NEGATIVE_TERMS) if (lower.includes(t)) neg++;
+  for (const t of POSITIVE_TERMS) {
+    if (t.includes(" ") ? lower.includes(t) : words.has(t)) pos++;
+  }
+  for (const t of NEGATIVE_TERMS) {
+    if (t.includes(" ") ? lower.includes(t) : words.has(t)) neg++;
+  }
   const total = pos + neg;
   if (total === 0) return 0;
   return Math.max(-1, Math.min(1, (pos - neg) / total));
@@ -71,29 +79,6 @@ export function extractRewardFromFeedback(
   const scoreAvg = (novelty! + correctness! + testability!) / 30 - 1;
   const reward = 0.4 * sentiment + 0.6 * scoreAvg;
   return Math.max(-1, Math.min(1, reward));
-}
-
-/**
- * Apply a reward signal to a hypothesis Elo rating.
- *
- * Treats the feedback as a match against a virtual opponent at Elo 1200 with
- * K=48 (higher than tournament debate K=16-32 to reflect empirical weight).
- *
- *   newElo = currentElo + K * ((reward + 1) / 2 - 0.5)
- *
- * reward=+1 → full win  (+K/2 points)
- * reward= 0 → draw      (no change)
- * reward=-1 → full loss (-K/2 points)
- *
- * @deprecated Use applyFeedbackAsGlicko2Match for DB updates — this function
- * does not update RD, volatility, or matchesPlayed.
- */
-export function applyRewardToElo(
-  currentElo: number,
-  reward: number,
-  kFactor: number = 48,
-): number {
-  return currentElo + kFactor * ((reward + 1) / 2 - 0.5);
 }
 
 // ─── Glicko-2 Feedback Integration ───────────────────────────────────────────

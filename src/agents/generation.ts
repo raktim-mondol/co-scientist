@@ -37,13 +37,6 @@ export class GenerationAgent extends BaseAgent {
   // per session so the cap check accounts for concurrent workers.
   private inFlight = new Map<string, number>();
 
-  private readonly STRATEGIES: Strategy[] = [
-    "literature_exploration",
-    "scientific_debate",
-    "assumption_chaining",
-    "research_expansion",
-  ];
-
   async execute(sessionId: string, round: number): Promise<void> {
     const planConfig = this.memory.getPlanConfig(sessionId);
     if (!planConfig) {
