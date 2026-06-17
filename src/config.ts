@@ -9,7 +9,7 @@ const ConfigSchema = z.object({
   deepseek: z.object({
     apiKey: z.string().min(1, "DEEPSEEK_API_KEY is required"),
     baseURL: z.string().url().default("https://api.deepseek.com"),
-    model: z.string().default("deepseek-v4-pro"),
+    model: z.string().default("deepseek-chat"),
   }),
 
   // MCP Tools

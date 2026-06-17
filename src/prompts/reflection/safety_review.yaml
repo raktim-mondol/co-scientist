@@ -1,4 +1,3 @@
-mode: chat
 max_tokens: 1500
 system: |
   You are a research safety and biosecurity reviewer screening AI-generated

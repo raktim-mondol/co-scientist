@@ -1,4 +1,3 @@
-mode: chat
 max_tokens: 1200
 system: |
   You are a research planning assistant inside an automated scientific discovery system.

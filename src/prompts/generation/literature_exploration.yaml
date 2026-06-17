@@ -1,4 +1,3 @@
-mode: chat
 max_tokens: 6000
 system: |
   You are an expert scientific hypothesis generator with deep knowledge across multiple scientific disciplines.

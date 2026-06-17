@@ -7,8 +7,6 @@
  */
 
 import { cosineSimilarity } from "../util/vector.js";
-// Re-export so existing imports from this module continue to work.
-export { cosineSimilarity } from "../util/vector.js";
 
 /** Number of ANN candidates to pull from the vec0 index before exact re-scoring. */
 export const DIVERSITY_ANN_CANDIDATES = 20;

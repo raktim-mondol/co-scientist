@@ -1,5 +1,6 @@
 import { describe, it, expect } from "bun:test";
-import { cosineSimilarity, isNearDuplicate } from "../agents/diversity.js";
+import { cosineSimilarity } from "../util/vector.js";
+import { isNearDuplicate } from "../agents/diversity.js";
 
 describe("cosineSimilarity", () => {
   it("is 1 for identical vectors", () => {

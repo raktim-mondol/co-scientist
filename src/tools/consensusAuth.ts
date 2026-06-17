@@ -24,21 +24,18 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { homedir } from "os";
 import { join, dirname } from "path";
 import { exec } from "child_process";
-import { logger, getConfig } from "../config.js";
+import { logger } from "../config.js";
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
 const CONSENSUS_BASE = "https://consensus.app";
-// Use config so CONSENSUS_MCP_URL env var override is respected
-function getConsensusMcpUrl(): string {
-  return getConfig().tools.consensus.url ?? "https://mcp.consensus.app/mcp";
-}
 const AUTH_ENDPOINT = `${CONSENSUS_BASE}/oauth/authorize/`;
 const TOKEN_ENDPOINT = `${CONSENSUS_BASE}/oauth/token/`;
 const REGISTER_ENDPOINT = `${CONSENSUS_BASE}/oauth/register/`;
 
 const STORAGE_PATH = join(homedir(), ".co-scientist", "consensus-oauth.json");
 const CALLBACK_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const SCOPE = "search";
 
 // ─── Storage Types ─────────────────────────────────────────────────────────────
 
@@ -319,7 +316,7 @@ async function runBrowserAuthFlow(): Promise<string> {
   authUrl.searchParams.set("redirect_uri", redirectUri);
   authUrl.searchParams.set("code_challenge", codeChallenge);
   authUrl.searchParams.set("code_challenge_method", "S256");
-  authUrl.searchParams.set("scope", "search");
+  authUrl.searchParams.set("scope", SCOPE);
   authUrl.searchParams.set("state", state);
 
   // Start callback server FIRST (before opening browser)

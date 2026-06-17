@@ -20,14 +20,11 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { homedir } from "os";
 import { join, dirname } from "path";
 import { exec } from "child_process";
-import { logger, getConfig } from "../config.js";
+import { logger } from "../config.js";
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
 const SCITE_BASE = "https://api.scite.ai";
-function getSciteMcpUrl(): string {
-  return getConfig().tools.scite.url ?? "https://api.scite.ai/mcp";
-}
 const AUTH_ENDPOINT = `${SCITE_BASE}/mcp/oauth/authorize`;
 const TOKEN_ENDPOINT = `${SCITE_BASE}/mcp/oauth/token`;
 const REGISTER_ENDPOINT = `${SCITE_BASE}/mcp/oauth/register`;

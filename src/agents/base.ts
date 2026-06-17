@@ -17,7 +17,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 interface PromptTemplate {
   system: string;
   user: string;
-  mode?: "chat" | "reason";   // kept for backward compat with existing YAMLs; ignored at runtime
   max_tokens?: number;
 }
 

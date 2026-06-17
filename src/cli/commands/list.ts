@@ -1,6 +1,7 @@
 import chalk from "chalk";
 import { getContextStore } from "../../memory/contextStore.js";
 import { runMigrations } from "../../db/migrate.js";
+import { closeDb } from "../../db/index.js";
 import { formatCitationIntegrity } from "../../agents/citationIntegrity.js";
 
 export async function listCommand(): Promise<void> {
@@ -313,19 +314,45 @@ export async function resumeCommand(sessionId: string): Promise<void> {
   });
 
   // Handle graceful shutdown
-  process.on("SIGINT", () => {
-    console.log(chalk.yellow("\n\n⏸  Pausing session... (data saved to SQLite)"));
+  let shuttingDown = false;
+  const gracefulShutdown = (signal: string) => {
+    if (shuttingDown) return; // Prevent double-cleanup races
+    shuttingDown = true;
+
+    console.log(chalk.yellow(`\n\n⏸  ${signal} received — pausing session... (data saved to SQLite)`));
     supervisor.stop();
-    memory.updateSessionStatus(sessionId, "paused");
+
+    try {
+      memory.updateSessionStatus(sessionId, "paused");
+    } catch (err) {
+      console.log(chalk.gray(`  (Could not update session status: ${(err as Error).message})`));
+    }
+
+    // Checkpoint WAL + close DB + remove PID lock file
+    try {
+      closeDb();
+      console.log(chalk.gray("  Database checkpointed and closed."));
+    } catch (err) {
+      console.log(chalk.gray(`  (Database cleanup: ${(err as Error).message})`));
+    }
+
     console.log(chalk.cyan(`Resume later with: co-scientist resume ${sessionId}`));
     process.exit(0);
-  });
+  };
+
+  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+  // SIGHUP: terminal closed / SSH disconnected — best-effort cleanup
+  process.on("SIGHUP", () => gracefulShutdown("SIGHUP"));
 
   try {
     await supervisor.run(sessionId);
+    // Checkpoint WAL + close DB + remove PID lock file after normal completion.
+    closeDb();
   } catch (err) {
     console.error(chalk.red(`\n❌ Session error: ${(err as Error).message}`));
     memory.updateSessionStatus(sessionId, "error");
+    closeDb();
     process.exit(1);
   }
 
@@ -427,7 +454,7 @@ export async function feedbackCommand(
       matchesPlayed: hyp.matchesPlayed,
       wins: hyp.wins,
       losses: hyp.losses,
-      draws: 0,
+      draws: hyp.draws,
     }, computedReward);
     memory.updateHypothesisRating(
       hypId,

@@ -1,4 +1,3 @@
-mode: chat
 max_tokens: 4000
 system: |
   You are a meta-scientist who synthesizes patterns across reviews and debates to improve the

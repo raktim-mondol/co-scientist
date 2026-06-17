@@ -33,7 +33,8 @@ const TITLE_MATCH_THRESHOLD = 0.7;
 const TIMEOUT_MS = 6000;
 // Polite pool: identify ourselves via mailto (query param + User-Agent) for
 // higher, more reliable rate limits. No API key needed — Plus is the only keyed tier.
-const MAILTO = "dr.raktim.mondol@gmail.com";
+// Set CROSSREF_MAILTO in your environment to use your own address.
+const MAILTO = process.env.CROSSREF_MAILTO ?? "user@example.com";
 const UA = `co-scientist/1.0 (citation-integrity; mailto:${MAILTO})`;
 
 // In-process cache: coalesce duplicate lookups within a run.

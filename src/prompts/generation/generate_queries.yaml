@@ -1,4 +1,3 @@
-mode: chat
 max_tokens: 600
 system: |
   You are a scientific literature search strategist.

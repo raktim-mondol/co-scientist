@@ -1,4 +1,3 @@
-mode: chat
 max_tokens: 2048
 system: |
   You are a rigorous scientific peer reviewer performing a quick quality assessment.
