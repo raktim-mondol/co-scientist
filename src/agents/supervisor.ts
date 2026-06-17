@@ -106,7 +106,7 @@ export class SupervisorAgent extends BaseAgent {
         type: "session_lifecycle",
         message: "Session started",
         detailJson: JSON.stringify({
-          goal: this.goal?.text ?? "",
+          goal: this.memory.getResearchGoal(sessionId)?.rawGoal ?? "",
           maxHypotheses: this.config.compute.maxHypotheses,
           maxRounds: this.config.compute.maxTournamentRounds,
           budgetTokens: this.config.compute.budgetTokens,

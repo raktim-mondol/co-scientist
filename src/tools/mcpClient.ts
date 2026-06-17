@@ -45,18 +45,30 @@ class MCPServerClient {
    */
   private _callGate: Promise<void> = Promise.resolve();
   private _releaseGate: (() => void) | null = null;
+  /** Inter-call spacing in ms — only enforced between consecutive calls. */
+  private static readonly CALL_SPACING_MS = 1000;
+  /** Wall-clock time the previous call finished; 0 means none yet. */
+  private _lastCallFinishedAt = 0;
 
   /** Acquire the rate-limiting gate. Returns a release function. */
   private async _acquireCallGate(): Promise<(() => void) | null> {
     if (this._isRetryingAuth) return null;
     await this._callGate;
-    await new Promise((r) => setTimeout(r, 1000)); // inter-call spacing
+    // Enforce inter-call spacing only when a previous call finished recently.
+    // The first call (and calls after the spacing window has already elapsed)
+    // proceed immediately instead of always paying a fixed 1s penalty.
+    if (this._lastCallFinishedAt > 0) {
+      const elapsed = Date.now() - this._lastCallFinishedAt;
+      const wait = MCPServerClient.CALL_SPACING_MS - elapsed;
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    }
     return new Promise<() => void>((resolveRelease) => {
       this._callGate = new Promise<void>((resolve) => {
         this._releaseGate = resolve;
       });
       resolveRelease(() => {
         if (this._releaseGate) {
+          this._lastCallFinishedAt = Date.now();
           this._releaseGate();
           this._releaseGate = null;
         }
@@ -205,7 +217,7 @@ class MCPServerClient {
         // Detect application-level errors signaled via isError flag (e.g., Scite monthly limit).
         if (result.isError) {
           const errText =
-            result.content
+            (result.content as Array<{ type: string; text?: string }> | undefined)
               ?.filter(
                 (c): c is { type: "text"; text: string } =>
                   c.type === "text" && typeof c.text === "string" && c.text.length > 0

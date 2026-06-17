@@ -154,7 +154,7 @@ export class GenerationAgent extends BaseAgent {
         if (candidateEmbedding) this.memory.saveEmbedding(saved.id, candidateEmbedding);
         this.log("info", `Generated hypothesis: "${hypothesis.title}"`);
       } finally {
-        this.inFlight.set(sessionId, Math.max(0, (this.inFlight.get(sessionId) ?? 1) - 1));
+        this.inFlight.set(sessionId, Math.max(0, (this.inFlight.get(sessionId) ?? 0) - 1));
       }
     }
   }

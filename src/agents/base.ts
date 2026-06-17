@@ -212,8 +212,8 @@ export abstract class BaseAgent {
     logger.warn(
       `[${this.agentName}] Attempting second-chance retry: regenerating JSON from semantic content`
     );
-    const retry2System = "You are a JSON generator. Given a piece of scientific text, output a JSON review object with these fields: verdict (one of: pass, fail, uncertain), noveltyScore (0-10 or null), correctnessScore (0-10 or null), testabilityScore (0-10 or null), safetyFlag (boolean), summary (string), critique (string), supportingEvidence (array of strings). Output ONLY valid JSON, no markdown, no commentary.";
-    const retry2Prompt = `Extract the key assessment from this text and output it as a clean JSON review object:\n\n${response.content.slice(0, 4000)}`;
+    const retry2System = system;
+    const retry2Prompt = `Your previous response was not valid JSON. Please respond again, outputting ONLY a valid JSON object (no markdown, no commentary, no code fences). Original request:\n\n${userPrompt.slice(0, 4000)}`;
     const retry2Response = await this.callLLM(retry2System, retry2Prompt, {
       maxTokens: options.maxTokens ?? 8192,
       jsonMode: true,

@@ -107,6 +107,12 @@ export class ContextStore {
       this.sqlite.query(`DELETE FROM vec_embeddings WHERE hypothesis_id = ?`).run(h.id);
     }
 
+    // Remove feedback & reward_memory rows (FK to both hypotheses & sessions)
+    this.db.delete(schema.experimentalFeedback).where(eq(schema.experimentalFeedback.sessionId, id)).run();
+    this.sqlite.query(`DELETE FROM reward_memory WHERE session_id = ?`).run(id);
+    // Remove thinking traces & session activity
+    this.db.delete(schema.thinkingTraces).where(eq(schema.thinkingTraces.sessionId, id)).run();
+    this.db.delete(schema.sessionActivity).where(eq(schema.sessionActivity.sessionId, id)).run();
     // Remove KG nodes and edges for the session
     this.db.delete(schema.kgEdges).where(eq(schema.kgEdges.sessionId, id)).run();
     this.db.delete(schema.kgNodes).where(eq(schema.kgNodes.sessionId, id)).run();
@@ -213,6 +219,7 @@ export class ContextStore {
         matchesPlayed: fullHyp.matchesPlayed,
         wins: fullHyp.wins,
         losses: fullHyp.losses,
+        draws: fullHyp.draws ?? 0,
         status: fullHyp.status,
         parentIdsJson: JSON.stringify(fullHyp.parentIds),
         generationRound: fullHyp.generationRound,
@@ -327,7 +334,7 @@ export class ContextStore {
       .orderBy(desc(schema.hypotheses.eloRating))
       .limit(n)
       .all();
-    return rows.map((r) => this._rowToHypothesis(r));
+    return this._rowsToHypotheses(rows);
   }
 
   getAllActiveHypotheses(sessionId: string): Hypothesis[] {
@@ -342,7 +349,7 @@ export class ContextStore {
       )
       .orderBy(desc(schema.hypotheses.eloRating))
       .all();
-    return rows.map((r) => this._rowToHypothesis(r));
+    return this._rowsToHypotheses(rows);
   }
 
   getPendingReviewHypotheses(sessionId: string, limit = 5): Hypothesis[] {
@@ -358,7 +365,7 @@ export class ContextStore {
       .orderBy(asc(schema.hypotheses.createdAt))
       .limit(limit)
       .all();
-    return rows.map((r) => this._rowToHypothesis(r));
+    return this._rowsToHypotheses(rows);
   }
 
   countHypotheses(sessionId: string): { total: number; active: number; pending: number } {
@@ -500,7 +507,7 @@ export class ContextStore {
           `INSERT OR IGNORE INTO proximity_edges (id, session_id, hypothesis_a_id, hypothesis_b_id, similarity_score, created_at)
            VALUES (?, ?, ?, ?, ?, ?)`
         )
-        .run(uuidv4(), sessionId, aId, bId, score, Date.now());
+        .run(uuidv4(), sessionId, aId, bId, score, Math.floor(Date.now() / 1000));
       // UPDATE the score for the pair that already existed (no-op for the just-inserted row
       // since it matches, but SQLite guarantees the INSERT above ran first).
       this.sqlite
@@ -655,7 +662,7 @@ export class ContextStore {
     if (!row?.proto) return null;
     const parsed = JSON.parse(row.proto) as Record<string, unknown>;
     // Treat as absent if core LLM-generated fields are missing (stale/incomplete protocol)
-    const hasContent = parsed.overview || Array.isArray(parsed.steps) && (parsed.steps as unknown[]).length > 0;
+    const hasContent = parsed.overview || (Array.isArray(parsed.steps) && (parsed.steps as unknown[]).length > 0);
     if (!hasContent) return null;
     return parsed;
   }
@@ -696,22 +703,24 @@ export class ContextStore {
     }>
   ): void {
     const now = new Date();
-    for (const c of claims) {
-      this.db.insert(schema.claimCitations).values({
-        id: uuidv4(),
-        hypothesisId,
-        sessionId,
-        claimText: c.claimText,
-        paperTitle: c.paperTitle,
-        paperUrl: c.paperUrl,
-        paperAuthors: c.paperAuthors,
-        paperYear: c.paperYear ?? null,
-        paperAbstract: c.paperAbstract,
-        support: c.support,
-        confidence: c.confidence,
-        createdAt: now,
-      }).run();
-    }
+    this.sqlite.transaction(() => {
+      for (const c of claims) {
+        this.db.insert(schema.claimCitations).values({
+          id: uuidv4(),
+          hypothesisId,
+          sessionId,
+          claimText: c.claimText,
+          paperTitle: c.paperTitle,
+          paperUrl: c.paperUrl,
+          paperAuthors: c.paperAuthors,
+          paperYear: c.paperYear ?? null,
+          paperAbstract: c.paperAbstract,
+          support: c.support,
+          confidence: c.confidence,
+          createdAt: now,
+        }).run();
+      }
+    })();
   }
 
   getClaimCitations(hypothesisId: string): Array<typeof schema.claimCitations.$inferSelect> {
@@ -839,7 +848,7 @@ export class ContextStore {
       matchScore: number;
     }>
   ): void {
-    const now = Date.now();
+    const now = Math.floor(Date.now() / 1000);
     this.sqlite.transaction(() => {
       this.sqlite
         .query(`DELETE FROM citation_verifications WHERE hypothesis_id = ?`)
@@ -959,7 +968,7 @@ export class ContextStore {
       )
       .orderBy(desc(schema.hypotheses.createdAt))
       .all();
-    return rows.map((r) => this._rowToHypothesis(r));
+    return this._rowsToHypotheses(rows);
   }
 
   /**
@@ -1056,7 +1065,7 @@ export class ContextStore {
       JSON.stringify(feedback.metadata ?? {}),
       feedback.computedReward,
       feedback.recordedBy,
-      feedback.createdAt.getTime(),
+      feedback.createdAt.getTime() / 1000,
     );
   }
 
@@ -1117,9 +1126,9 @@ export class ContextStore {
       ORDER BY created_at ASC
     `).all(sessionId) as Array<{
       id: string; agent: string; reasoning: string; tokens: number; createdAt: number;
-    }>).map((r) => ({ ...r, createdAt: new Date(r.createdAt) }));
+    }>).map((r) => ({ ...r, createdAt: new Date(r.createdAt * 1000) }));
   }
-
+  
   /** Check if a session has any thinking traces. */
   hasThinkingTraces(sessionId: string): boolean {
     const row = this.sqlite.query(`
@@ -1175,7 +1184,7 @@ export class ContextStore {
       id: string; agent: string; type: string; message: string;
       detailJson: string | null; tokensIn: number | null; tokensOut: number | null;
       createdAt: number;
-    }>).map((r) => ({ ...r, createdAt: new Date(r.createdAt) }));
+    }>).map((r) => ({ ...r, createdAt: new Date(r.createdAt * 1000) }));
   }
 
   // ─── Private helpers ──────────────────────────────────────────────────────
@@ -1224,7 +1233,7 @@ export class ContextStore {
       metadata:         JSON.parse((row.metadata_json as string) ?? "{}"),
       computedReward:   row.computed_reward as number,
       recordedBy:       (row.recorded_by as "human" | "automated") ?? "human",
-      createdAt:        new Date(row.created_at as number),
+      createdAt:        new Date((row.created_at as number) * 1000),
     };
   }
 
@@ -1258,6 +1267,56 @@ export class ContextStore {
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
+  }
+
+  /**
+   * Batch feedback count — avoids N+1 when converting multiple hypothesis rows.
+   */
+  private _getFeedbackCounts(hypothesisIds: string[]): Map<string, number> {
+    if (hypothesisIds.length === 0) return new Map();
+    const placeholders = hypothesisIds.map(() => "?").join(",");
+    const rows = this.sqlite
+      .query(
+        `SELECT hypothesis_id, count(*) as n FROM experimental_feedback WHERE hypothesis_id IN (${placeholders}) GROUP BY hypothesis_id`
+      )
+      .all(...hypothesisIds) as Array<{ hypothesis_id: string; n: number }>;
+    const map = new Map<string, number>();
+    for (const r of rows) map.set(r.hypothesis_id, Number(r.n));
+    return map;
+  }
+
+  /**
+   * Batch convert hypothesis rows with pre-fetched feedback counts (avoids N+1).
+   */
+  private _rowsToHypotheses(rows: Array<typeof schema.hypotheses.$inferSelect>): Hypothesis[] {
+    const ids = rows.map((r) => r.id);
+    const counts = this._getFeedbackCounts(ids);
+    return rows.map((row) => ({
+      id: row.id,
+      sessionId: row.sessionId,
+      title: row.title,
+      summary: row.summary,
+      content: row.content,
+      rationale: row.rationale,
+      experimentalPlan: row.experimentalPlan ?? undefined,
+      noveltyAssessment: row.noveltyAssessment ?? undefined,
+      keyAssumptions: JSON.parse(row.keyAssumptionsJson),
+      citations: JSON.parse(row.citationsJson),
+      generationStrategy: row.generationStrategy,
+      eloRating: row.eloRating,
+      ratingDeviation: row.ratingDeviation ?? 350,
+      volatility:      row.volatility      ?? 0.06,
+      matchesPlayed: row.matchesPlayed,
+      wins: row.wins,
+      losses: row.losses,
+      draws: row.draws ?? 0,
+      status: row.status as Hypothesis["status"],
+      parentIds: JSON.parse(row.parentIdsJson),
+      generationRound: row.generationRound,
+      feedbackCount: counts.get(row.id) ?? 0,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    }));
   }
 }
 

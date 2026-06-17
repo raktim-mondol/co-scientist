@@ -10,7 +10,7 @@ bun test                 # Run all tests
 bun test src/tests/core.test.ts   # Run a single test file
 bun run dev              # Run CLI without installing globally
 bun link                 # Install `co-scientist` command globally
-bun build src/cli/index/ts --outdir dist  # Build distributable
+bun build src/cli/index.ts --outdir dist  # Build distributable
 bun run src/db/migrate.ts  # Run migrations manually (auto-runs on session start)
 ```
 
@@ -90,6 +90,6 @@ Reinforcement Learning from Experimental Feedback lives in `src/rlef/`:
 
 ### LLM Client
 
-`src/llm/deepseek.ts` uses the `openai` SDK pointed at the DeepSeek base URL. Two methods: `chat()` (always non-thinking — fast, lower cost) and `reason()` (runs in DeepSeek **thinking mode** when enabled). The `mode: chat` / `mode: reason` tag in each prompt YAML decides which is used, so thinking is scoped to reason-mode prompts (ranking, reflection, evolution, meta-review, debates) without touching generation/proximity.
+`src/llm/deepseek.ts` uses the `openai` SDK pointed at the DeepSeek base URL. It exposes a single `call()` method that always runs in **non-thinking mode** (`buildRequestBody()` hard-sets `thinking: { type: "disabled" }`) plus an `embed()` method that delegates to a local all-MiniLM-L6-v2 pipeline (DeepSeek has no embedding endpoint). `buildRequestBody()` is pure and exported for testing. `call()` retries up to 3× with exponential backoff and strips any `<think>…</think>` blocks from the returned content.
 
-Thinking is controlled by `config.deepseek.thinking` (`DEEPSEEK_THINKING`, default on; `DEEPSEEK_REASONING_EFFORT` high|max; `DEEPSEEK_REASONING_BUDGET_TOKENS`). The chain-of-thought comes back in a separate `reasoning_content` field (surfaced as `LLMResponse.reasoning`) — it does not leak into `content`. Because `max_tokens` caps `reasoning + content` combined, `buildRequestBody()` (pure, exported for testing) adds `reasoningBudgetTokens` of headroom on top of the call's `max_tokens` when thinking is on, so reasoning can't starve the answer. Reasoning tokens are billed in `total_tokens`, so `COMPUTE_BUDGET_TOKENS` drains faster with thinking enabled. When `DEEPSEEK_STREAM_THINKING=true`, reasoning traces stream to stderr in real-time (light gray) via `_callStreaming()` so the user can watch the chain-of-thought unfold.
+The `mode: chat | reason` tag in each prompt YAML is currently advisory only — it is parsed by `loadPrompt()` but does not change request behaviour (all calls are non-thinking). DeepSeek thinking mode is **not** wired up: there is no `reason()`/`chat()` split, no `reasoning_content` capture, and the `thinking_traces` table / `co-scientist thinking` command are unused scaffolding reserved for a future reasoning-mode implementation. Token accounting (`getTotalTokensUsed()` / `getTokensDelta()`) drives `COMPUTE_BUDGET_TOKENS` termination.

@@ -76,6 +76,8 @@ export class ReflectionAgent extends BaseAgent {
   private async _reviewHypothesis(sessionId: string, hyp: Hypothesis, rlefBlock = ""): Promise<void> {
     this.memory.updateHypothesisStatus(hyp.id, "reviewing");
 
+    try {
+
     // Step 1: Quick initial review (no search)
     const initial = this._normaliseScores(await this._initialReview(hyp, rlefBlock));
     this.memory.saveReview({
@@ -186,6 +188,12 @@ export class ReflectionAgent extends BaseAgent {
     }
 
     this.log("info", `Hypothesis passed review and is now active: "${hyp.title}"`);
+    } catch (err) {
+      // Revert status so the hypothesis is retried next round instead of
+      // being stuck in "reviewing" forever after a transient failure.
+      this.memory.updateHypothesisStatus(hyp.id, "pending_review");
+      throw err;
+    }
   }
 
   // ─── Initial Review (no search) ───────────────────────────────────────────
@@ -345,6 +353,11 @@ export class ReflectionAgent extends BaseAgent {
    * Normalise `null` score fields and optional `supportingEvidence` before
    * persisting through `ContextStore.saveReview()`, whose schema expects
    * `number | undefined` (not `number | null`) and a required `string[]`.
+   *
+   * The `critique` array→string join here is intentionally redundant with
+   * `ReviewResultSchema`'s transform: it covers the code paths that build a
+   * `ReviewResult` WITHOUT going through the schema — the per-stage fallback
+   * objects (parse failures) and any `extractJSON` call made without a schema.
    */
   private _normaliseScores(r: ReviewResult): Omit<ReviewResult, "noveltyScore" | "correctnessScore" | "testabilityScore" | "supportingEvidence" | "critique"> & {
     noveltyScore?: number;

@@ -23,16 +23,25 @@ export class ProximityAgent extends BaseAgent {
     // ── Phase 1: ensure every hypothesis has an embedding ──────────────────────
     const embeddings: Map<string, number[]> = new Map();
 
+    // Collect hypotheses that need embedding so we can batch the LLM call.
+    const needsEmbed: Array<{ id: string; text: string }> = [];
     for (const hyp of hypotheses) {
-      let embedding = this.memory.getEmbedding(hyp.id);
-      if (!embedding) {
-        const textToEmbed = `${hyp.title}. ${hyp.summary}`;
-        const results = await this.llm.embed([textToEmbed]);
-        embedding = results[0];
-        // saveEmbedding writes to both embedding_cache (blob) AND vec_embeddings (vec0)
-        this.memory.saveEmbedding(hyp.id, embedding);
+      const cached = this.memory.getEmbedding(hyp.id);
+      if (cached) {
+        embeddings.set(hyp.id, cached);
+      } else {
+        needsEmbed.push({ id: hyp.id, text: `${hyp.title}. ${hyp.summary}` });
       }
-      embeddings.set(hyp.id, embedding);
+    }
+
+    if (needsEmbed.length > 0) {
+      const results = await this.llm.embed(needsEmbed.map((h) => h.text));
+      for (let i = 0; i < needsEmbed.length; i++) {
+        const embedding = results[i];
+        // saveEmbedding writes to both embedding_cache (blob) AND vec_embeddings (vec0)
+        this.memory.saveEmbedding(needsEmbed[i].id, embedding);
+        embeddings.set(needsEmbed[i].id, embedding);
+      }
     }
 
     // ── Phase 2: ANN-assisted pairwise similarity ──────────────────────────────

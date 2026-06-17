@@ -7,6 +7,7 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #2452 | 2:56 AM | ✅ | Bug fixes and headless browser cleanup pushed to GitHub | ~169 |
 | #2444 | 2:54 AM | 🔄 | Removed headless browser step from citationResolver.ts resolution pipeline | ~265 |
 | #2443 | " | 🔄 | Removed HEADLESS_BROWSER_TIMEOUT_MS constant from citationResolver.ts | ~207 |
 | #2440 | " | 🔄 | New task: remove headless browser feature from co-scientist | ~335 |

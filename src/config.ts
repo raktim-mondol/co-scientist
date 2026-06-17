@@ -147,7 +147,7 @@ function loadConfig(): AppConfig {
     },
     safety: {
       // SAFETY_GATE=false disables the gate; any other value (or unset) leaves the default (enabled).
-      gateEnabled: process.env.SAFETY_GATE === "false" ? false : undefined,
+      gateEnabled: process.env.SAFETY_GATE?.toLowerCase() === "false" ? false : undefined,
       quarantineThreshold: (() => {
         const v = process.env.SAFETY_QUARANTINE_THRESHOLD?.trim().toLowerCase();
         return v === "low" || v === "moderate" || v === "high" ? v : undefined;

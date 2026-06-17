@@ -145,6 +145,8 @@ export class RankingAgent extends BaseAgent {
       hypothesisBId: hypB.id,
       matchType: isTopRanked ? "debate" : "simple",
       result: matchResult,
+      // On a draw there is no winner/loser: these columns fall back to A's and
+      // B's post-match ratings respectively (read `result` to interpret them).
       winnerEloAfter: result.winner === "A" ? ratingAfterA.rating : result.winner === "B" ? ratingAfterB.rating : ratingAfterA.rating,
       loserEloAfter:  result.winner === "A" ? ratingAfterB.rating : result.winner === "B" ? ratingAfterA.rating : ratingAfterB.rating,
       debateTranscript: result.transcript,

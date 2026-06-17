@@ -41,7 +41,7 @@ export function Header({ sessionId, goal, stats, startTime, now, budgetTokens, p
   <Text color="yellow">PAUSED</Text>
 ) : (
   <Box>
-    <Spinner type="dots" />
+    <Spinner />
     <Text color="green"> running</Text>
   </Box>
 )}

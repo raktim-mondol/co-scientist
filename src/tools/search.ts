@@ -559,7 +559,15 @@ export class SearchTool {
   private _deduplicate(results: SearchResult[]): SearchResult[] {
     const seen = new Set<string>();
     return results.filter((r) => {
-      const key = r.url || r.title.toLowerCase();
+      // Prefer URL as the identity key; fall back to title+source so two
+      // url-less results with the same title from different providers are
+      // not collapsed into one. Results with neither url nor title are kept.
+      const key = r.url
+        ? r.url
+        : r.title
+        ? `${r.title.toLowerCase()}::${r.source}`
+        : null;
+      if (key === null) return true;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;

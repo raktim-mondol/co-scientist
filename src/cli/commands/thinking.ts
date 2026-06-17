@@ -33,7 +33,7 @@ export async function thinkingCommand(
 
   if (!hasDb && !hasFile) {
     console.log(chalk.yellow(`No thinking traces found for session: ${sessionId}`));
-    console.log(chalk.gray("Thinking traces are saved when DEEPSEEK_THINKING=true."));
+    console.log(chalk.gray("Reasoning-mode capture is not currently enabled, so no traces are recorded."));
     return;
   }
 

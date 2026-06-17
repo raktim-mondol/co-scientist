@@ -92,7 +92,7 @@ export class EvolutionAgent extends BaseAgent {
         ? Math.round(parentElo * 0.85)
         : 1200;
 
-      this.memory.saveHypothesis({
+      const saved = this.memory.saveHypothesis({
         sessionId,
         ...evolved,
         eloRating: startingElo,
@@ -107,6 +107,16 @@ export class EvolutionAgent extends BaseAgent {
         generationStrategy: `evolution:${strategy}`,
         generationRound: round,
       });
+
+      // Save embedding so ProximityAgent and diversity gate can find this hypothesis
+      try {
+        const textToEmbed = `${evolved.title}. ${evolved.summary}`;
+        const [embedding] = await this.llm.embed([textToEmbed]);
+        this.memory.saveEmbedding(saved.id, embedding);
+      } catch (err) {
+        this.log("warn", `Failed to save embedding for evolved hypothesis: ${(err as Error).message}`);
+      }
+
       this.log(
         "info",
         `Evolved hypothesis: "${evolved.title}" ` +

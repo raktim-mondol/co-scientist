@@ -77,7 +77,7 @@ export class RewardStore {
       JSON.stringify(keywords),
       feedback.computedReward,
       hypothesis.id,          // embedding_id == hypothesis_id (same key space)
-      Date.now(),
+      Math.floor(Date.now() / 1000),
     );
   }
 
@@ -103,17 +103,18 @@ export class RewardStore {
     const candidates = this.memory.findSimilarByVector(queryEmbedding, topK * 4);
     if (candidates.length === 0) return [];
 
-    const ids = candidates.map((c) => `'${c.hypothesisId}'`).join(",");
+    const placeholders = candidates.map(() => "?").join(",");
+    const params = candidates.map((c) => c.hypothesisId);
 
     // Join with reward_memory, filter by strong signal, order by |reward| desc
     const rows = this.sqlite.query(`
       SELECT rm.*
       FROM reward_memory rm
-      WHERE rm.embedding_id IN (${ids})
-        AND ABS(rm.computed_reward) > ${STRONG_SIGNAL_THRESHOLD}
+      WHERE rm.embedding_id IN (${placeholders})
+        AND ABS(rm.computed_reward) > ?
       ORDER BY ABS(rm.computed_reward) DESC
-      LIMIT ${topK}
-    `).all() as Array<Record<string, unknown>>;
+      LIMIT ?
+    `).all(...params, STRONG_SIGNAL_THRESHOLD, topK) as Array<Record<string, unknown>>;
 
     return rows.map((r) => ({
       id:                   r.id as string,
@@ -123,7 +124,7 @@ export class RewardStore {
       mechanisticKeywords:  JSON.parse((r.mechanistic_keywords as string) ?? "[]"),
       computedReward:       r.computed_reward as number,
       embeddingId:          r.embedding_id as string,
-      createdAt:            new Date(r.created_at as number),
+      createdAt:            new Date((r.created_at as number) * 1000),
     }));
   }
 }

@@ -244,6 +244,9 @@ export async function runCommand(options: RunOptions): Promise<void> {
   // Run the main orchestration loop
   try {
     await supervisor.run(sessionId);
+    // Checkpoint WAL + close DB + remove PID lock file after normal completion.
+    // (Graceful shutdown via SIGINT/SIGTERM also calls closeDb in the handler above.)
+    closeDb();
     if (tui) tui.unmount();
   } catch (err) {
     if (tui) tui.unmount();
