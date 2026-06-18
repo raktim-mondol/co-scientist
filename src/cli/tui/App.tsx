@@ -12,6 +12,8 @@ import { KillModal } from "./modals/KillModal.js";
 import { BoostModal } from "./modals/BoostModal.js";
 import { InjectModal } from "./modals/InjectModal.js";
 import { RunModal } from "./modals/RunModal.js";
+import { BudgetModal } from "./modals/BudgetModal.js";
+import { StrategyModal } from "./modals/StrategyModal.js";
 import { killHypothesis, boostHypothesis, injectHypothesis } from "./actions.js";
 import type { MainViewName, ModalName, AppContext, RouteResult } from "./CommandRouter.js";
 import "./commands/run.js";
@@ -19,6 +21,11 @@ import "./commands/pause.js";
 import "./commands/resume.js";
 import "./commands/stop.js";
 import "./commands/dashboard.js";
+import "./commands/boost.js";
+import "./commands/kill.js";
+import "./commands/inject.js";
+import "./commands/budget.js";
+import "./commands/strategy.js";
 
 const NOOP_EMITTER = new EventEmitter();
 
@@ -65,6 +72,7 @@ export function App(props: AppProps) {
 
   const selectedHyp = leaderboard[selected];
   const currentRound = stats?.currentRound ?? 0;
+  const activeHypCount = stats?.activeHypotheses ?? 0;
 
   // ── Build AppContext ──────────────────────────────────────────────────────
   const appContext: AppContext = {
@@ -194,6 +202,30 @@ export function App(props: AppProps) {
           onConfirm={async (goal, name) => {
             setActiveModal(null);
             await onStartSession(goal, name ? { name } : undefined);
+          }}
+          onCancel={() => setActiveModal(null)}
+        />
+      )}
+      {activeModal === "budget" && (
+        <BudgetModal
+          currentBudget={budgetTokens}
+          onConfirm={(newBudget) => {
+            process.env.COMPUTE_BUDGET_TOKENS = String(newBudget);
+            setActiveModal(null);
+            appContext.showToast(`Budget set to ${newBudget.toLocaleString()} tokens.`, "success");
+          }}
+          onCancel={() => setActiveModal(null)}
+        />
+      )}
+      {activeModal === "strategy" && (
+        <StrategyModal
+          weights={{
+            generation: activeHypCount < 3 ? 0.60 : 0.30,
+            reflection: 0.20,
+            ranking: activeHypCount >= 2 ? 0.30 : 0.03,
+            evolution: 0.10,
+            proximity: 0.07,
+            meta_review: 0.03,
           }}
           onCancel={() => setActiveModal(null)}
         />
