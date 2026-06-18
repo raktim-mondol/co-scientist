@@ -26,6 +26,9 @@ import "./commands/kill.js";
 import "./commands/inject.js";
 import "./commands/budget.js";
 import "./commands/strategy.js";
+import "./commands/results.js";
+import "./commands/compare.js";
+import "./commands/diff.js";
 
 const NOOP_EMITTER = new EventEmitter();
 

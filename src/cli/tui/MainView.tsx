@@ -4,6 +4,7 @@ import type { MainViewName, AppContext } from "./CommandRouter.js";
 import type { Hypothesis } from "../../models/hypothesis.js";
 import { EmptyState } from "./views/EmptyState.js";
 import { Dashboard } from "./views/Dashboard.js";
+import { Results } from "./views/Results.js";
 
 interface MainViewProps {
   activeView: MainViewName;
@@ -40,9 +41,10 @@ export function MainView({
       );
     case "results":
       return (
-        <Box paddingX={1} paddingY={1}>
-          <Text color="gray">Results view — coming in Task 9</Text>
-        </Box>
+        <Results
+          appContext={appContext}
+          focus={focus === "dashboard"}
+        />
       );
     case "graph":
       return (
