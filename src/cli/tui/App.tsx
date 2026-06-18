@@ -29,6 +29,10 @@ import "./commands/strategy.js";
 import "./commands/results.js";
 import "./commands/compare.js";
 import "./commands/diff.js";
+import "./commands/graph.js";
+import "./commands/overview.js";
+import "./commands/thinking.js";
+import "./commands/activity.js";
 
 const NOOP_EMITTER = new EventEmitter();
 

@@ -1,10 +1,13 @@
 import React from "react";
-import { Box, Text } from "ink";
 import type { MainViewName, AppContext } from "./CommandRouter.js";
 import type { Hypothesis } from "../../models/hypothesis.js";
 import { EmptyState } from "./views/EmptyState.js";
 import { Dashboard } from "./views/Dashboard.js";
 import { Results } from "./views/Results.js";
+import { Graph } from "./views/Graph.js";
+import { Overview } from "./views/Overview.js";
+import { Thinking } from "./views/Thinking.js";
+import { Activity } from "./views/Activity.js";
 
 interface MainViewProps {
   activeView: MainViewName;
@@ -48,27 +51,31 @@ export function MainView({
       );
     case "graph":
       return (
-        <Box paddingX={1} paddingY={1}>
-          <Text color="gray">Graph view — coming in Task 10</Text>
-        </Box>
+        <Graph
+          appContext={appContext}
+          focus={focus === "dashboard"}
+        />
       );
     case "overview":
       return (
-        <Box paddingX={1} paddingY={1}>
-          <Text color="gray">Overview — coming in Task 10</Text>
-        </Box>
+        <Overview
+          appContext={appContext}
+          focus={focus === "dashboard"}
+        />
       );
     case "thinking":
       return (
-        <Box paddingX={1} paddingY={1}>
-          <Text color="gray">Thinking traces — coming in Task 10</Text>
-        </Box>
+        <Thinking
+          appContext={appContext}
+          focus={focus === "dashboard"}
+        />
       );
     case "activity":
       return (
-        <Box paddingX={1} paddingY={1}>
-          <Text color="gray">Activity log — coming in Task 10</Text>
-        </Box>
+        <Activity
+          appContext={appContext}
+          focus={focus === "dashboard"}
+        />
       );
     default:
       return <EmptyState />;
