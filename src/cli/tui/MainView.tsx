@@ -1,20 +1,43 @@
 import React from "react";
 import { Box, Text } from "ink";
 import type { MainViewName, AppContext } from "./CommandRouter.js";
+import type { Hypothesis } from "../../models/hypothesis.js";
 import { EmptyState } from "./views/EmptyState.js";
 import { Dashboard } from "./views/Dashboard.js";
 
 interface MainViewProps {
   activeView: MainViewName;
   appContext: AppContext;
+  focus: "input" | "dashboard";
+  leaderboard: Hypothesis[];
+  ticker: string[];
+  selected: number;
+  setSelected: (s: number) => void;
 }
 
-export function MainView({ activeView, appContext }: MainViewProps) {
+export function MainView({
+  activeView,
+  appContext,
+  focus,
+  leaderboard,
+  ticker,
+  selected,
+  setSelected,
+}: MainViewProps) {
   switch (activeView) {
     case "empty":
       return <EmptyState />;
     case "dashboard":
-      return <Dashboard sessionId={appContext.sessionId} />;
+      return (
+        <Dashboard
+          appContext={appContext}
+          focus={focus === "dashboard"}
+          leaderboard={leaderboard}
+          ticker={ticker}
+          selected={selected}
+          setSelected={setSelected}
+        />
+      );
     case "results":
       return (
         <Box paddingX={1} paddingY={1}>

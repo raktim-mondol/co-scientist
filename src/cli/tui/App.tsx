@@ -8,8 +8,6 @@ import { Header } from "./Header.js";
 import { MainView } from "./MainView.js";
 import { InputBar } from "./InputBar.js";
 import { Toast } from "./Toast.js";
-import { Leaderboard } from "./Leaderboard.js";
-import { Ticker } from "./Ticker.js";
 import { KillModal } from "./modals/KillModal.js";
 import { BoostModal } from "./modals/BoostModal.js";
 import { InjectModal } from "./modals/InjectModal.js";
@@ -99,22 +97,6 @@ export function App(props: AppProps) {
     setFocus((f) => (f === "input" ? "dashboard" : "input"));
   });
 
-  // ── Dashboard keyboard shortcuts (dashboard focus, no modal) ──────────────
-  useInput((input, key) => {
-    if (key.upArrow) setSelected((s) => Math.max(0, s - 1));
-    else if (key.downArrow) setSelected((s) => Math.min(leaderboard.length - 1, s + 1));
-    else if (input === "k" && selectedHyp) setActiveModal("kill");
-    else if (input === "b" && selectedHyp) setActiveModal("boost");
-    else if (input === "i") setActiveModal("inject");
-    else if (input === "p") {
-      const np = onTogglePause();
-      setPaused(np);
-    } else if (input === "q") {
-      onQuit();
-      exit();
-    } else if (input === "/") setFocus("input");
-  }, { isActive: focus === "dashboard" && !activeModal });
-
   // ── Route handler (view switches, modals, session start, exit) ────────────
   const handleRoute = (result: RouteResult | { type: "session_start"; goal: string }) => {
     switch (result.type) {
@@ -155,15 +137,16 @@ export function App(props: AppProps) {
         </Box>
       )}
 
-      {/* Content area: Leaderboard+Ticker for dashboard session, MainView otherwise */}
-      {activeView === "dashboard" && hasSession ? (
-        <>
-          <Leaderboard hypotheses={leaderboard} selectedIndex={selected} />
-          <Ticker lines={ticker} />
-        </>
-      ) : (
-        <MainView activeView={activeView} appContext={appContext} />
-      )}
+      {/* Content area: always rendered through MainView */}
+      <MainView
+        activeView={activeView}
+        appContext={appContext}
+        focus={focus}
+        leaderboard={leaderboard}
+        ticker={ticker}
+        selected={selected}
+        setSelected={setSelected}
+      />
 
       {/* Existing modals (Kill, Boost, Inject) — wired as modal overlay */}
       {activeModal === "kill" && selectedHyp && (
