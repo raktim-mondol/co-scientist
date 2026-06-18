@@ -2,6 +2,7 @@ import { EventEmitter } from "events";
 import chalk from "chalk";
 import ora from "ora";
 import { printBanner } from "../banner.js";
+// eslint-disable-next-line @typescript-eslint/no-var-requires
 import inquirer from "inquirer";
 import { v4 as uuidv4 } from "uuid";
 import { SupervisorAgent } from "../../agents/supervisor.js";
@@ -13,7 +14,7 @@ import { resetConfig, getConfig } from "../../config.js";
 import { seedRng } from "../../util/rng.js";
 import type { ResearchGoal } from "../../models/researchGoal.js";
 import type { SessionStats } from "../../models/session.js";
-import { startSlashCommands } from "../slashCommands.js";
+import { renderTUI } from "../tui/index.js";
 
 interface RunOptions {
   goal?: string;
@@ -142,20 +143,35 @@ export async function runCommand(options: RunOptions): Promise<void> {
   const budgetTokens = getConfig().compute.budgetTokens;
   const useTui = options.tui !== false && Boolean(process.stdout.isTTY);
 
-  let slash: { close: () => void } | null = null;
+  let tui: { unmount: () => void; waitUntilExit: () => Promise<void> } | null = null;
   let lastStats: (SessionStats & { activity: string }) | null = null;
-  let sessionCompleted = false;
 
   if (useTui) {
-    slash = startSlashCommands({
-      sessionId,
-      memory: getContextStore(),
-      supervisor,
+    tui = renderTUI({
       emitter,
+      memory: getContextStore(),
+      sessionId,
+      goal: rawGoal.trim(),
+      supervisor,
       startTime,
       budgetTokens,
-      onComplete: () => {
-        sessionCompleted = true;
+      onStartSession: async () => {
+        // Wired in Task 14 (empty-state startup path)
+      },
+      onStop: () => {
+        supervisor.stop();
+      },
+      onTogglePause: () => {
+        if (supervisor.isPaused()) {
+          supervisor.resume();
+          return false;
+        }
+        supervisor.pause();
+        return true;
+      },
+      onQuit: () => {
+        supervisor.stop();
+        getContextStore().updateSessionStatus(sessionId, "paused");
       },
     });
   } else {
@@ -197,7 +213,7 @@ export async function runCommand(options: RunOptions): Promise<void> {
     if (shuttingDown) return; // Prevent double-cleanup races
     shuttingDown = true;
 
-    if (slash) slash.close();
+    if (tui) tui.unmount();
     console.log(chalk.yellow(`\n\n⏸  ${signal} received — pausing session...`));
 
     supervisor.stop();
@@ -232,26 +248,19 @@ export async function runCommand(options: RunOptions): Promise<void> {
   // Run the main orchestration loop
   try {
     await supervisor.run(sessionId);
-
-    // In interactive mode, wait for session completion
-    if (slash && !sessionCompleted) {
-      // Session completed naturally — close the slash interface
-      slash.close();
-      slash = null;
-    } else if (slash) {
-      slash.close();
-      slash = null;
-    }
+    // Checkpoint WAL + close DB + remove PID lock file after normal completion.
+    // (Graceful shutdown via SIGINT/SIGTERM also calls closeDb in the handler above.)
+    closeDb();
+    if (tui) tui.unmount();
   } catch (err) {
-    if (slash) slash.close();
+    if (tui) tui.unmount();
     console.error(chalk.red(`\n❌ Session error: ${(err as Error).message}`));
     const memory = getContextStore();
     memory.updateSessionStatus(sessionId, "error");
-    closeDb();
     process.exit(1);
   }
 
-  // Show final results (DB still open — closeDb() is called after this block)
+  // Show final results
   const memory = getContextStore();
   const topHyps = memory.getTopHypotheses(sessionId, 5);
 
@@ -277,8 +286,6 @@ export async function runCommand(options: RunOptions): Promise<void> {
     chalk.white(`co-scientist export ${sessionId}`)
   );
 
-  // Checkpoint WAL + close DB + remove PID lock file
-  closeDb();
   await getMCPManager().cleanup();
 }
 
