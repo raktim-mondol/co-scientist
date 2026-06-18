@@ -15,6 +15,10 @@ import { RunModal } from "./modals/RunModal.js";
 import { killHypothesis, boostHypothesis, injectHypothesis } from "./actions.js";
 import type { MainViewName, ModalName, AppContext, RouteResult } from "./CommandRouter.js";
 import "./commands/run.js";
+import "./commands/pause.js";
+import "./commands/resume.js";
+import "./commands/stop.js";
+import "./commands/dashboard.js";
 
 const NOOP_EMITTER = new EventEmitter();
 
