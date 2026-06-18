@@ -95,9 +95,11 @@ export class ProximityAgent extends BaseAgent {
             if (hyp.eloRating < (other?.eloRating ?? Infinity)) {
               this.memory.updateHypothesisStatus(hyp.id, "rejected");
               embeddings.delete(hyp.id);
+              break; // hyp is rejected — stop processing its neighbours
             } else {
               this.memory.updateHypothesisStatus(otherId, "rejected");
               embeddings.delete(otherId);
+              continue; // skip edge save for rejected pair
             }
           }
         }

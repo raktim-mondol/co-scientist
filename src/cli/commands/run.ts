@@ -255,6 +255,7 @@ export async function runCommand(options: RunOptions): Promise<void> {
     console.error(chalk.red(`\n❌ Session error: ${(err as Error).message}`));
     const memory = getContextStore();
     memory.updateSessionStatus(sessionId, "error");
+    closeDb();
     process.exit(1);
   }
 

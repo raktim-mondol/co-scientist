@@ -174,18 +174,17 @@ export class ReflectionAgent extends BaseAgent {
     // Fold the citation-integrity penalty into the seed: lower rating, wider RD.
     const finalRating = Math.max(1000, seededRating.rating + citePenalty.ratingDelta);
     const finalRd = Math.min(350, seededRating.rd + citePenalty.rdDelta);
-    if (finalRating !== 1200 || finalRd !== seededRating.rd) {
-      // Only write back if the seeded/penalized value actually differs from default.
-      this.memory.updateHypothesisRating(
-        hyp.id, finalRating, finalRd, seededRating.volatility, 0, 0, 0
-      );
-      this.log(
-        "info",
-        `Seeded Glicko-2 rating for "${hyp.title}": ${finalRating} (RD=${finalRd}) ` +
-        `(novelty=${bestNovelty ?? "n/a"}, correctness=${bestCorrectness ?? "n/a"}, testability=${bestTestability ?? "n/a"}` +
-        (citePenalty.ratingDelta !== 0 ? `, citation penalty=${citePenalty.ratingDelta}` : "") + ")"
-      );
-    }
+    // Always write back after review — the RD must tighten from 350
+    // (unreviewed) to 200 (reviewed) even when the rating is exactly 1200.
+    this.memory.updateHypothesisRating(
+      hyp.id, finalRating, finalRd, seededRating.volatility, 0, 0, 0
+    );
+    this.log(
+      "info",
+      `Seeded Glicko-2 rating for "${hyp.title}": ${finalRating} (RD=${finalRd}) ` +
+      `(novelty=${bestNovelty ?? "n/a"}, correctness=${bestCorrectness ?? "n/a"}, testability=${bestTestability ?? "n/a"}` +
+      (citePenalty.ratingDelta !== 0 ? `, citation penalty=${citePenalty.ratingDelta}` : "") + ")"
+    );
 
     this.log("info", `Hypothesis passed review and is now active: "${hyp.title}"`);
     } catch (err) {

@@ -780,7 +780,8 @@ export class ContextStore {
       .where(and(
         eq(schema.evidenceSources.sessionId, ev.sessionId),
         eq(schema.evidenceSources.url, ev.url),
-      )).get()!;
+      )).get();
+    if (!row) throw new Error(`saveEvidence: upsert failed for ${ev.url}`);
     return this._rowToEvidence(row);
   }
 

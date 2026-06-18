@@ -87,6 +87,11 @@ function _cachedSearch(
     const entry = _searchCache.get(key);
     if (entry) entry.resolvedAt = Date.now();
     return results;
+  }).catch((err) => {
+    // Don't permanently cache rejected promises — a transient network blip
+    // or rate limit would poison this query for the entire session.
+    _searchCache.delete(key);
+    throw err;
   });
   _searchCache.set(key, { promise });
   return promise;

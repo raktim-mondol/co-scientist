@@ -84,6 +84,15 @@ export class EvolutionAgent extends BaseAgent {
     }
 
     if (evolved) {
+      // Guard: re-check the cap right before saving. With multiple workers,
+      // concurrent evolution/generation tasks may have filled the quota since
+      // the supervisor checked at enqueue time.
+      const maxHyp = this.config.compute.maxHypotheses;
+      if (maxHyp > 0 && this.memory.countHypotheses(sessionId).total >= maxHyp) {
+        this.log("info", `Skipping evolved hypothesis — maxHypotheses (${maxHyp}) reached`);
+        return;
+      }
+
       // ── ELO Bootstrap: evolved hypotheses inherit from their best parent ───
       // Using 85% of the top parent's ELO rewards proven lineage while still
       // leaving room to climb (or fall) based on actual match performance.
