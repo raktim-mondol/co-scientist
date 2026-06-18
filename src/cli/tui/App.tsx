@@ -1,10 +1,11 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import EventEmitter from "events";
 import type { ContextStore } from "../../memory/contextStore.js";
 import type { SupervisorAgent } from "../../agents/supervisor.js";
 import { useSessionData } from "./useSessionData.js";
 import { Header } from "./Header.js";
+import type { SessionState } from "./Header.js";
 import { MainView } from "./MainView.js";
 import { InputBar } from "./InputBar.js";
 import { Toast } from "./Toast.js";
@@ -14,8 +15,16 @@ import { InjectModal } from "./modals/InjectModal.js";
 import { RunModal } from "./modals/RunModal.js";
 import { BudgetModal } from "./modals/BudgetModal.js";
 import { StrategyModal } from "./modals/StrategyModal.js";
+import { ExportModal } from "./modals/ExportModal.js";
+import { FeedbackModal } from "./modals/FeedbackModal.js";
+import { DesignModal } from "./modals/DesignModal.js";
+import { DeleteModal } from "./modals/DeleteModal.js";
 import { killHypothesis, boostHypothesis, injectHypothesis } from "./actions.js";
+import { extractRewardFromFeedback } from "../../rlef/reward-signal.js";
+import { exportCommand } from "../commands/export.js";
+import { v4 as uuidv4 } from "uuid";
 import type { MainViewName, ModalName, AppContext, RouteResult } from "./CommandRouter.js";
+// Command registrations (side-effect imports)
 import "./commands/run.js";
 import "./commands/pause.js";
 import "./commands/resume.js";
@@ -33,6 +42,18 @@ import "./commands/graph.js";
 import "./commands/overview.js";
 import "./commands/thinking.js";
 import "./commands/activity.js";
+// Task 11 — Action commands
+import "./commands/exportCmd.js";
+import "./commands/feedbackCmd.js";
+import "./commands/designCmd.js";
+import "./commands/deleteCmd.js";
+// Task 12 — Navigation & system commands
+import "./commands/sessions.js";
+import "./commands/switch.js";
+import "./commands/login.js";
+import "./commands/logout.js";
+import "./commands/help.js";
+import "./commands/quit.js";
 
 const NOOP_EMITTER = new EventEmitter();
 
@@ -81,6 +102,9 @@ export function App(props: AppProps) {
   const currentRound = stats?.currentRound ?? 0;
   const activeHypCount = stats?.activeHypotheses ?? 0;
 
+  // Derived session state for Header
+  const sessionState: SessionState = !hasSession ? null : paused ? "paused" : "running";
+
   // ── Build AppContext ──────────────────────────────────────────────────────
   const appContext: AppContext = {
     memory,
@@ -105,6 +129,17 @@ export function App(props: AppProps) {
     },
     paused,
   };
+
+  // ── Memoized lists for modals ─────────────────────────────────────────────
+  const allHypotheses = useMemo(
+    () => (sessionId ? memory.getAllActiveHypotheses(sessionId) : []),
+    [sessionId, memory, stats], // stats changes trigger refresh
+  );
+
+  const allSessions = useMemo(
+    () => memory.listSessions(),
+    [memory],
+  );
 
   // ── Global Esc: dismiss modal first, then toggle focus ────────────────────
   useInput((_input, key) => {
@@ -139,22 +174,16 @@ export function App(props: AppProps) {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <Box flexDirection="column">
-      {/* Header: full when session exists, minimal otherwise */}
-      {hasSession ? (
-        <Header
-          sessionId={sessionId!}
-          goal={goal ?? ""}
-          stats={stats}
-          startTime={startTime ?? 0}
-          now={now}
-          budgetTokens={budgetTokens}
-          paused={paused}
-        />
-      ) : (
-        <Box paddingX={1} paddingY={1}>
-          <Text color="cyan" bold>🧬 co-scientist</Text>
-        </Box>
-      )}
+      {/* Header: self-contained — handles empty, running, and paused states */}
+      <Header
+        sessionState={sessionState}
+        sessionId={sessionId}
+        goal={goal}
+        stats={stats}
+        startTime={startTime}
+        now={now}
+        budgetTokens={budgetTokens}
+      />
 
       {/* Content area: always rendered through MainView */}
       <MainView
@@ -167,7 +196,7 @@ export function App(props: AppProps) {
         setSelected={setSelected}
       />
 
-      {/* Existing modals (Kill, Boost, Inject) — wired as modal overlay */}
+      {/* Existing modals */}
       {activeModal === "kill" && selectedHyp && (
         <KillModal
           title={selectedHyp.title}
@@ -233,6 +262,70 @@ export function App(props: AppProps) {
             evolution: 0.10,
             proximity: 0.07,
             meta_review: 0.03,
+          }}
+          onCancel={() => setActiveModal(null)}
+        />
+      )}
+
+      {/* Task 11 — Action modals */}
+      {activeModal === "export" && (
+        <ExportModal
+          onConfirm={(format, outputPath) => {
+            setActiveModal(null);
+            exportCommand(sessionId!, { format, output: outputPath }).then(() => {
+              appContext.showToast(`Session exported as ${format}.`, "success");
+            }).catch((err) => {
+              appContext.showToast(`Export failed: ${(err as Error).message}`, "error");
+            });
+          }}
+          onCancel={() => setActiveModal(null)}
+        />
+      )}
+      {activeModal === "feedback" && (
+        <FeedbackModal
+          hypotheses={allHypotheses.map((h) => ({ id: h.id, title: h.title }))}
+          onConfirm={(data) => {
+            const reward = extractRewardFromFeedback(
+              data.feedbackText,
+              data.noveltyScore ?? null,
+              data.correctnessScore ?? null,
+              data.testabilityScore ?? null,
+            );
+            memory.saveExperimentalFeedback({
+              id: uuidv4(),
+              hypothesisId: data.hypothesisId,
+              sessionId: sessionId!,
+              feedbackText: data.feedbackText,
+              noveltyScore: data.noveltyScore,
+              correctnessScore: data.correctnessScore,
+              testabilityScore: data.testabilityScore,
+              metadata: {},
+              computedReward: reward,
+              recordedBy: "human",
+              createdAt: new Date(),
+            });
+            setActiveModal(null);
+            appContext.showToast("Feedback saved.", "success");
+          }}
+          onCancel={() => setActiveModal(null)}
+        />
+      )}
+      {activeModal === "design" && (
+        <DesignModal
+          sessionId={sessionId!}
+          hypotheses={allHypotheses}
+          onCancel={() => setActiveModal(null)}
+        />
+      )}
+      {activeModal === "delete" && (
+        <DeleteModal
+          sessions={allSessions}
+          onConfirm={(ids) => {
+            for (const id of ids) {
+              memory.deleteSession(id);
+            }
+            setActiveModal(null);
+            appContext.showToast(`Deleted ${ids.length} session(s).`, "success");
           }}
           onCancel={() => setActiveModal(null)}
         />
