@@ -1,0 +1,64 @@
+import React, { useState } from "react";
+import { Box, Text, useInput } from "ink";
+
+interface RunModalProps {
+  onConfirm: (goal: string, name?: string) => void;
+  onCancel: () => void;
+}
+
+type Field = "goal" | "name";
+
+/**
+ * Two-field form for starting a new research session.
+ * Goal is required; name is optional. Follows the same useInput pattern as InjectModal.
+ */
+export function RunModal({ onConfirm, onCancel }: RunModalProps) {
+  const [goal, setGoal] = useState("");
+  const [name, setName] = useState("");
+  const [field, setField] = useState<Field>("goal");
+
+  const setActive = (fn: (s: string) => string) => {
+    if (field === "goal") setGoal(fn);
+    else setName(fn);
+  };
+
+  useInput((input, key) => {
+    if (key.escape) {
+      onCancel();
+      return;
+    }
+    if (key.tab) {
+      setField(field === "goal" ? "name" : "goal");
+      return;
+    }
+    if (key.return) {
+      if (field === "goal") {
+        setField("name");
+      } else if (goal.trim()) {
+        onConfirm(goal.trim(), name.trim() || undefined);
+      }
+      return;
+    }
+    if (key.backspace || key.delete) {
+      setActive((v) => v.slice(0, -1));
+      return;
+    }
+    // Append printable characters only.
+    if (input && !key.ctrl && !key.meta && input.length === 1 && input >= " ") {
+      setActive((v) => v + input);
+    }
+  });
+
+  return (
+    <Box flexDirection="column" borderStyle="double" borderColor="cyan" paddingX={1}>
+      <Text color="cyan" bold>START NEW SESSION</Text>
+      <Text color={field === "goal" ? "white" : "gray"}>
+        {field === "goal" ? "▶" : " "} Goal:     {goal || "_"}
+      </Text>
+      <Text color={field === "name" ? "white" : "gray"}>
+        {field === "name" ? "▶" : " "} Name:     {name || "(optional)"}
+      </Text>
+      <Text color="gray">[tab] switch field   [enter] next/confirm   [esc] cancel</Text>
+    </Box>
+  );
+}

@@ -13,8 +13,10 @@ import { Ticker } from "./Ticker.js";
 import { KillModal } from "./modals/KillModal.js";
 import { BoostModal } from "./modals/BoostModal.js";
 import { InjectModal } from "./modals/InjectModal.js";
+import { RunModal } from "./modals/RunModal.js";
 import { killHypothesis, boostHypothesis, injectHypothesis } from "./actions.js";
 import type { MainViewName, ModalName, AppContext, RouteResult } from "./CommandRouter.js";
+import "./commands/run.js";
 
 const NOOP_EMITTER = new EventEmitter();
 
@@ -196,6 +198,15 @@ export function App(props: AppProps) {
               generationRound: currentRound,
             });
             setActiveModal(null);
+          }}
+          onCancel={() => setActiveModal(null)}
+        />
+      )}
+      {activeModal === "run" && (
+        <RunModal
+          onConfirm={async (goal, name) => {
+            setActiveModal(null);
+            await onStartSession(goal, name ? { name } : undefined);
           }}
           onCancel={() => setActiveModal(null)}
         />
