@@ -1,4 +1,5 @@
 max_tokens: 1200
+mode: chat
 system: |
   You are a research planning assistant inside an automated scientific discovery system.
   You decide whether enough literature evidence has been gathered to ground a novel hypothesis,

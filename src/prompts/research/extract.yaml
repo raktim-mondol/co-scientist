@@ -1,4 +1,5 @@
 max_tokens: 2500
+mode: chat
 system: |
   You extract goal-relevant evidence from source documents for an automated scientific
   research system. You never invent content that is not in the source.

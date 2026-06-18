@@ -10,7 +10,7 @@
     "dev": "bun run src/cli/index.ts",
     "start": "bun run src/cli/index.ts",
     "test": "bun test",
-    "build": "bun build src/cli/index.ts --outdir dist",
+    "build": "bun build src/cli/index.ts --outdir dist --target bun",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "bun run src/db/migrate.ts"
   },
@@ -31,6 +31,7 @@
     "p-queue": "^8.0.1",
     "parallel-web": "^0.5.0",
     "react": "^18.3.1",
+    "react-devtools-core": "^7.0.1",
     "sqlite-vec": "^0.1.9",
     "uuid": "^14.0.0",
     "yaml": "^2.4.5",
@@ -43,6 +44,7 @@
     "@types/node": "^20.14.0",
     "@types/react": "^18.3.3",
     "@types/uuid": "^10.0.0",
-    "drizzle-kit": "^0.31.10"
+    "drizzle-kit": "^0.31.10",
+    "typescript": "^6.0.3"
   }
 }

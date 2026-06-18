@@ -1,11 +1,11 @@
-import React from "react";
+import React, { memo } from "react";
 import { Box, Text } from "ink";
 
 interface TickerProps {
   lines: string[];
 }
 
-export function Ticker({ lines }: TickerProps) {
+export const Ticker = memo(function Ticker({ lines }: TickerProps) {
   const latest = lines.length > 0 ? lines[lines.length - 1] : "starting...";
   return (
     <Box paddingX={1}>
@@ -13,4 +13,4 @@ export function Ticker({ lines }: TickerProps) {
       <Text color="magenta">{latest}</Text>
     </Box>
   );
-}
+});

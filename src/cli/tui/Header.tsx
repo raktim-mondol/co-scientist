@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { Box, Text } from "ink";
 import { Spinner } from "./Spinner.js";
 import type { ProgressStats } from "./useSessionData.js";
@@ -24,7 +24,7 @@ function gauge(pct: number, width = 10): string {
   return "▓".repeat(filled) + "░".repeat(width - filled);
 }
 
-export function Header({ sessionId, goal, stats, startTime, now, budgetTokens, paused }: HeaderProps) {
+export const Header = memo(function Header({ sessionId, goal, stats, startTime, now, budgetTokens, paused }: HeaderProps) {
   const elapsed = Math.round((now - startTime) / 1000);
   const timeStr = `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`;
   const tokens = stats?.tokensUsed ?? 0;
@@ -60,4 +60,4 @@ export function Header({ sessionId, goal, stats, startTime, now, budgetTokens, p
       </Box>
     </Box>
   );
-}
+});

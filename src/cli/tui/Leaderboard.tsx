@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { Box, Text } from "ink";
 import type { Hypothesis } from "../../models/hypothesis.js";
 
@@ -18,7 +18,7 @@ function statusGlyph(status: string): string {
   }
 }
 
-export function Leaderboard({ hypotheses, selectedIndex }: LeaderboardProps) {
+export const Leaderboard = memo(function Leaderboard({ hypotheses, selectedIndex }: LeaderboardProps) {
   return (
     <Box flexDirection="column" flexGrow={1} borderStyle="round" borderColor="gray" paddingX={1}>
       <Text color="cyan" bold>{"  #   Elo   St  Hypothesis"}</Text>
@@ -44,4 +44,4 @@ export function Leaderboard({ hypotheses, selectedIndex }: LeaderboardProps) {
       )}
     </Box>
   );
-}
+});

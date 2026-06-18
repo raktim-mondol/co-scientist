@@ -1,7 +1,7 @@
-import React from "react";
+import React, { memo } from "react";
 import { Box, Text } from "ink";
 
-export function Footer({ paused }: { paused: boolean }) {
+export const Footer = memo(function Footer({ paused }: { paused: boolean }) {
   return (
     <Box paddingX={1}>
       <Text color="gray">
@@ -10,4 +10,4 @@ export function Footer({ paused }: { paused: boolean }) {
       </Text>
     </Box>
   );
-}
+});
