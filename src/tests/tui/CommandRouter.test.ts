@@ -154,7 +154,7 @@ describe("route()", () => {
     };
     registerCommand(handler);
     await route("/echo foo bar baz", createMockContext());
-    expect(capturedArgs).toEqual(["foo", "bar", "baz"]);
+    expect(capturedArgs!).toEqual(["foo", "bar", "baz"]);
   });
 });
 

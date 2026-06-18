@@ -9,14 +9,16 @@ interface InputBarProps {
   focus: boolean;
   appContext: AppContext;
   onRoute: (result: RouteResult | { type: "session_start"; goal: string }) => void;
+  clearKey?: string;
 }
 
-export function InputBar({ focus, appContext, onRoute }: InputBarProps) {
+export function InputBar({ focus, appContext, onRoute, clearKey }: InputBarProps) {
   const [text, setText] = useState("");
   const [cursor, setCursor] = useState(0);
   const [toastMessage, setToastMessage] = useState("");
   const [toastType, setToastType] = useState<"success" | "error" | "info">("info");
   const [toastVisible, setToastVisible] = useState(false);
+  const [toastKey, setToastKey] = useState(0); // forces Toast remount for stacking
   const [paletteDismissed, setPaletteDismissed] = useState(false);
   const [paletteIndex, setPaletteIndex] = useState(0);
 
@@ -30,16 +32,30 @@ export function InputBar({ focus, appContext, onRoute }: InputBarProps) {
     setPaletteIndex(0);
   }, [text]);
 
+  // Clear input when clearKey changes (e.g., after view switch via /results, /dashboard)
+  useEffect(() => {
+    setText("");
+    setCursor(0);
+  }, [clearKey]);
+
   // Clamp cursor to text length after text mutations
   useEffect(() => {
     if (cursor > text.length) setCursor(text.length);
   }, [text, cursor]);
 
-  // Local toast helper wrapper matching appContext.showToast pattern
+  // Local toast helper — dismisses any existing toast before showing a new one
   const showToast = (message: string, type: "success" | "error" | "info" = "info") => {
-    setToastMessage(message);
-    setToastType(type);
-    setToastVisible(true);
+    if (toastVisible) {
+      // Dismiss the old toast first by forcing a remount via key
+      setToastVisible(false);
+    }
+    // Microtask to allow state flush, then show new toast
+    setTimeout(() => {
+      setToastMessage(message);
+      setToastType(type);
+      setToastKey((k) => k + 1);
+      setToastVisible(true);
+    }, 0);
   };
 
   const dismissToast = () => setToastVisible(false);
@@ -155,6 +171,7 @@ export function InputBar({ focus, appContext, onRoute }: InputBarProps) {
     <Box flexDirection="column">
       {toastVisible && (
         <Toast
+          key={toastKey}
           message={toastMessage}
           type={toastType}
           visible={toastVisible}

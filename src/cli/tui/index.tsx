@@ -5,6 +5,13 @@ import type { ContextStore } from "../../memory/contextStore.js";
 import type { SupervisorAgent } from "../../agents/supervisor.js";
 import { App } from "./App.js";
 
+/** Returned by onStartSession so the TUI can update its internal session state. */
+export interface SessionStartResult {
+  sessionId: string;
+  supervisor: SupervisorAgent;
+  emitter: EventEmitter;
+}
+
 export interface RenderTUIOptions {
   memory: ContextStore;
   sessionId: string | null;
@@ -13,7 +20,7 @@ export interface RenderTUIOptions {
   emitter: EventEmitter | null;
   startTime: number | null;
   budgetTokens: number;
-  onStartSession: (goal: string, opts?: { name?: string; budget?: number; maxHypotheses?: number }) => Promise<void>;
+  onStartSession: (goal: string, opts?: { name?: string; budget?: number; maxHypotheses?: number }) => Promise<SessionStartResult>;
   onStop: () => void;
   onTogglePause: () => boolean;
   onQuit: () => void;

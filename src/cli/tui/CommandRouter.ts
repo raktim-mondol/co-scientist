@@ -17,6 +17,8 @@ export type ModalName =
   | "run"
   | "feedback"
   | "inject"
+  | "kill"
+  | "boost"
   | "export"
   | "design"
   | "delete"

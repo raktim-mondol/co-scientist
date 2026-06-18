@@ -1,6 +1,6 @@
 import React from "react";
-import { useInput } from "ink";
-import type { Hypothesis } from "../../models/hypothesis.js";
+import { Box, Text, useInput } from "ink";
+import type { Hypothesis } from "../../../models/hypothesis.js";
 import type { AppContext } from "../CommandRouter.js";
 import { Leaderboard } from "../Leaderboard.js";
 import { Ticker } from "../Ticker.js";
@@ -16,7 +16,7 @@ interface DashboardProps {
 
 /**
  * Live dashboard view showing the leaderboard, ticker, and keyboard shortcuts.
- * Keyboard navigation (arrows, k/b/i/p/q) only works when the dashboard has focus.
+ * Keyboard navigation (arrows, k/b/i/p) only works when the dashboard has focus.
  */
 export function Dashboard({
   appContext,
@@ -31,7 +31,7 @@ export function Dashboard({
   useInput(
     (input, key) => {
       if (key.upArrow) setSelected(Math.max(0, selected - 1));
-      else if (key.downArrow) setSelected(Math.min(leaderboard.length - 1, selected + 1));
+      else if (key.downArrow) setSelected(Math.min(Math.max(0, leaderboard.length - 1), selected + 1));
       else if (input === "k" && selectedHyp) appContext.openModal("kill");
       else if (input === "b" && selectedHyp) appContext.openModal("boost");
       else if (input === "i") appContext.openModal("inject");
@@ -47,7 +47,13 @@ export function Dashboard({
 
   return (
     <>
-      <Leaderboard hypotheses={leaderboard} selectedIndex={selected} />
+      {leaderboard.length === 0 ? (
+        <Box paddingY={2} paddingX={4}>
+          <Text color="gray">No hypotheses yet — waiting for generation...</Text>
+        </Box>
+      ) : (
+        <Leaderboard hypotheses={leaderboard} selectedIndex={selected} />
+      )}
       <Ticker lines={ticker} />
     </>
   );

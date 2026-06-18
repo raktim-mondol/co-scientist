@@ -39,6 +39,7 @@ program
   .option("--seed <n>", "Deterministic seed for reproducible scheduling/sampling")
   .option("--no-interactive", "Disable interactive slash commands (plain log output)")
   .option("--no-tui", "Alias for --no-interactive (deprecated)")
+  .option("--interactive", "Launch TUI in empty-state mode — type a research topic to begin")
   .action(runCommand);
 
 program

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import EventEmitter from "events";
 import type { ContextStore } from "../../memory/contextStore.js";
@@ -24,6 +24,7 @@ import { extractRewardFromFeedback } from "../../rlef/reward-signal.js";
 import { exportCommand } from "../commands/export.js";
 import { v4 as uuidv4 } from "uuid";
 import type { MainViewName, ModalName, AppContext, RouteResult } from "./CommandRouter.js";
+import type { SessionStartResult } from "./index.js";
 // Command registrations (side-effect imports)
 import "./commands/run.js";
 import "./commands/pause.js";
@@ -65,7 +66,7 @@ export interface AppProps {
   emitter: EventEmitter | null;
   startTime: number | null;
   budgetTokens: number;
-  onStartSession: (goal: string, opts?: { name?: string; budget?: number; maxHypotheses?: number }) => Promise<void>;
+  onStartSession: (goal: string, opts?: { name?: string; budget?: number; maxHypotheses?: number }) => Promise<SessionStartResult>;
   onStop: () => void;
   onTogglePause: () => boolean;
   onQuit: () => void;
@@ -75,10 +76,21 @@ type Focus = "input" | "dashboard";
 
 export function App(props: AppProps) {
   const {
-    memory, sessionId, goal, supervisor, emitter,
-    startTime, budgetTokens, onStartSession, onStop, onTogglePause, onQuit,
+    memory, budgetTokens, onQuit,
+    onStartSession: externalOnStartSession,
+    onStop: externalOnStop,
+    onTogglePause: externalOnTogglePause,
   } = props;
   const { exit } = useApp();
+
+  // ── Internal session state ─────────────────────────────────────────────
+  // Initialized from props (non-interactive path: session already exists).
+  // Updated via onStartSession → SessionStartResult (interactive path).
+  const [sessionId, setSessionId] = useState<string | null>(props.sessionId);
+  const [goal, setGoal] = useState<string | null>(props.goal);
+  const [supervisor, setSupervisor] = useState<SupervisorAgent | null>(props.supervisor);
+  const [emitter, setEmitter] = useState<EventEmitter | null>(props.emitter);
+  const [startTime, setStartTime] = useState<number | null>(props.startTime);
   const hasSession = sessionId !== null;
 
   const { stats, leaderboard, ticker, now } = useSessionData(
@@ -102,6 +114,28 @@ export function App(props: AppProps) {
   const currentRound = stats?.currentRound ?? 0;
   const activeHypCount = stats?.activeHypotheses ?? 0;
 
+  // ── Session completion / error event handling ──────────────────────────
+  useEffect(() => {
+    if (!emitter || !sessionId) return;
+    const onCompleted = (overview: string) => {
+      setActiveView("overview");
+      setToastMsg("Session completed! Research overview available.");
+      setToastType("success");
+      setToastVisible(true);
+    };
+    const onError = (err: Error) => {
+      setToastMsg(`Session error: ${err.message}`);
+      setToastType("error");
+      setToastVisible(true);
+    };
+    emitter.on("completed", onCompleted);
+    emitter.on("error", onError);
+    return () => {
+      emitter.off("completed", onCompleted);
+      emitter.off("error", onError);
+    };
+  }, [emitter, sessionId]);
+
   // Derived session state for Header
   const sessionState: SessionState = !hasSession ? null : paused ? "paused" : "running";
 
@@ -120,10 +154,28 @@ export function App(props: AppProps) {
       setToastType(type);
       setToastVisible(true);
     },
-    startSession: onStartSession,
-    stopSession: onStop,
+    startSession: async (goalText, opts) => {
+      const result = await externalOnStartSession(goalText, opts);
+      setSessionId(result.sessionId);
+      setGoal(goalText);
+      setSupervisor(result.supervisor);
+      setEmitter(result.emitter);
+      setStartTime(Date.now());
+      setPaused(false);
+      setActiveView("dashboard");
+    },
+    stopSession: () => {
+      externalOnStop();
+      setSessionId(null);
+      setGoal(null);
+      setSupervisor(null);
+      setEmitter(null);
+      setStartTime(null);
+      setPaused(false);
+      setActiveView("empty");
+    },
     togglePause: () => {
-      const np = onTogglePause();
+      const np = externalOnTogglePause();
       setPaused(np);
       return np;
     },
@@ -161,7 +213,7 @@ export function App(props: AppProps) {
         setActiveModal(result.modal);
         break;
       case "session_start":
-        onStartSession(result.goal);
+        appContext.startSession(result.goal);
         break;
       case "exit":
         onQuit();
@@ -237,7 +289,7 @@ export function App(props: AppProps) {
         <RunModal
           onConfirm={async (goal, name) => {
             setActiveModal(null);
-            await onStartSession(goal, name ? { name } : undefined);
+            await appContext.startSession(goal, name ? { name } : undefined);
           }}
           onCancel={() => setActiveModal(null)}
         />
@@ -287,9 +339,9 @@ export function App(props: AppProps) {
           onConfirm={(data) => {
             const reward = extractRewardFromFeedback(
               data.feedbackText,
-              data.noveltyScore ?? null,
-              data.correctnessScore ?? null,
-              data.testabilityScore ?? null,
+              data.noveltyScore ?? undefined,
+              data.correctnessScore ?? undefined,
+              data.testabilityScore ?? undefined,
             );
             memory.saveExperimentalFeedback({
               id: uuidv4(),
@@ -331,8 +383,8 @@ export function App(props: AppProps) {
         />
       )}
 
-      {/* Input bar at the bottom */}
-      <InputBar focus={focus === "input"} appContext={appContext} onRoute={handleRoute} />
+      {/* Input bar at the bottom — clears on view switch */}
+      <InputBar focus={focus === "input"} appContext={appContext} onRoute={handleRoute} clearKey={activeView} />
 
       {/* App-level toast (for command handlers) */}
       {toastVisible && (

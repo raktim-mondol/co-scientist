@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { Box, Text, useInput } from "ink";
 import type { AppContext } from "../CommandRouter.js";
-import type { Hypothesis } from "../../models/hypothesis.js";
+import type { Hypothesis } from "../../../models/hypothesis.js";
 
 interface ResultsProps {
   appContext: AppContext;

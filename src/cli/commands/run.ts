@@ -15,6 +15,7 @@ import { seedRng } from "../../util/rng.js";
 import type { ResearchGoal } from "../../models/researchGoal.js";
 import type { SessionStats } from "../../models/session.js";
 import { renderTUI } from "../tui/index.js";
+import type { SessionStartResult } from "../tui/index.js";
 
 interface RunOptions {
   goal?: string;
@@ -24,6 +25,7 @@ interface RunOptions {
   budget?: string;
   seed?: string;
   tui?: boolean;
+  interactive?: boolean;
 }
 
 export async function runCommand(options: RunOptions): Promise<void> {
@@ -50,6 +52,149 @@ export async function runCommand(options: RunOptions): Promise<void> {
 
   // Get research goal
   let rawGoal = options.goal;
+
+  // ── Interactive / empty-state mode ─────────────────────────────────────
+  const useTui = options.tui !== false && Boolean(process.stdout.isTTY);
+  const interactive = options.interactive === true;
+
+  if (interactive && !rawGoal) {
+    // Initialize DB
+    const initSpinner = ora("Initializing database...").start();
+    await runMigrations();
+    initSpinner.succeed("Database ready");
+
+    // Initialize MCP tools
+    const acProvider = getMCPManager().providerPriority()[0];
+    const acLabel = acProvider.charAt(0).toUpperCase() + acProvider.slice(1);
+    const mcpSpinner = ora(`Connecting to ${acLabel} MCP (academic search)...`).start();
+    try {
+      await getMCPManager().initialize();
+      mcpSpinner.succeed(`${acLabel} MCP connected`);
+    } catch {
+      mcpSpinner.warn(`${acLabel} MCP connection degraded — academic search may be limited`);
+    }
+
+    const memory = getContextStore();
+    const budgetTokens = getConfig().compute.budgetTokens;
+
+    // Closure variables set by onStartSession, read by other callbacks
+    let currentSupervisor: SupervisorAgent | null = null;
+    let currentSessionId: string | null = null;
+
+    console.log(chalk.cyan("\n🧬 Launching interactive TUI — type a research topic to begin.\n"));
+
+    const tui = renderTUI({
+      memory,
+      sessionId: null,
+      goal: null,
+      supervisor: null,
+      emitter: null,
+      startTime: null,
+      budgetTokens,
+      onStartSession: async (goalText, opts): Promise<SessionStartResult> => {
+        const goal: ResearchGoal = {
+          id: uuidv4(),
+          rawGoal: goalText.trim(),
+          constraints: {
+            noveltyRequired: true,
+            allowedMethodologies: [],
+            excludedMethodologies: [],
+            targetOrganisms: [],
+          },
+          evaluationCriteria: {
+            noveltyWeight: 0.35,
+            correctnessWeight: 0.35,
+            testabilityWeight: 0.20,
+            impactWeight: 0.10,
+            customCriteria: [],
+          },
+          outputFormat: "standard",
+          attachedDocuments: [],
+          expertHypotheses: [],
+          createdAt: new Date(),
+        };
+
+        const supervisor = new SupervisorAgent();
+        const emitter = new EventEmitter();
+        supervisor.setEmitter(emitter);
+
+        const name = opts?.name || `session-${new Date().toISOString().slice(0, 10)}`;
+        const sessionId = await supervisor.initSession(goal, name);
+
+        // Store for other callbacks
+        currentSupervisor = supervisor;
+        currentSessionId = sessionId;
+
+        console.log(chalk.yellow("\n📋 Research Goal:\n") + chalk.white(goalText.trim()));
+        console.log(chalk.yellow("\n🚀 Starting Co-Scientist...\n"));
+
+        // Start the supervisor loop in the background (don't await)
+        supervisor.run(sessionId).catch((err) => {
+          // Error is surfaced via emitter 'error' event
+          if (!(err instanceof Error) || !err.message.includes("Session stopped")) {
+            console.error(chalk.red(`\n❌ Supervisor error: ${(err as Error).message}`));
+          }
+        });
+
+        return { sessionId, supervisor, emitter };
+      },
+      onStop: () => {
+        currentSupervisor?.stop();
+      },
+      onTogglePause: () => {
+        if (!currentSupervisor) return false;
+        if (currentSupervisor.isPaused()) {
+          currentSupervisor.resume();
+          return false;
+        }
+        currentSupervisor.pause();
+        return true;
+      },
+      onQuit: () => {
+        currentSupervisor?.stop();
+        if (currentSessionId) {
+          memory.updateSessionStatus(currentSessionId, "paused");
+        }
+        closeDb();
+      },
+    });
+
+    // ── Graceful shutdown ──────────────────────────────────────────────────
+    let shuttingDown = false;
+    const gracefulShutdown = (signal: string) => {
+      if (shuttingDown) return;
+      shuttingDown = true;
+      tui.unmount();
+      console.log(chalk.yellow(`\n\n⏸  ${signal} received — shutting down...`));
+      currentSupervisor?.stop();
+      if (currentSessionId) {
+        try {
+          memory.updateSessionStatus(currentSessionId, "paused");
+        } catch { /* ignore */ }
+      }
+      try {
+        closeDb();
+        console.log(chalk.gray("  Database checkpointed and closed."));
+      } catch { /* ignore */ }
+      process.exit(0);
+    };
+
+    process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+    process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+    process.on("SIGHUP", () => gracefulShutdown("SIGHUP"));
+
+    await tui.waitUntilExit();
+
+    // Clean up signal handlers after normal exit
+    process.removeAllListeners("SIGINT");
+    process.removeAllListeners("SIGTERM");
+    process.removeAllListeners("SIGHUP");
+
+    await getMCPManager().cleanup();
+    return;
+  }
+
+  // Get research goal (existing non-interactive flow continues below)
   if (!rawGoal) {
     const { goal } = await inquirer.prompt([
       {
@@ -141,7 +286,7 @@ export async function runCommand(options: RunOptions): Promise<void> {
   // Set up progress display
   const startTime = Date.now();
   const budgetTokens = getConfig().compute.budgetTokens;
-  const useTui = options.tui !== false && Boolean(process.stdout.isTTY);
+  // useTui is declared above, before the interactive branch
 
   let tui: { unmount: () => void; waitUntilExit: () => Promise<void> } | null = null;
   let lastStats: (SessionStats & { activity: string }) | null = null;
@@ -155,8 +300,10 @@ export async function runCommand(options: RunOptions): Promise<void> {
       supervisor,
       startTime,
       budgetTokens,
-      onStartSession: async () => {
-        // Wired in Task 14 (empty-state startup path)
+      onStartSession: async (_goal, _opts): Promise<SessionStartResult> => {
+        // Non-interactive path: session already exists. /run is inactive while
+        // a session is running, but if the session is stopped, start a new one.
+        throw new Error("Starting a new session from within a non-interactive TUI is not supported. Please quit and use 'co-scientist run --interactive'.");
       },
       onStop: () => {
         supervisor.stop();

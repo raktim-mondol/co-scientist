@@ -14,12 +14,12 @@ const budgetCommand: CommandHandler = {
       }
       process.env.COMPUTE_BUDGET_TOKENS = String(budget);
       // Re-read config so the new budget takes effect immediately
-      const { resetConfig, getConfig } = await import("../../config.js");
+      const { resetConfig, getConfig } = await import("../../../config.js");
       resetConfig();
       const cfg = getConfig();
       return {
         type: "immediate",
-        message: `Token budget set to ${cfg.budgetTokens.toLocaleString()}.`,
+        message: `Token budget set to ${cfg.compute.budgetTokens.toLocaleString()}.`,
       };
     }
     // No args — open BudgetModal
