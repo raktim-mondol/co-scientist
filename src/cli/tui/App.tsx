@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Box, useApp, useInput } from "ink";
+import React, { useState, useEffect } from "react";
+import { Box, Text, useApp, useInput } from "ink";
 import type { EventEmitter } from "events";
 import type { ContextStore } from "../../memory/contextStore.js";
 import { useSessionData } from "./useSessionData.js";
@@ -27,7 +27,7 @@ type Mode = "browse" | "kill" | "boost" | "inject";
 
 export function App(props: AppProps) {
   const { emitter, memory, sessionId, goal, startTime, budgetTokens } = props;
-  const { stats, leaderboard, ticker, now } = useSessionData(emitter, memory, sessionId);
+  const { stats, leaderboard, ticker, now, completed, overview } = useSessionData(emitter, memory, sessionId);
   const [selected, setSelected] = useState(0);
   const [mode, setMode] = useState<Mode>("browse");
   const [paused, setPaused] = useState(false);
@@ -36,9 +36,21 @@ export function App(props: AppProps) {
   const selectedHyp = leaderboard[selected];
   const currentRound = stats?.currentRound ?? 0;
 
+  // Auto-focus the last entry when new hypotheses arrive
+  useEffect(() => {
+    if (leaderboard.length > 0) {
+      setSelected(leaderboard.length - 1);
+    }
+  }, [leaderboard.length]);
+
   // Main browse-mode keyboard handler — disabled while a modal is open.
   useInput(
     (input, key) => {
+      if (completed) {
+        // When session is done, any key exits
+        exit();
+        return;
+      }
       if (key.upArrow) setSelected((s) => Math.max(0, s - 1));
       else if (key.downArrow) setSelected((s) => Math.min(leaderboard.length - 1, s + 1));
       else if (input === "k" && selectedHyp) setMode("kill");
@@ -52,6 +64,40 @@ export function App(props: AppProps) {
     },
     { isActive: mode === "browse" }
   );
+
+  if (completed) {
+    const topHyps = leaderboard.slice(0, 5);
+    return (
+      <Box flexDirection="column">
+        <Header
+          sessionId={sessionId}
+          goal={goal}
+          stats={stats}
+          startTime={startTime}
+          now={now}
+          budgetTokens={budgetTokens}
+          paused={false}
+        />
+        <Box flexDirection="column" borderStyle="round" borderColor="green" paddingX={1}>
+          <Text color="green" bold>✅ Session completed!</Text>
+          {overview ? (
+            <Text color="white">{overview.slice(0, 300)}{overview.length > 300 ? "..." : ""}</Text>
+          ) : null}
+        </Box>
+        <Box flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
+          <Text color="yellow" bold>🏆 Top Hypotheses:</Text>
+          {topHyps.map((h, i) => (
+            <Text key={h.id} color="white">
+              {"  "}{i + 1}. [{Math.round(h.eloRating)}] {h.title}
+            </Text>
+          ))}
+        </Box>
+        <Box paddingX={1}>
+          <Text color="gray">Press any key to exit</Text>
+        </Box>
+      </Box>
+    );
+  }
 
   return (
     <Box flexDirection="column">

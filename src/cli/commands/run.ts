@@ -244,7 +244,12 @@ export async function runCommand(options: RunOptions): Promise<void> {
     // Checkpoint WAL + close DB + remove PID lock file after normal completion.
     // (Graceful shutdown via SIGINT/SIGTERM also calls closeDb in the handler above.)
     closeDb();
-    if (tui) tui.unmount();
+
+    // In TUI mode, wait for the user to see the completion screen and press a key
+    if (tui) {
+      await tui.waitUntilExit();
+      tui = null; // already exited
+    }
   } catch (err) {
     if (tui) tui.unmount();
     console.error(chalk.red(`\n❌ Session error: ${(err as Error).message}`));

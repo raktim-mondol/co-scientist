@@ -11,6 +11,8 @@ export interface SessionData {
   leaderboard: Hypothesis[];
   ticker: string[];
   now: number;
+  completed: boolean;
+  overview: string;
 }
 
 const MAX_TICKER = 6;
@@ -48,6 +50,8 @@ export function useSessionData(
   const [leaderboard, setLeaderboard] = useState<Hypothesis[]>([]);
   const [ticker, setTicker] = useState<string[]>([]);
   const [now, setNow] = useState<number>(Date.now());
+  const [completed, setCompleted] = useState(false);
+  const [overview, setOverview] = useState("");
 
   // Use a ref to hold the latest leaderboard so the interval callback
   // doesn't need to be recreated on every render.
@@ -77,20 +81,28 @@ export function useSessionData(
       refresh();
       push(`tournament round ${round} complete`);
     };
+    const onCompleted = (ov: string) => {
+      setCompleted(true);
+      setOverview(ov);
+      push("✅ session completed");
+      refresh(); // final leaderboard refresh
+    };
 
     refresh();
     emitter.on("progress", onProgress);
     emitter.on("hypothesis_added", onHyp);
     emitter.on("match_completed", onMatch);
+    emitter.on("completed", onCompleted);
     const interval = setInterval(refresh, 1000);
 
     return () => {
       emitter.off("progress", onProgress);
       emitter.off("hypothesis_added", onHyp);
       emitter.off("match_completed", onMatch);
+      emitter.off("completed", onCompleted);
       clearInterval(interval);
     };
   }, [emitter, memory, sessionId]);
 
-  return { stats, leaderboard, ticker, now };
+  return { stats, leaderboard, ticker, now, completed, overview };
 }
