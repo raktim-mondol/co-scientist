@@ -205,7 +205,14 @@ program.action(async () => {
   resetConfig();
   await runMigrations();
   await getMCPManager().initialize().catch(() => {});
-  process.env.LOG_LEVEL = prevLogLevel ?? "";
+  // Restore the original log level. Setting to "" would fail the zod enum
+  // (which only falls back to its default on `undefined`), so delete the
+  // var entirely when it was unset.
+  if (prevLogLevel === undefined) {
+    delete process.env.LOG_LEVEL;
+  } else {
+    process.env.LOG_LEVEL = prevLogLevel;
+  }
   resetConfig();
 
   const memory = getContextStore();
