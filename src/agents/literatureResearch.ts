@@ -27,15 +27,25 @@ export function normalizeUrl(url: string): string {
 }
 
 /** Numbered [E#] digest consumed by the literature_exploration prompt. */
-export function formatEvidenceDigest(sources: EvidenceSource[]): string {
+export function formatEvidenceDigest(sources: EvidenceSource[], maxChars = 8000): string {
   if (sources.length === 0) return "No evidence gathered.";
-  return sources
-    .map((s, i) => {
-      const date = s.publishedDate ? ` (${s.publishedDate})` : "";
-      const excerpt = s.evidence.length > 600 ? `${s.evidence.slice(0, 600)}…` : s.evidence;
-      return `[E${i + 1}] ${s.title} — ${s.url}${date}\n   Summary: ${s.summary}\n   Key evidence: ${excerpt}`;
-    })
-    .join("\n\n");
+  // Sort by most recent first, then cap to prevent context window overflow
+  const sorted = [...sources].sort((a, b) => (b.round ?? 0) - (a.round ?? 0));
+  const parts: string[] = [];
+  let totalLen = 0;
+  for (let i = 0; i < sorted.length; i++) {
+    const s = sorted[i];
+    const date = s.publishedDate ? ` (${s.publishedDate})` : "";
+    const excerpt = s.evidence.length > 600 ? `${s.evidence.slice(0, 600)}…` : s.evidence;
+    const entry = `[E${i + 1}] ${s.title} — ${s.url}${date}\n   Summary: ${s.summary}\n   Key evidence: ${excerpt}`;
+    if (totalLen + entry.length > maxChars) {
+      parts.push(`\n[... ${sorted.length - i} more sources truncated for context window]`);
+      break;
+    }
+    parts.push(entry);
+    totalLen += entry.length + 2; // +2 for \n\n separator
+  }
+  return parts.join("\n\n");
 }
 
 /** Round control: hard cap, sufficiency, and candidate availability. */

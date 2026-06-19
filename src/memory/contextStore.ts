@@ -89,39 +89,39 @@ export class ContextStore {
   }
 
   deleteSession(id: string): void {
-    // Delete in dependency order (child tables first, then session)
-    const hyps = this.db
-      .select({ id: schema.hypotheses.id })
-      .from(schema.hypotheses)
-      .where(eq(schema.hypotheses.sessionId, id))
-      .all();
+    // Wrap entire deletion in a transaction to prevent orphaned rows on failure.
+    // Deleting ~15 tables without a transaction could leave partial state if any
+    // individual DELETE fails (e.g., SQLITE_BUSY).
+    this.sqlite.transaction(() => {
+      // Delete in dependency order (child tables first, then session)
+      const hyps = this.db
+        .select({ id: schema.hypotheses.id })
+        .from(schema.hypotheses)
+        .where(eq(schema.hypotheses.sessionId, id))
+        .all();
 
-    for (const h of hyps) {
-      this.db.delete(schema.embeddingCache).where(eq(schema.embeddingCache.hypothesisId, h.id)).run();
-      this.db.delete(schema.reviews).where(eq(schema.reviews.hypothesisId, h.id)).run();
-      // Remove claim citations per hypothesis
-      this.db.delete(schema.claimCitations).where(eq(schema.claimCitations.hypothesisId, h.id)).run();
-      this.sqlite.query(`DELETE FROM citation_verifications WHERE hypothesis_id = ?`).run(h.id);
-      this.sqlite.query(`DELETE FROM safety_assessments WHERE hypothesis_id = ?`).run(h.id);
-      // Remove embedding from vec0 ANN index
-      this.sqlite.query(`DELETE FROM vec_embeddings WHERE hypothesis_id = ?`).run(h.id);
-    }
+      for (const h of hyps) {
+        this.db.delete(schema.embeddingCache).where(eq(schema.embeddingCache.hypothesisId, h.id)).run();
+        this.db.delete(schema.reviews).where(eq(schema.reviews.hypothesisId, h.id)).run();
+        this.db.delete(schema.claimCitations).where(eq(schema.claimCitations.hypothesisId, h.id)).run();
+        this.sqlite.query(`DELETE FROM citation_verifications WHERE hypothesis_id = ?`).run(h.id);
+        this.sqlite.query(`DELETE FROM safety_assessments WHERE hypothesis_id = ?`).run(h.id);
+        this.sqlite.query(`DELETE FROM vec_embeddings WHERE hypothesis_id = ?`).run(h.id);
+      }
 
-    // Remove feedback & reward_memory rows (FK to both hypotheses & sessions)
-    this.db.delete(schema.experimentalFeedback).where(eq(schema.experimentalFeedback.sessionId, id)).run();
-    this.sqlite.query(`DELETE FROM reward_memory WHERE session_id = ?`).run(id);
-    // Remove thinking traces & session activity
-    this.db.delete(schema.thinkingTraces).where(eq(schema.thinkingTraces.sessionId, id)).run();
-    this.db.delete(schema.sessionActivity).where(eq(schema.sessionActivity.sessionId, id)).run();
-    // Remove KG nodes and edges for the session
-    this.db.delete(schema.kgEdges).where(eq(schema.kgEdges.sessionId, id)).run();
-    this.db.delete(schema.kgNodes).where(eq(schema.kgNodes.sessionId, id)).run();
-    this.db.delete(schema.proximityEdges).where(eq(schema.proximityEdges.sessionId, id)).run();
-    this.db.delete(schema.evidenceSources).where(eq(schema.evidenceSources.sessionId, id)).run();
-    this.db.delete(schema.tournamentMatches).where(eq(schema.tournamentMatches.sessionId, id)).run();
-    this.db.delete(schema.hypotheses).where(eq(schema.hypotheses.sessionId, id)).run();
-    this.db.delete(schema.agentTasks).where(eq(schema.agentTasks.sessionId, id)).run();
-    this.db.delete(schema.sessions).where(eq(schema.sessions.id, id)).run();
+      this.db.delete(schema.experimentalFeedback).where(eq(schema.experimentalFeedback.sessionId, id)).run();
+      this.sqlite.query(`DELETE FROM reward_memory WHERE session_id = ?`).run(id);
+      this.db.delete(schema.thinkingTraces).where(eq(schema.thinkingTraces.sessionId, id)).run();
+      this.db.delete(schema.sessionActivity).where(eq(schema.sessionActivity.sessionId, id)).run();
+      this.db.delete(schema.kgEdges).where(eq(schema.kgEdges.sessionId, id)).run();
+      this.db.delete(schema.kgNodes).where(eq(schema.kgNodes.sessionId, id)).run();
+      this.db.delete(schema.proximityEdges).where(eq(schema.proximityEdges.sessionId, id)).run();
+      this.db.delete(schema.evidenceSources).where(eq(schema.evidenceSources.sessionId, id)).run();
+      this.db.delete(schema.tournamentMatches).where(eq(schema.tournamentMatches.sessionId, id)).run();
+      this.db.delete(schema.hypotheses).where(eq(schema.hypotheses.sessionId, id)).run();
+      this.db.delete(schema.agentTasks).where(eq(schema.agentTasks.sessionId, id)).run();
+      this.db.delete(schema.sessions).where(eq(schema.sessions.id, id)).run();
+    })();
   }
 
   updateSessionStatus(id: string, status: string): void {
@@ -185,7 +185,7 @@ export class ContextStore {
       .where(eq(schema.sessions.id, sessionId))
       .get();
     if (!row?.config) return null;
-    return JSON.parse(row.config);
+    try { return JSON.parse(row.config) as ResearchPlanConfig; } catch { return null; }
   }
 
   // ─── Hypotheses ───────────────────────────────────────────────────────────
@@ -289,6 +289,41 @@ export class ContextStore {
     })();
   }
 
+  /**
+   * Atomic dual Glicko-2 update for a match between two hypotheses.
+   * Reads BOTH hypotheses' pre-match state inside a single transaction,
+   * computes BOTH updates from the same snapshot, and writes both back.
+   * This ensures the zero-sum invariant: newA + newB ≈ oldA + oldB.
+   */
+  atomicDualGlicko2Update(
+    idA: string,
+    idB: string,
+    compute: (
+      stateA: { rating: number; rd: number; volatility: number; wins: number; losses: number; draws: number; matchesPlayed: number },
+      stateB: { rating: number; rd: number; volatility: number; wins: number; losses: number; draws: number; matchesPlayed: number }
+    ) => {
+      newA: { rating: number; rd: number; volatility: number; wins: number; losses: number; draws: number; matchesPlayed: number };
+      newB: { rating: number; rd: number; volatility: number; wins: number; losses: number; draws: number; matchesPlayed: number };
+    }
+  ): void {
+    this.sqlite.transaction(() => {
+      const hypA = this.getHypothesis(idA);
+      const hypB = this.getHypothesis(idB);
+      if (!hypA || !hypB) return;
+      const stateA = {
+        rating: hypA.eloRating, rd: hypA.ratingDeviation ?? 350, volatility: hypA.volatility ?? 0.06,
+        wins: hypA.wins, losses: hypA.losses, draws: hypA.draws ?? 0, matchesPlayed: hypA.matchesPlayed,
+      };
+      const stateB = {
+        rating: hypB.eloRating, rd: hypB.ratingDeviation ?? 350, volatility: hypB.volatility ?? 0.06,
+        wins: hypB.wins, losses: hypB.losses, draws: hypB.draws ?? 0, matchesPlayed: hypB.matchesPlayed,
+      };
+      const { newA, newB } = compute(stateA, stateB);
+      this.updateHypothesisRating(idA, newA.rating, newA.rd, newA.volatility, newA.wins, newA.losses, newA.matchesPlayed, newA.draws);
+      this.updateHypothesisRating(idB, newB.rating, newB.rd, newB.volatility, newB.wins, newB.losses, newB.matchesPlayed, newB.draws);
+    })();
+  }
+
   updateHypothesisStatus(id: string, status: string): void {
     this.db
       .update(schema.hypotheses)
@@ -319,6 +354,21 @@ export class ContextStore {
       .get();
     if (!row) return null;
     return this._rowToHypothesis(row);
+  }
+
+  /**
+   * Lightweight batch lookup — returns minimal hypothesis data without the
+   * N+1 feedback count subquery.  Used by the diversity gate in GenerationAgent
+   * where only status and eloRating are needed (up to 20 calls per generation).
+   */
+  getHypothesisStatusAndElo(id: string): { sessionId: string; status: string; eloRating: number } | null {
+    const row = this.db
+      .select({ sessionId: schema.hypotheses.sessionId, status: schema.hypotheses.status, eloRating: schema.hypotheses.eloRating })
+      .from(schema.hypotheses)
+      .where(eq(schema.hypotheses.id, id))
+      .get();
+    if (!row) return null;
+    return { sessionId: row.sessionId, status: row.status, eloRating: row.eloRating };
   }
 
   getTopHypotheses(sessionId: string, n = 10): Hypothesis[] {
@@ -466,7 +516,7 @@ export class ContextStore {
       safetyFlag: r.safetyFlag ?? false,
       summary: r.summary,
       critique: r.critique,
-      supportingEvidence: JSON.parse(r.supportingEvidenceJson),
+      supportingEvidence: (() => { try { return JSON.parse(r.supportingEvidenceJson) as string[]; } catch { return []; } })(),
       createdAt: r.createdAt,
     }));
   }
@@ -602,6 +652,12 @@ export class ContextStore {
     return Array.from(new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4));
   }
 
+  /** Remove a hypothesis's embedding from both cache and ANN index. */
+  deleteEmbedding(hypothesisId: string): void {
+    this.db.delete(schema.embeddingCache).where(eq(schema.embeddingCache.hypothesisId, hypothesisId)).run();
+    this.sqlite.query(`DELETE FROM vec_embeddings WHERE hypothesis_id = ?`).run(hypothesisId);
+  }
+
   /**
    * ANN search via sqlite-vec's vec0 KNN index.
    * Returns up to `limit` hypothesis IDs nearest to `queryEmbedding`,
@@ -677,8 +733,8 @@ export class ContextStore {
       .where(eq(schema.hypotheses.id, hypothesisId))
       .get();
     if (!row?.proto) return null;
-    const parsed = JSON.parse(row.proto) as Record<string, unknown>;
-    // Treat as absent if core LLM-generated fields are missing (stale/incomplete protocol)
+    let parsed: Record<string, unknown>;
+    try { parsed = JSON.parse(row.proto) as Record<string, unknown>; } catch { return null; }
     const hasContent = parsed.overview || (Array.isArray(parsed.steps) && (parsed.steps as unknown[]).length > 0);
     if (!hasContent) return null;
     return parsed;
@@ -995,10 +1051,12 @@ export class ContextStore {
    * if the hypothesis is not currently quarantined.
    */
   releaseQuarantine(hypothesisId: string, overriddenBy: string, reason: string): boolean {
-    const hyp = this.getHypothesis(hypothesisId);
-    if (!hyp || hyp.status !== "quarantined") return false;
     const now = new Date();
+    let released = false;
     this.sqlite.transaction(() => {
+      // Check status inside the transaction to prevent TOCTOU race conditions
+      const hyp = this.getHypothesis(hypothesisId);
+      if (!hyp || hyp.status !== "quarantined") return;
       this.db
         .update(schema.hypotheses)
         .set({ status: "active", updatedAt: now })
@@ -1017,8 +1075,9 @@ export class ContextStore {
           .where(eq(schema.safetyAssessments.id, latest.id))
           .run();
       }
+      released = true;
     })();
-    return true;
+    return released;
   }
 
   private _rowToSafetyAssessment(r: typeof schema.safetyAssessments.$inferSelect): SafetyAssessmentRow {
@@ -1267,7 +1326,7 @@ export class ContextStore {
       noveltyScore:     row.novelty_score != null ? (row.novelty_score as number) : undefined,
       correctnessScore: row.correctness_score != null ? (row.correctness_score as number) : undefined,
       testabilityScore: row.testability_score != null ? (row.testability_score as number) : undefined,
-      metadata:         JSON.parse((row.metadata_json as string) ?? "{}"),
+      metadata:         (() => { try { return JSON.parse((row.metadata_json as string) ?? "{}"); } catch { return {}; } })(),
       computedReward:   row.computed_reward as number,
       recordedBy:       (row.recorded_by as "human" | "automated") ?? "human",
       createdAt:        new Date((row.created_at as number) * 1000),

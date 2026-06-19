@@ -76,6 +76,7 @@ export async function runMigrations() {
   `);
 
   db.run(sql`CREATE INDEX IF NOT EXISTS idx_reviews_hypothesis ON reviews(hypothesis_id)`);
+  db.run(sql`CREATE INDEX IF NOT EXISTS idx_reviews_session ON reviews(session_id)`);
 
   db.run(sql`
     CREATE TABLE IF NOT EXISTS tournament_matches (

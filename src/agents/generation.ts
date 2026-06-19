@@ -114,7 +114,7 @@ export class GenerationAgent extends BaseAgent {
             // rejected, skip other sessions) that have a cached embedding.
             .filter((n): n is NeighbourEmbedding => {
               if (n.embedding === null) return false;
-              const h = this.memory.getHypothesis(n.id);
+              const h = this.memory.getHypothesisStatusAndElo(n.id);
               return h !== null && h.sessionId === sessionId && h.status !== "rejected";
             });
 

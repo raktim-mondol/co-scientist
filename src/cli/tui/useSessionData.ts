@@ -86,6 +86,7 @@ export function useSessionData(
       setOverview(ov);
       push("✅ session completed");
       refresh(); // final leaderboard refresh
+      clearInterval(interval); // stop polling after completion
     };
 
     refresh();

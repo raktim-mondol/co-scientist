@@ -103,36 +103,23 @@ export class RankingAgent extends BaseAgent {
       result.winner === "A" ? "A_wins" : result.winner === "B" ? "B_wins" : "draw";
 
     // ── Atomic Glicko-2 update ────────────────────────────────────────────────
-    // Each hypothesis is updated inside a transaction that reads fresh state,
-    // computes the new Glicko-2 values, and writes back atomically — preventing
-    // concurrent matches from overwriting each other's rating/RD/volatility.
+    // Both hypotheses are updated inside a SINGLE transaction that reads fresh
+    // pre-match state for BOTH players, computes BOTH Glicko-2 updates from the
+    // same snapshot, and writes both back.  This ensures the zero-sum invariant:
+    // newA + newB ≈ oldA + oldB.  Using separate atomicGlicko2Update calls would
+    // cause B to see A's post-match state, violating symmetry.
     let ratingAfterA = { rating: hypA.eloRating, rd: hypA.ratingDeviation ?? 350 };
     let ratingAfterB = { rating: hypB.eloRating, rd: hypB.ratingDeviation ?? 350 };
 
-    this.memory.atomicGlicko2Update(hypA.id, (current) => {
-      const state: Glicko2State = { ...current };
-      const opponent: Glicko2State = {
-        rating: hypB.eloRating, rd: hypB.ratingDeviation ?? 350,
-        volatility: hypB.volatility ?? 0.06,
-        matchesPlayed: hypB.matchesPlayed, wins: hypB.wins, losses: hypB.losses, draws: hypB.draws ?? 0,
-      };
-      const { newA } = computeGlicko2Update(state, opponent, matchResult);
-      ratingAfterA = { rating: newA.rating, rd: newA.rd };
-      return newA;
-    });
-
-    this.memory.atomicGlicko2Update(hypB.id, (current) => {
-      const state: Glicko2State = { ...current };
-      const opponent: Glicko2State = {
-        rating: hypA.eloRating, rd: hypA.ratingDeviation ?? 350,
-        volatility: hypA.volatility ?? 0.06,
-        matchesPlayed: hypA.matchesPlayed, wins: hypA.wins, losses: hypA.losses, draws: hypA.draws ?? 0,
-      };
-      const reverseResult: MatchResult =
-        matchResult === "A_wins" ? "B_wins" : matchResult === "B_wins" ? "A_wins" : "draw";
-      const { newA } = computeGlicko2Update(state, opponent, reverseResult);
-      ratingAfterB = { rating: newA.rating, rd: newA.rd };
-      return newA;
+    this.memory.atomicDualGlicko2Update(hypA.id, hypB.id, (stateA, stateB) => {
+      const resultAB = computeGlicko2Update(
+        { ...stateA } as Glicko2State,
+        { ...stateB } as Glicko2State,
+        matchResult
+      );
+      ratingAfterA = { rating: resultAB.newA.rating, rd: resultAB.newA.rd };
+      ratingAfterB = { rating: resultAB.newB.rating, rd: resultAB.newB.rd };
+      return { newA: resultAB.newA, newB: resultAB.newB };
     });
 
     const freshA = this.memory.getHypothesis(hypA.id) ?? hypA;

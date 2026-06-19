@@ -94,10 +94,12 @@ export class ProximityAgent extends BaseAgent {
             // embeddings map so subsequent iterations don't process it further.
             if (hyp.eloRating < (other?.eloRating ?? Infinity)) {
               this.memory.updateHypothesisStatus(hyp.id, "rejected");
+              this.memory.deleteEmbedding(hyp.id);
               embeddings.delete(hyp.id);
               break; // hyp is rejected — stop processing its neighbours
             } else {
               this.memory.updateHypothesisStatus(otherId, "rejected");
+              this.memory.deleteEmbedding(otherId);
               embeddings.delete(otherId);
               continue; // skip edge save for rejected pair
             }
