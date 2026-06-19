@@ -64,11 +64,11 @@ export async function resultsCommand(
   await runMigrations();
   const memory = getContextStore();
   const session = memory.resolveSession(sessionId);
-
   if (!session) {
-    console.error(chalk.red(`Session not found: ${sessionId}`));
+    console.error(chalk.red(`Session not found: ${sessionId}\nRun \`co-scientist list\` to see available sessions (UUID or name accepted).`));
     process.exit(1);
   }
+  sessionId = session.id;
 
   const n = parseInt(options.top ?? "10", 10);
   const hypotheses = options.all
@@ -229,11 +229,11 @@ export async function overviewCommand(sessionId: string): Promise<void> {
   await runMigrations();
   const memory = getContextStore();
   const session = memory.resolveSession(sessionId);
-
   if (!session) {
-    console.error(chalk.red(`Session not found: ${sessionId}`));
+    console.error(chalk.red(`Session not found: ${sessionId}\nRun \`co-scientist list\` to see available sessions (UUID or name accepted).`));
     process.exit(1);
   }
+  sessionId = session.id;
 
   if (!session.researchOverview) {
     if (session.status === "running") {
@@ -257,11 +257,11 @@ export async function resumeCommand(sessionId: string): Promise<void> {
   await runMigrations();
   const memory = getContextStore();
   const session = memory.resolveSession(sessionId);
-
   if (!session) {
-    console.error(chalk.red(`Session not found: ${sessionId}`));
+    console.error(chalk.red(`Session not found: ${sessionId}\nRun \`co-scientist list\` to see available sessions (UUID or name accepted).`));
     process.exit(1);
   }
+  sessionId = session.id;
 
   if (session.status === "completed") {
     console.log(chalk.yellow(`Session ${sessionId} is already completed.`));
@@ -388,11 +388,11 @@ export async function feedbackCommand(
   const { default: inquirer } = await import("inquirer");
   const memory = getContextStore();
   const session = memory.resolveSession(sessionId);
-
   if (!session) {
-    console.error(chalk.red(`Session not found: ${sessionId}`));
+    console.error(chalk.red(`Session not found: ${sessionId}\nRun \`co-scientist list\` to see available sessions (UUID or name accepted).`));
     process.exit(1);
   }
+  sessionId = session.id;
 
   if (!options.experimental && !options.hypothesis && !options.review) {
     console.error(chalk.red("Error: specify a feedback mode flag."));

@@ -36,17 +36,17 @@ export async function activityCommand(
   await runMigrations();
   const memory = getContextStore();
   const session = memory.resolveSession(sessionId);
-
   if (!session) {
-    console.error(chalk.red(`Session not found: ${sessionId}`));
+    console.error(chalk.red(`Session not found: ${sessionId}\nRun \`co-scientist list\` to see available sessions (UUID or name accepted).`));
     process.exit(1);
   }
+  sessionId = session.id;
 
   const entries = memory.getSessionActivity(sessionId);
 
   if (entries.length === 0) {
     console.log(chalk.yellow(`No activity log found for session: ${sessionId}`));
-    console.log(chalk.gray("Activity is logged for sessions started after this feature was added."));
+    console.log(chalk.gray("No activity recorded for this session."));
     return;
   }
 

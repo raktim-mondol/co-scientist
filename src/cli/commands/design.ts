@@ -14,9 +14,10 @@ export async function designCommand(
 
   const session = memory.resolveSession(sessionId);
   if (!session) {
-    console.error(chalk.red(`Session not found: ${sessionId}`));
+    console.error(chalk.red(`Session not found: ${sessionId}\nRun \`co-scientist list\` to see available sessions (UUID or name accepted).`));
     process.exit(1);
   }
+  sessionId = session.id;
 
   // Determine target hypothesis
   let hypothesisId = options.hypothesisId;

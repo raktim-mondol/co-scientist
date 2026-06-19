@@ -232,13 +232,19 @@ async function handleCommand(raw: string): Promise<void> {
   switch (cmd) {
     case "help":
       writeOutput(chalk.cyan.bold("Commands:"));
-      writeOutput(chalk.white("  /run <goal>") + chalk.gray("     Start a new research session"));
-      writeOutput(chalk.white("  /resume <id>") + chalk.gray("    Resume a paused session"));
-      writeOutput(chalk.white("  /list") + chalk.gray("            List all sessions"));
-      writeOutput(chalk.white("  /results <id>") + chalk.gray("   Show ranked hypotheses"));
-      writeOutput(chalk.white("  /overview <id>") + chalk.gray("  Show research overview"));
-      writeOutput(chalk.white("  /delete <id>") + chalk.gray("    Delete a session"));
-      writeOutput(chalk.white("  /quit") + chalk.gray("            Exit co-scientist"));
+      writeOutput(chalk.white("  /run <goal>") + chalk.gray("       Start a new research session"));
+      writeOutput(chalk.white("  /resume <id>") + chalk.gray("      Resume a paused session"));
+      writeOutput(chalk.white("  /list") + chalk.gray("              List all sessions"));
+      writeOutput(chalk.white("  /results <id>") + chalk.gray("     Show ranked hypotheses"));
+      writeOutput(chalk.white("  /overview <id>") + chalk.gray("    Show research overview"));
+      writeOutput(chalk.white("  /export <id>") + chalk.gray("      Export results to file"));
+      writeOutput(chalk.white("  /delete <id>") + chalk.gray("      Delete a session"));
+      writeOutput(chalk.white("  /design <id>") + chalk.gray("      Generate experimental protocol"));
+      writeOutput(chalk.white("  /graph <id>") + chalk.gray("       Show knowledge graph"));
+      writeOutput(chalk.white("  /safety <id>") + chalk.gray("      Inspect quarantined hypotheses"));
+      writeOutput(chalk.white("  /thinking <id>") + chalk.gray("    Show thinking traces"));
+      writeOutput(chalk.white("  /activity <id>") + chalk.gray("   Show activity log"));
+      writeOutput(chalk.white("  /quit") + chalk.gray("              Exit co-scientist"));
       writeOutput(chalk.gray("  Up/Down arrows for command history."));
       break;
 
@@ -385,6 +391,108 @@ async function handleCommand(raw: string): Promise<void> {
       } catch (err) {
         writeOutput(chalk.red(`  Delete failed: ${(err as Error).message}`));
       }
+      break;
+    }
+
+    case "export": {
+      if (!args) {
+        writeOutput(chalk.red("  Usage: /export <sessionId>"));
+        break;
+      }
+      await runMigrations();
+      const memory = getContextStore();
+      const session = memory.resolveSession(args);
+      if (!session) {
+        writeOutput(chalk.red(`  Session not found: ${args}`));
+        break;
+      }
+      const { exportCommand } = await import("./commands/export.js");
+      await exportCommand(session.id, { format: "markdown" });
+      break;
+    }
+
+    case "design": {
+      if (!args) {
+        writeOutput(chalk.red("  Usage: /design <sessionId>"));
+        break;
+      }
+      await runMigrations();
+      const memory = getContextStore();
+      const session = memory.resolveSession(args);
+      if (!session) {
+        writeOutput(chalk.red(`  Session not found: ${args}`));
+        break;
+      }
+      const { designCommand } = await import("./commands/design.js");
+      await designCommand(session.id, {});
+      break;
+    }
+
+    case "graph": {
+      if (!args) {
+        writeOutput(chalk.red("  Usage: /graph <sessionId>"));
+        break;
+      }
+      await runMigrations();
+      const memory = getContextStore();
+      const session = memory.resolveSession(args);
+      if (!session) {
+        writeOutput(chalk.red(`  Session not found: ${args}`));
+        break;
+      }
+      const { graphCommand } = await import("./commands/graph.js");
+      await graphCommand(session.id, { format: "text" });
+      break;
+    }
+
+    case "safety": {
+      if (!args) {
+        writeOutput(chalk.red("  Usage: /safety <sessionId>"));
+        break;
+      }
+      await runMigrations();
+      const memory = getContextStore();
+      const session = memory.resolveSession(args);
+      if (!session) {
+        writeOutput(chalk.red(`  Session not found: ${args}`));
+        break;
+      }
+      const { safetyCommand } = await import("./commands/safety.js");
+      await safetyCommand(session.id, {});
+      break;
+    }
+
+    case "thinking": {
+      if (!args) {
+        writeOutput(chalk.red("  Usage: /thinking <sessionId>"));
+        break;
+      }
+      await runMigrations();
+      const memory = getContextStore();
+      const session = memory.resolveSession(args);
+      if (!session) {
+        writeOutput(chalk.red(`  Session not found: ${args}`));
+        break;
+      }
+      const { thinkingCommand } = await import("./commands/thinking.js");
+      await thinkingCommand(session.id, {});
+      break;
+    }
+
+    case "activity": {
+      if (!args) {
+        writeOutput(chalk.red("  Usage: /activity <sessionId>"));
+        break;
+      }
+      await runMigrations();
+      const memory = getContextStore();
+      const session = memory.resolveSession(args);
+      if (!session) {
+        writeOutput(chalk.red(`  Session not found: ${args}`));
+        break;
+      }
+      const { activityCommand } = await import("./commands/activity.js");
+      await activityCommand(session.id, {});
       break;
     }
 

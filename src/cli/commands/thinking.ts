@@ -12,11 +12,11 @@ export async function thinkingCommand(
   await runMigrations();
   const memory = getContextStore();
   const session = memory.resolveSession(sessionId);
-
   if (!session) {
-    console.error(chalk.red(`Session not found: ${sessionId}`));
+    console.error(chalk.red(`Session not found: ${sessionId}\nRun \`co-scientist list\` to see available sessions (UUID or name accepted).`));
     process.exit(1);
   }
+  sessionId = session.id;
 
   // Collect traces from DB
   const traces = memory.getThinkingTraces(sessionId);
@@ -33,7 +33,7 @@ export async function thinkingCommand(
 
   if (!hasDb && !hasFile) {
     console.log(chalk.yellow(`No thinking traces found for session: ${sessionId}`));
-    console.log(chalk.gray("Reasoning-mode capture is not currently enabled, so no traces are recorded."));
+    console.log(chalk.gray("No thinking traces recorded for this session."));
     return;
   }
 

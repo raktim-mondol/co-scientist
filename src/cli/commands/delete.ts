@@ -86,8 +86,11 @@ export async function deleteCommand(
   }
 
   const session = memory.resolveSession(sessionId);
-
-  // Edge case: session not found
+  if (!session) {
+    console.error(chalk.red(`Session not found: ${sessionId}\nRun \`co-scientist list\` to see available sessions (UUID or name accepted).`));
+    process.exit(1);
+  }
+  sessionId = session.id;
   if (!session) {
     console.error(chalk.red(`Session not found: ${sessionId}`));
     console.error(chalk.gray("Run `co-scientist list` to see available sessions."));

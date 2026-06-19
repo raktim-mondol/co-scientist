@@ -13,15 +13,16 @@ export async function graphCommand(
 
   const session = memory.resolveSession(sessionId);
   if (!session) {
-    console.error(chalk.red(`Session not found: ${sessionId}`));
+    console.error(chalk.red(`Session not found: ${sessionId}\nRun \`co-scientist list\` to see available sessions (UUID or name accepted).`));
     process.exit(1);
   }
+  sessionId = session.id;
 
   const nodes = memory.getKgNodes(sessionId);
   const edges = memory.getKgEdges(sessionId);
 
   if (nodes.length === 0) {
-    console.log(chalk.yellow("Knowledge graph is empty. Run a session first (graph is built after proximity tasks)."));
+    console.log(chalk.yellow("Knowledge graph is empty. The graph is built during proximity analysis — run a longer session or increase --max-rounds."));
     return;
   }
 

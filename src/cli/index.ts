@@ -38,7 +38,8 @@ program
   .option("--max-rounds <n>", "Maximum tournament rounds", "100")
   .option("--budget <tokens>", "Token budget (0 = unlimited)", "500000")
   .option("--seed <n>", "Deterministic seed for reproducible scheduling/sampling")
-  .option("--no-tui", "Disable interactive slash commands (plain log output)")
+  .option("--no-interactive", "Disable interactive slash commands (plain log output)")
+  .option("--no-tui", "Alias for --no-interactive (deprecated)")
   .action(runCommand);
 
 program
@@ -180,6 +181,13 @@ program
   .action((opts) => withDb(() => logoutCommand(opts)));
 
 program.action(async () => {
+  // Only launch REPL when run with no arguments at all
+  // (Commander fires this for unknown commands too — reject those)
+  if (process.argv.length > 2) {
+    console.error(chalk.red(`Unknown command: ${process.argv[2]}`));
+    console.error(chalk.gray("Run `co-scientist --help` to see available commands."));
+    process.exit(1);
+  }
   const { startInteractive } = await import("./interactive.js");
   await startInteractive();
 });
