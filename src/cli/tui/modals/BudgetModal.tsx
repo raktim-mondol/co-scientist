@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput } from "../../ink.js";
 
 interface BudgetModalProps {
   currentBudget: number;
@@ -28,15 +28,15 @@ export function BudgetModal({ currentBudget, onConfirm, onCancel }: BudgetModalP
   });
 
   return (
-    <Box flexDirection="column" borderStyle="double" borderColor="magenta" paddingX={1}>
-      <Text color="magenta" bold>SET TOKEN BUDGET</Text>
-      <Text color="gray">
-        Current: <Text color="white">{currentBudget.toLocaleString()}</Text> tokens
+    <Box flexDirection="column" borderStyle="round" borderColor="suggestion" paddingX={1}>
+      <Text color="suggestion" bold>SET TOKEN BUDGET</Text>
+      <Text dimColor>
+        Current: <Text color="text">{currentBudget.toLocaleString()}</Text> tokens
       </Text>
-      <Text color="white">
+      <Text color="text">
         New: {value || "_"}
       </Text>
-      <Text color="gray">[enter] confirm   [esc] cancel</Text>
+      <Text dimColor>[enter] confirm   [esc] cancel</Text>
     </Box>
   );
 }

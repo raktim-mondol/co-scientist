@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput } from "../../ink.js";
 import type { AppContext } from "../CommandRouter.js";
 
 interface OverviewProps {
@@ -22,7 +22,7 @@ export function Overview({ appContext, focus }: OverviewProps) {
   if (!session) {
     return (
       <Box paddingX={1} paddingY={1}>
-        <Text color="gray">No session loaded.</Text>
+        <Text dimColor>No session loaded.</Text>
       </Box>
     );
   }
@@ -34,8 +34,8 @@ export function Overview({ appContext, focus }: OverviewProps) {
   if (!hasContent) {
     return (
       <Box flexDirection="column" paddingX={1} paddingY={1}>
-        <Text color="yellow">Session is still running — overview will be available when complete.</Text>
-        <Text color="gray">Status: {session.status}</Text>
+        <Text color="warning">Session is still running — overview will be available when complete.</Text>
+        <Text dimColor>Status: {session.status}</Text>
       </Box>
     );
   }
@@ -46,32 +46,32 @@ export function Overview({ appContext, focus }: OverviewProps) {
 
   return (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
-      <Text color="cyan" bold>Research Overview</Text>
-      <Text color="gray">Status: {session.status}</Text>
+      <Text color="claude" bold>Research Overview</Text>
+      <Text dimColor>Status: {session.status}</Text>
 
       {overviewLines.length > 0 && (
         <Box flexDirection="column" marginTop={1}>
-          <Text color="white" bold>Summary</Text>
+          <Text color="text" bold>Summary</Text>
           {overviewLines.slice(0, 20).map((line, i) => (
-            <Text key={i} color="white">{line}</Text>
+            <Text key={i} color="text">{line}</Text>
           ))}
           {overviewLines.length > 20 && (
-            <Text color="gray">... {overviewLines.length - 20} more lines</Text>
+            <Text dimColor>... {overviewLines.length - 20} more lines</Text>
           )}
         </Box>
       )}
 
       {critiqueLines.length > 0 && (
         <Box flexDirection="column" marginTop={1}>
-          <Text color="yellow" bold>Meta-Review Critique</Text>
+          <Text color="warning" bold>Meta-Review Critique</Text>
           {critiqueLines.slice(0, 15).map((line, i) => (
-            <Text key={i} color="white">{line}</Text>
+            <Text key={i} color="text">{line}</Text>
           ))}
         </Box>
       )}
 
       <Box marginTop={1}>
-        <Text color="gray">[/] return to input</Text>
+        <Text dimColor>[/] return to input</Text>
       </Box>
     </Box>
   );

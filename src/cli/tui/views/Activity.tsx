@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput } from "../../ink.js";
 import type { AppContext } from "../CommandRouter.js";
 
 interface ActivityProps {
@@ -10,19 +10,19 @@ interface ActivityProps {
 const MAX_DISPLAY = 30;
 
 const TYPE_COLORS: Record<string, string> = {
-  llm_call: "blue",
-  search: "green",
-  tool_call: "magenta",
-  generation: "cyan",
-  reflection: "yellow",
-  ranking: "yellow",
-  evolution: "magenta",
-  meta_review: "white",
-  experiment_design: "green",
-  proximity: "blue",
-  knowledge_graph: "cyan",
-  session_lifecycle: "gray",
-  report: "white",
+  llm_call: "permission",
+  search: "success",
+  tool_call: "suggestion",
+  generation: "claude",
+  reflection: "warning",
+  ranking: "warning",
+  evolution: "suggestion",
+  meta_review: "text",
+  experiment_design: "success",
+  proximity: "permission",
+  knowledge_graph: "claude",
+  session_lifecycle: "inactive",
+  report: "text",
 };
 
 /**
@@ -51,7 +51,7 @@ export function Activity({ appContext, focus }: ActivityProps) {
   if (entries.length === 0) {
     return (
       <Box paddingX={1} paddingY={1}>
-        <Text color="gray">No activity recorded for this session.</Text>
+        <Text dimColor>No activity recorded for this session.</Text>
       </Box>
     );
   }
@@ -60,32 +60,32 @@ export function Activity({ appContext, focus }: ActivityProps) {
 
   return (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
-      <Text color="cyan" bold>
+      <Text color="claude" bold>
         Activity Log ({entries.length} entries, showing {scroll + 1}-{Math.min(scroll + MAX_DISPLAY, entries.length)})
       </Text>
       {maxScroll > 0 && (
-        <Text color="gray">Scroll: ▲▼ arrows (offset {scroll}/{maxScroll})</Text>
+        <Text dimColor>Scroll: ▲▼ arrows (offset {scroll}/{maxScroll})</Text>
       )}
 
       {visible.map((e) => {
-        const color = TYPE_COLORS[e.type] ?? "gray";
+        const color = TYPE_COLORS[e.type] ?? "inactive";
         const tokens =
           e.tokensIn !== null || e.tokensOut !== null
             ? ` [${e.tokensIn ?? 0}↑ ${e.tokensOut ?? 0}↓]`
             : "";
         return (
           <Box key={e.id}>
-            <Text color="gray">[{e.createdAt.toISOString().slice(11, 19)}] </Text>
+            <Text dimColor>[{e.createdAt.toISOString().slice(11, 19)}] </Text>
             <Text color={color}>{e.agent.padEnd(14)}</Text>
-            <Text color="gray"> {e.type.padEnd(18)}</Text>
-            <Text color="white">{e.message.slice(0, 60)}</Text>
-            <Text color="gray">{tokens}</Text>
+            <Text dimColor> {e.type.padEnd(18)}</Text>
+            <Text color="text">{e.message.slice(0, 60)}</Text>
+            <Text dimColor>{tokens}</Text>
           </Box>
         );
       })}
 
       <Box marginTop={1}>
-        <Text color="gray">[▲▼] scroll  [/] return to input</Text>
+        <Text dimColor>[▲▼] scroll  [/] return to input</Text>
       </Box>
     </Box>
   );

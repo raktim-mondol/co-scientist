@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput } from "../../ink.js";
 
 interface RunModalProps {
   onConfirm: (goal: string, name?: string) => void;
@@ -50,15 +50,15 @@ export function RunModal({ onConfirm, onCancel }: RunModalProps) {
   });
 
   return (
-    <Box flexDirection="column" borderStyle="double" borderColor="cyan" paddingX={1}>
-      <Text color="cyan" bold>START NEW SESSION</Text>
-      <Text color={field === "goal" ? "white" : "gray"}>
+    <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
+      <Text color="claude" bold>START NEW SESSION</Text>
+      <Text dimColor={field !== "goal"}>
         {field === "goal" ? "▶" : " "} Goal:     {goal || "_"}
       </Text>
-      <Text color={field === "name" ? "white" : "gray"}>
+      <Text dimColor={field !== "name"}>
         {field === "name" ? "▶" : " "} Name:     {name || "(optional)"}
       </Text>
-      <Text color="gray">[tab] switch field   [enter] next/confirm   [esc] cancel</Text>
+      <Text dimColor>[tab] switch field   [enter] next/confirm   [esc] cancel</Text>
     </Box>
   );
 }

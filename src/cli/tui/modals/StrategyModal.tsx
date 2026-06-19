@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput } from "../../ink.js";
 
 interface StrategyModalProps {
   weights: Record<string, number>;
@@ -25,20 +25,20 @@ export function StrategyModal({ weights, onCancel }: StrategyModalProps) {
   });
 
   return (
-    <Box flexDirection="column" borderStyle="double" borderColor="blue" paddingX={1}>
-      <Text color="blue" bold>TASK SAMPLING WEIGHTS</Text>
+    <Box flexDirection="column" borderStyle="round" borderColor="permission" paddingX={1}>
+      <Text color="permission" bold>TASK SAMPLING WEIGHTS</Text>
       {Object.entries(TASK_LABELS).map(([key, label]) => {
         const pct = ((weights[key] ?? 0) * 100).toFixed(0);
         return (
           <Box key={key}>
-            <Text color="gray">
+            <Text dimColor>
               {label.padEnd(26)}
             </Text>
-            <Text color="white">{pct}%</Text>
+            <Text color="text">{pct}%</Text>
           </Box>
         );
       })}
-      <Text color="gray">[esc/enter] close</Text>
+      <Text dimColor>[esc/enter] close</Text>
     </Box>
   );
 }

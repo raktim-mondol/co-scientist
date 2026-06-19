@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Text } from "ink";
+import { Box, Text } from "../ink.js";
 import { Spinner } from "./Spinner.js";
 import type { ProgressStats } from "./useSessionData.js";
 
@@ -37,7 +37,7 @@ export function Header({ sessionState, sessionId, goal, stats, startTime, now, b
   if (!sessionState) {
     return (
       <Box paddingX={1} paddingY={1}>
-        <Text color="cyan" bold>🧬 co-scientist</Text>
+        <Text color="claude" bold>🧬 co-scientist</Text>
       </Box>
     );
   }
@@ -52,32 +52,32 @@ export function Header({ sessionState, sessionId, goal, stats, startTime, now, b
   const isPaused = sessionState === "paused";
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
+    <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
       <Box justifyContent="space-between">
-        <Text color="cyan" bold>🧬 co-scientist</Text>
-        {sessionId && <Text color="gray">sess:{sessionId.slice(0, 8)}</Text>}
+        <Text color="claude" bold>🧬 co-scientist</Text>
+        {sessionId && <Text dimColor>sess:{sessionId.slice(0, 8)}</Text>}
         {isPaused ? (
-          <Text color="yellow">⏸ PAUSED</Text>
+          <Text color="warning">⏸ PAUSED</Text>
         ) : (
           <Box>
             <Spinner />
-            <Text color="green"> running</Text>
+            <Text color="success"> running</Text>
           </Box>
         )}
-        <Text color="gray">{timeStr}</Text>
+        <Text dimColor>{timeStr}</Text>
       </Box>
       {goal && (
-        <Text color="white">Goal: {goal.length > 70 ? goal.slice(0, 67) + "..." : goal}</Text>
+        <Text color="text">Goal: {goal.length > 70 ? goal.slice(0, 67) + "..." : goal}</Text>
       )}
       <Box>
-        <Text color="gray">
+        <Text dimColor>
           Tokens {gauge(pct)} {formatTokens(tokens)}
           {budgetTokens > 0 ? `/${formatTokens(budgetTokens)} (${pct}%)` : ""}
         </Text>
         <Text>{"   "}</Text>
-        <Text color="yellow">Hyp:{hyp}</Text>
+        <Text color="warning">Hyp:{hyp}</Text>
         <Text>{"  "}</Text>
-        <Text color="blue">AvgElo:{avgElo}</Text>
+        <Text color="permission">AvgElo:{avgElo}</Text>
       </Box>
     </Box>
   );

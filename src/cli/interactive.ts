@@ -18,7 +18,7 @@
  *   /quit            — Exit
  */
 
-import chalk from "chalk";
+import { color } from "./design-system/color.js";
 import { printBanner } from "./banner.js";
 import { runMigrations } from "../db/migrate.js";
 import { closeDb } from "../db/index.js";
@@ -109,7 +109,7 @@ function drawFixedBox(): void {
   // Row h-2: top line
   rawWrite(`\x1B[${h - 2};1H`);
   rawWrite("\x1B[2K"); // clear line
-  rawWrite(chalk.gray(HLINE));
+  rawWrite(color("inactive")(HLINE));
 
   // Row h-1: input line (will be updated by redrawInput)
   rawWrite(`\x1B[${inputRow};1H`);
@@ -119,7 +119,7 @@ function drawFixedBox(): void {
   // Row h: bottom line
   rawWrite(`\x1B[${h};1H`);
   rawWrite("\x1B[2K");
-  rawWrite(chalk.gray(HLINE));
+  rawWrite(color("inactive")(HLINE));
 
   // Position cursor on the input line
   positionCursor();
@@ -128,7 +128,7 @@ function drawFixedBox(): void {
 // ─── Prompt ──────────────────────────────────────────────────────────────────
 
 function buildPrompt(): string {
-  return chalk.gray(" ") + chalk.green(">") + chalk.white(" ");
+  return color("inactive")(" ") + color("success")(">") + color("text")(" ");
 }
 
 /**
@@ -231,7 +231,7 @@ async function startSession(goal: string | ResearchGoal, name?: string): Promise
   try {
     sessionId = await supervisor.initSession(researchGoal, sessionName);
   } catch (err) {
-    writeOutput(chalk.red(`  Failed to start: ${(err as Error).message}`));
+    writeOutput(color("error")(`  Failed to start: ${(err as Error).message}`));
     return;
   }
 
@@ -259,18 +259,18 @@ async function startSession(goal: string | ResearchGoal, name?: string): Promise
       // Show final results
       const memory = getContextStore();
       const topHyps = memory.getTopHypotheses(sessionId, 5);
-      writeOutput(chalk.bold.cyan(`\nTop ${topHyps.length} Hypotheses:`));
+      writeOutput(color("claude").bold(`\nTop ${topHyps.length} Hypotheses:`));
       topHyps.forEach((h, i) => {
-        writeOutput(chalk.yellow(`  ${i + 1}. [${Math.round(h.eloRating)}] `) + chalk.white(h.title));
+        writeOutput(color("warning")(`  ${i + 1}. [${Math.round(h.eloRating)}] `) + color("text")(h.title));
       });
-      writeOutput(chalk.cyan(`\nResults:  co-scientist results ${sessionId}`));
-      writeOutput(chalk.cyan(`Overview: co-scientist overview ${sessionId}`));
-      writeOutput(chalk.cyan(`Export:   co-scientist export ${sessionId}`));
+      writeOutput(color("claude")(`\nResults:  co-scientist results ${sessionId}`));
+      writeOutput(color("claude")(`Overview: co-scientist overview ${sessionId}`));
+      writeOutput(color("claude")(`Export:   co-scientist export ${sessionId}`));
     }
     // Always close slash interface after supervisor completes
     slash.close();
   }).catch((err) => {
-    writeOutput(chalk.red(`  Session error: ${(err as Error).message}`));
+    writeOutput(color("error")(`  Session error: ${(err as Error).message}`));
     sessionCompleted = true;
     slash.close();
   });
@@ -294,7 +294,7 @@ async function handleCommand(raw: string): Promise<void> {
   if (!input) return;
 
   if (!input.startsWith("/")) {
-    writeOutput(chalk.gray("  Type /help for commands."));
+    writeOutput(color("inactive")("  Type /help for commands."));
     return;
   }
 
@@ -304,27 +304,27 @@ async function handleCommand(raw: string): Promise<void> {
 
   switch (cmd) {
     case "help":
-      writeOutput(chalk.cyan.bold("Commands:"));
-      writeOutput(chalk.white("  /run <goal>") + chalk.gray("       Start a new research session"));
-      writeOutput(chalk.white("  /resume <id>") + chalk.gray("      Resume a paused session"));
-      writeOutput(chalk.white("  /list") + chalk.gray("              List all sessions"));
-      writeOutput(chalk.white("  /results <id>") + chalk.gray("     Show ranked hypotheses"));
-      writeOutput(chalk.white("  /overview <id>") + chalk.gray("    Show research overview"));
-      writeOutput(chalk.white("  /export <id>") + chalk.gray("      Export results to file"));
-      writeOutput(chalk.white("  /delete <id>") + chalk.gray("      Delete a session"));
-      writeOutput(chalk.white("  /design <id>") + chalk.gray("      Generate experimental protocol"));
-      writeOutput(chalk.white("  /graph <id>") + chalk.gray("       Show knowledge graph"));
-      writeOutput(chalk.white("  /safety <id>") + chalk.gray("      Inspect quarantined hypotheses"));
-      writeOutput(chalk.white("  /activity <id>") + chalk.gray("   Show activity log"));
-      writeOutput(chalk.white("  /clear") + chalk.gray("            Clear screen"));
-      writeOutput(chalk.white("  /quit") + chalk.gray("              Exit co-scientist"));
-      writeOutput(chalk.gray("  Up/Down arrows for command history."));
+      writeOutput(color("claude").bold("Commands:"));
+      writeOutput(color("text")("  /run <goal>") + color("inactive")("       Start a new research session"));
+      writeOutput(color("text")("  /resume <id>") + color("inactive")("      Resume a paused session"));
+      writeOutput(color("text")("  /list") + color("inactive")("              List all sessions"));
+      writeOutput(color("text")("  /results <id>") + color("inactive")("     Show ranked hypotheses"));
+      writeOutput(color("text")("  /overview <id>") + color("inactive")("    Show research overview"));
+      writeOutput(color("text")("  /export <id>") + color("inactive")("      Export results to file"));
+      writeOutput(color("text")("  /delete <id>") + color("inactive")("      Delete a session"));
+      writeOutput(color("text")("  /design <id>") + color("inactive")("      Generate experimental protocol"));
+      writeOutput(color("text")("  /graph <id>") + color("inactive")("       Show knowledge graph"));
+      writeOutput(color("text")("  /safety <id>") + color("inactive")("      Inspect quarantined hypotheses"));
+      writeOutput(color("text")("  /activity <id>") + color("inactive")("   Show activity log"));
+      writeOutput(color("text")("  /clear") + color("inactive")("            Clear screen"));
+      writeOutput(color("text")("  /quit") + color("inactive")("              Exit co-scientist"));
+      writeOutput(color("inactive")("  Up/Down arrows for command history."));
       break;
 
     case "run": {
       if (!args) {
-        writeOutput(chalk.red("  Usage: /run <research goal>"));
-        writeOutput(chalk.gray("  Example: /run What are effective ML techniques for protein folding?"));
+        writeOutput(color("error")("  Usage: /run <research goal>"));
+        writeOutput(color("inactive")("  Example: /run What are effective ML techniques for protein folding?"));
         break;
       }
       // Reset config in case env vars changed
@@ -333,13 +333,13 @@ async function handleCommand(raw: string): Promise<void> {
       seedRng(seed);
       await startSession(args);
       // After session ends, show the REPL prompt again
-      writeOutput(chalk.gray("\n  Session ended. Type /help for commands."));
+      writeOutput(color("inactive")("\n  Session ended. Type /help for commands."));
       break;
     }
 
     case "resume": {
       if (!args) {
-        writeOutput(chalk.red("  Usage: /resume <sessionId>"));
+        writeOutput(color("error")("  Usage: /resume <sessionId>"));
         break;
       }
       resetConfig();
@@ -347,21 +347,21 @@ async function handleCommand(raw: string): Promise<void> {
       const memory = getContextStore();
       const session = memory.resolveSession(args);
       if (!session) {
-        writeOutput(chalk.red(`  Session not found: ${args}`));
+        writeOutput(color("error")(`  Session not found: ${args}`));
         break;
       }
       if (session.status !== "paused") {
-        writeOutput(chalk.yellow(`  Session "${session.name}" is ${session.status}, not paused.`));
+        writeOutput(color("warning")(`  Session "${session.name}" is ${session.status}, not paused.`));
         break;
       }
       const goal = memory.getResearchGoal(session.id);
       if (!goal) {
-        writeOutput(chalk.red(`  Could not restore research goal for session ${session.id.slice(0, 8)}.`));
+        writeOutput(color("error")(`  Could not restore research goal for session ${session.id.slice(0, 8)}.`));
         break;
       }
-      writeOutput(chalk.green(`  Resuming: ${session.name} (${session.id.slice(0, 8)})`));
+      writeOutput(color("success")(`  Resuming: ${session.name} (${session.id.slice(0, 8)})`));
       await startSession(goal, session.name);
-      writeOutput(chalk.gray("\n  Session ended. Type /help for commands."));
+      writeOutput(color("inactive")("\n  Session ended. Type /help for commands."));
       break;
     }
 
@@ -370,23 +370,23 @@ async function handleCommand(raw: string): Promise<void> {
       const memory = getContextStore();
       const sessions = memory.listSessions();
       if (sessions.length === 0) {
-        writeOutput(chalk.gray("  No sessions found."));
+        writeOutput(color("inactive")("  No sessions found."));
         break;
       }
-      writeOutput(chalk.cyan.bold(`Sessions (${sessions.length}):`));
+      writeOutput(color("claude").bold(`Sessions (${sessions.length}):`));
       for (const s of sessions) {
-        const statusColor = s.status === "completed" ? chalk.green
-          : s.status === "running" ? chalk.yellow
-          : s.status === "paused" ? chalk.blue
-          : chalk.gray;
+        const statusColor = s.status === "completed" ? color("success")
+          : s.status === "running" ? color("warning")
+          : s.status === "paused" ? color("permission")
+          : color("inactive");
         const status = statusColor(s.status.padEnd(12));
         const hyps = s.stats?.totalHypotheses ?? 0;
         const topElo = s.stats?.topEloRating ?? 0;
         writeOutput(
-          chalk.gray(`  ${s.id.slice(0, 8)}  `) +
+          color("inactive")(`  ${s.id.slice(0, 8)}  `) +
           status +
-          chalk.white(`  ${s.name}`) +
-          chalk.gray(`  Hyp:${hyps} Elo:${Math.round(topElo)}`)
+          color("text")(`  ${s.name}`) +
+          color("inactive")(`  Hyp:${hyps} Elo:${Math.round(topElo)}`)
         );
       }
       break;
@@ -394,89 +394,89 @@ async function handleCommand(raw: string): Promise<void> {
 
     case "results": {
       if (!args) {
-        writeOutput(chalk.red("  Usage: /results <sessionId>"));
+        writeOutput(color("error")("  Usage: /results <sessionId>"));
         break;
       }
       await runMigrations();
       const memory = getContextStore();
       const session = memory.resolveSession(args);
       if (!session) {
-        writeOutput(chalk.red(`  Session not found: ${args}`));
+        writeOutput(color("error")(`  Session not found: ${args}`));
         break;
       }
       const hyps = memory.getTopHypotheses(session.id, 10);
       if (hyps.length === 0) {
-        writeOutput(chalk.gray("  No hypotheses for this session."));
+        writeOutput(color("inactive")("  No hypotheses for this session."));
         break;
       }
-      writeOutput(chalk.cyan.bold(`Results: ${session.name}`));
+      writeOutput(color("claude").bold(`Results: ${session.name}`));
       for (let i = 0; i < hyps.length; i++) {
         const h = hyps[i];
         writeOutput(
-          chalk.yellow(`  ${i + 1}. [${Math.round(h.eloRating)}] `) +
-          chalk.white(h.title.slice(0, 70))
+          color("warning")(`  ${i + 1}. [${Math.round(h.eloRating)}] `) +
+          color("text")(h.title.slice(0, 70))
         );
       }
-      writeOutput(chalk.gray(`\n  Full: co-scientist results ${session.id}`));
+      writeOutput(color("inactive")(`\n  Full: co-scientist results ${session.id}`));
       break;
     }
 
     case "overview": {
       if (!args) {
-        writeOutput(chalk.red("  Usage: /overview <sessionId>"));
+        writeOutput(color("error")("  Usage: /overview <sessionId>"));
         break;
       }
       await runMigrations();
       const memory = getContextStore();
       const session = memory.resolveSession(args);
       if (!session) {
-        writeOutput(chalk.red(`  Session not found: ${args}`));
+        writeOutput(color("error")(`  Session not found: ${args}`));
         break;
       }
       if (!session.researchOverview) {
-        writeOutput(chalk.gray("  No overview yet (session may still be running)."));
+        writeOutput(color("inactive")("  No overview yet (session may still be running)."));
         break;
       }
-      writeOutput(chalk.cyan.bold(`Overview: ${session.name}`));
+      writeOutput(color("claude").bold(`Overview: ${session.name}`));
       writeOutput(session.researchOverview.slice(0, 2000));
       if (session.researchOverview.length > 2000) {
-        writeOutput(chalk.gray("  ... (truncated)"));
+        writeOutput(color("inactive")("  ... (truncated)"));
       }
-      writeOutput(chalk.gray(`\n  Full: co-scientist overview ${session.id}`));
+      writeOutput(color("inactive")(`\n  Full: co-scientist overview ${session.id}`));
       break;
     }
 
     case "delete": {
       if (!args) {
-        writeOutput(chalk.red("  Usage: /delete <sessionId>"));
+        writeOutput(color("error")("  Usage: /delete <sessionId>"));
         break;
       }
       await runMigrations();
       const memory = getContextStore();
       const session = memory.resolveSession(args);
       if (!session) {
-        writeOutput(chalk.red(`  Session not found: ${args}`));
+        writeOutput(color("error")(`  Session not found: ${args}`));
         break;
       }
       try {
         memory.deleteSession(session.id);
-        writeOutput(chalk.green(`  Deleted: ${session.name} (${session.id.slice(0, 8)})`));
+        writeOutput(color("success")(`  Deleted: ${session.name} (${session.id.slice(0, 8)})`));
       } catch (err) {
-        writeOutput(chalk.red(`  Delete failed: ${(err as Error).message}`));
+        writeOutput(color("error")(`  Delete failed: ${(err as Error).message}`));
       }
       break;
     }
 
     case "export": {
       if (!args) {
-        writeOutput(chalk.red("  Usage: /export <sessionId>"));
+        writeOutput(color("error")("  Usage: /export <sessionId>"));
         break;
       }
       await runMigrations();
       const memory = getContextStore();
       const session = memory.resolveSession(args);
       if (!session) {
-        writeOutput(chalk.red(`  Session not found: ${args}`));
+        writeOutput(color("error")(`  Session not found: ${args}`));
         break;
       }
       const { exportCommand } = await import("./commands/export.js");
@@ -486,14 +486,14 @@ async function handleCommand(raw: string): Promise<void> {
 
     case "design": {
       if (!args) {
-        writeOutput(chalk.red("  Usage: /design <sessionId>"));
+        writeOutput(color("error")("  Usage: /design <sessionId>"));
         break;
       }
       await runMigrations();
       const memory = getContextStore();
       const session = memory.resolveSession(args);
       if (!session) {
-        writeOutput(chalk.red(`  Session not found: ${args}`));
+        writeOutput(color("error")(`  Session not found: ${args}`));
         break;
       }
       const { designCommand } = await import("./commands/design.js");
@@ -503,14 +503,14 @@ async function handleCommand(raw: string): Promise<void> {
 
     case "graph": {
       if (!args) {
-        writeOutput(chalk.red("  Usage: /graph <sessionId>"));
+        writeOutput(color("error")("  Usage: /graph <sessionId>"));
         break;
       }
       await runMigrations();
       const memory = getContextStore();
       const session = memory.resolveSession(args);
       if (!session) {
-        writeOutput(chalk.red(`  Session not found: ${args}`));
+        writeOutput(color("error")(`  Session not found: ${args}`));
         break;
       }
       const { graphCommand } = await import("./commands/graph.js");
@@ -520,14 +520,14 @@ async function handleCommand(raw: string): Promise<void> {
 
     case "safety": {
       if (!args) {
-        writeOutput(chalk.red("  Usage: /safety <sessionId>"));
+        writeOutput(color("error")("  Usage: /safety <sessionId>"));
         break;
       }
       await runMigrations();
       const memory = getContextStore();
       const session = memory.resolveSession(args);
       if (!session) {
-        writeOutput(chalk.red(`  Session not found: ${args}`));
+        writeOutput(color("error")(`  Session not found: ${args}`));
         break;
       }
       const { safetyCommand } = await import("./commands/safety.js");
@@ -537,14 +537,14 @@ async function handleCommand(raw: string): Promise<void> {
 
     case "activity": {
       if (!args) {
-        writeOutput(chalk.red("  Usage: /activity <sessionId>"));
+        writeOutput(color("error")("  Usage: /activity <sessionId>"));
         break;
       }
       await runMigrations();
       const memory = getContextStore();
       const session = memory.resolveSession(args);
       if (!session) {
-        writeOutput(chalk.red(`  Session not found: ${args}`));
+        writeOutput(color("error")(`  Session not found: ${args}`));
         break;
       }
       const { activityCommand } = await import("./commands/activity.js");
@@ -569,8 +569,8 @@ async function handleCommand(raw: string): Promise<void> {
     }
 
     default:
-      writeOutput(chalk.red(`  Unknown command: /${cmd}`));
-      writeOutput(chalk.gray("  Type /help for commands."));
+      writeOutput(color("error")(`  Unknown command: /${cmd}`));
+      writeOutput(color("inactive")("  Type /help for commands."));
   }
 }
 
@@ -579,12 +579,12 @@ async function handleCommand(raw: string): Promise<void> {
 export async function startInteractive(): Promise<void> {
   printBanner();
 
-  console.log(chalk.cyan.bold("  Welcome to Co-Scientist"));
-  console.log(chalk.gray("  Multi-agent AI for scientific discovery"));
-  console.log(chalk.gray(""));
-  console.log(chalk.gray("  Type /run <goal> to start a research session"));
-  console.log(chalk.gray("  Type /help for all commands"));
-  console.log(chalk.gray("  Up/Down arrows for command history"));
+  console.log(color("claude").bold("  Welcome to Co-Scientist"));
+  console.log(color("inactive")("  Multi-agent AI for scientific discovery"));
+  console.log(color("inactive")(""));
+  console.log(color("inactive")("  Type /run <goal> to start a research session"));
+  console.log(color("inactive")("  Type /help for all commands"));
+  console.log(color("inactive")("  Up/Down arrows for command history"));
   console.log("");
 
   // Intercept stdout for input preservation
@@ -626,7 +626,7 @@ export async function startInteractive(): Promise<void> {
         inputBuffer = "";
         cursorPos = 0;
         _historyIdx = -1;
-        writeOutput(chalk.gray("^C"));
+        writeOutput(color("inactive")("^C"));
       } else {
         _closed = true;
       }
@@ -723,6 +723,6 @@ export async function startInteractive(): Promise<void> {
   // Reset scroll region to full screen
   rawWrite("\x1B[r");
   process.stdout.write = _originalStdoutWrite;
-  console.log(chalk.gray("Goodbye!"));
+  console.log(color("inactive")("Goodbye!"));
   closeDb();
 }

@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput } from "../../ink.js";
 import type { Hypothesis } from "../../../models/hypothesis.js";
 import type { AppContext } from "../CommandRouter.js";
 import { Leaderboard } from "../Leaderboard.js";
@@ -49,7 +49,7 @@ export function Dashboard({
     <>
       {leaderboard.length === 0 ? (
         <Box paddingY={2} paddingX={4}>
-          <Text color="gray">No hypotheses yet — waiting for generation...</Text>
+          <Text dimColor>No hypotheses yet — waiting for generation...</Text>
         </Box>
       ) : (
         <Leaderboard hypotheses={leaderboard} selectedIndex={selected} />

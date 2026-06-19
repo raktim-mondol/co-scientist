@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput } from "../../ink.js";
 import type { AppContext } from "../CommandRouter.js";
 
 interface ThinkingProps {
@@ -36,7 +36,7 @@ export function Thinking({ appContext, focus }: ThinkingProps) {
   if (traces.length === 0) {
     return (
       <Box paddingX={1} paddingY={1}>
-        <Text color="gray">No thinking traces recorded for this session.</Text>
+        <Text dimColor>No thinking traces recorded for this session.</Text>
       </Box>
     );
   }
@@ -45,24 +45,24 @@ export function Thinking({ appContext, focus }: ThinkingProps) {
 
   return (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
-      <Text color="cyan" bold>
+      <Text color="claude" bold>
         Thinking Traces ({traces.length} total, showing {scroll + 1}-{Math.min(scroll + MAX_DISPLAY, traces.length)})
       </Text>
       {maxScroll > 0 && (
-        <Text color="gray">Scroll: ▲▼ arrows (offset {scroll}/{maxScroll})</Text>
+        <Text dimColor>Scroll: ▲▼ arrows (offset {scroll}/{maxScroll})</Text>
       )}
 
       {visible.map((t) => (
         <Box key={t.id} flexDirection="column" marginTop={1}>
-          <Text color="yellow">
+          <Text color="warning">
             [{t.createdAt.toISOString().slice(11, 19)}] {t.agent} ({t.tokens.toLocaleString()} tok)
           </Text>
-          <Text color="white">{t.reasoning.slice(0, 200)}{t.reasoning.length > 200 ? "…" : ""}</Text>
+          <Text color="text">{t.reasoning.slice(0, 200)}{t.reasoning.length > 200 ? "…" : ""}</Text>
         </Box>
       ))}
 
       <Box marginTop={1}>
-        <Text color="gray">[▲▼] scroll  [/] return to input</Text>
+        <Text dimColor>[▲▼] scroll  [/] return to input</Text>
       </Box>
     </Box>
   );

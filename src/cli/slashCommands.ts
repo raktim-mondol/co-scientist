@@ -14,7 +14,7 @@
  *   - Terminal-width-aware line clearing
  */
 
-import chalk from "chalk";
+import { color } from "./design-system/color.js";
 import type { EventEmitter } from "events";
 import type { ContextStore } from "../memory/contextStore.js";
 import type { SupervisorAgent } from "../agents/supervisor.js";
@@ -144,15 +144,15 @@ const BOX = { tl: "\u256D", tr: "\u256E", bl: "\u256F", br: "\u2570", h: "\u2500
 function boxLine(content: string, width: number): string {
   const stripped = stripAnsi(content);
   const pad = Math.max(0, width - 2 - stripped.length);
-  return chalk.gray(BOX.v) + content + " ".repeat(pad) + chalk.gray(BOX.v);
+  return color("inactive")(BOX.v) + content + " ".repeat(pad) + color("inactive")(BOX.v);
 }
 
 function boxTop(width: number): string {
-  return chalk.gray(BOX.tl + BOX.h.repeat(width - 2) + BOX.tr);
+  return color("inactive")(BOX.tl + BOX.h.repeat(width - 2) + BOX.tr);
 }
 
 function boxBottom(width: number): string {
-  return chalk.gray(BOX.bl + BOX.h.repeat(width - 2) + BOX.br);
+  return color("inactive")(BOX.bl + BOX.h.repeat(width - 2) + BOX.br);
 }
 
 /** Wrap text to fit within `width` columns. Returns array of lines. */
@@ -178,8 +178,8 @@ function writeBox(title: string, bodyLines: string[]): void {
   const inner = width - 2;
   writeOutput(boxTop(width));
   if (title) {
-    writeOutput(boxLine(chalk.bold(title), width));
-    writeOutput(boxLine(chalk.gray(BOX.h.repeat(inner)), width));
+    writeOutput(boxLine(color("text").bold(title), width));
+    writeOutput(boxLine(color("inactive")(BOX.h.repeat(inner)), width));
   }
   for (const line of bodyLines) {
     // Wrap long lines
@@ -205,7 +205,7 @@ function buildStatusBar(): string {
   if (!_ctx) return "";
   const w = termWidth();
   const paused = _ctx.supervisor.isPaused();
-  const state = paused ? chalk.bgYellow.black(" PAUSED ") : chalk.bgGreen.black(" RUN ");
+  const state = paused ? color("inverseText").bgKeyword("yellow")(" PAUSED ") : color("inverseText").bgKeyword("green")(" RUN ");
   const elapsed = Math.round((Date.now() - _ctx.startTime) / 1000);
   const time = `${Math.floor(elapsed / 60)}m${String(elapsed % 60).padStart(2, "0")}s`;
 
@@ -219,12 +219,12 @@ function buildStatusBar(): string {
   const hyps = _stats?.totalHypotheses ?? 0;
   const round = _stats?.currentRound ?? 0;
 
-  const left = ` ${state} ${chalk.gray(time)} `;
+  const left = ` ${state} ${color("inactive")(time)} `;
   const right = ` hyp:${hyps} rnd:${round} tok:${tokStr} `;
   const mid = " ".repeat(Math.max(0, w - left.length - right.length - stripAnsi(left).length + left.length - stripAnsi(left).length));
   // Simple approach: pad with spaces
-  const bar = left + chalk.gray(" ".repeat(Math.max(1, w - stripAnsi(left + right).length))) + right;
-  return chalk.bgHex("#1a1a2e")(bar.slice(0, w));
+  const bar = left + color("inactive")(" ".repeat(Math.max(1, w - stripAnsi(left + right).length))) + right;
+  return color("text").bgHex("#1a1a2e")(bar.slice(0, w));
 }
 
 /** Move cursor to row 0 and redraw the status bar. */
@@ -254,11 +254,11 @@ function stopStatusBar(): void {
 // ─── Prompt & Input Rendering ────────────────────────────────────────────────
 
 function buildPrompt(): string {
-  if (_dispatching) return chalk.gray(" ") + chalk.gray("...") + chalk.white(" ");
-  if (!_ctx) return chalk.gray(" ") + chalk.green(">") + chalk.white(" ");
+  if (_dispatching) return color("inactive")(" ") + color("inactive")("...") + color("text")(" ");
+  if (!_ctx) return color("inactive")(" ") + color("success")(">") + color("text")(" ");
   const paused = _ctx.supervisor.isPaused();
-  const marker = paused ? chalk.yellow(">") : chalk.green(">");
-  return chalk.gray(" ") + marker + chalk.white(" ");
+  const marker = paused ? color("warning")(">") : color("success")(">");
+  return color("inactive")(" ") + marker + color("text")(" ");
 }
 
 /**
@@ -272,14 +272,14 @@ function highlightInput(): string {
     // Just a command name — color it based on whether it's valid
     const cmdName = inputBuffer.slice(1).toLowerCase();
     const valid = commands.some((c) => c.name === cmdName || c.name.startsWith(cmdName));
-    return valid ? chalk.cyan.bold(inputBuffer) : chalk.red(inputBuffer);
+    return valid ? color("claude").bold(inputBuffer) : color("error")(inputBuffer);
   }
   const cmd = inputBuffer.slice(0, spaceIdx);
   const args = inputBuffer.slice(spaceIdx);
   const cmdName = cmd.slice(1).toLowerCase();
   const valid = commands.some((c) => c.name === cmdName);
-  const cmdColor = valid ? chalk.cyan.bold : chalk.red;
-  return cmdColor(cmd) + chalk.white(args);
+  const cmdColor = valid ? color("claude").bold : color("error");
+  return cmdColor(cmd) + color("text")(args);
 }
 
 /** Build the hint line shown below input when a command is recognized. */
@@ -287,14 +287,14 @@ function buildHint(): string {
   if (!inputBuffer.startsWith("/") || inputBuffer.includes(" ")) return "";
   const cmdName = inputBuffer.slice(1).toLowerCase();
   const cmd = commands.find((c) => c.name === cmdName);
-  if (cmd) return chalk.gray(`  ${cmd.usage} — ${cmd.description}`);
+  if (cmd) return color("inactive")(`  ${cmd.usage} — ${cmd.description}`);
   // Partial match — show first match
   const partial = commands.filter((c) => c.name.startsWith(cmdName));
   if (partial.length === 1 && cmdName.length >= 2) {
-    return chalk.gray(`  ${partial[0].usage} — ${partial[0].description}`);
+    return color("inactive")(`  ${partial[0].usage} — ${partial[0].description}`);
   }
   if (partial.length > 1 && partial.length <= 4) {
-    return chalk.gray(`  ${partial.map((c) => "/" + c.name).join("  ")}`);
+    return color("inactive")(`  ${partial.map((c) => "/" + c.name).join("  ")}`);
   }
   return "";
 }
@@ -335,7 +335,7 @@ function drawFixedBox(): void {
   // Row h-2: top line
   rawWrite(`\x1B[${h - 2};1H`);
   rawWrite("\x1B[2K");
-  rawWrite(chalk.gray(HLINE));
+  rawWrite(color("inactive")(HLINE));
 
   // Row h-1: input line
   rawWrite(`\x1B[${inputRow};1H`);
@@ -345,7 +345,7 @@ function drawFixedBox(): void {
   // Row h: bottom line
   rawWrite(`\x1B[${h};1H`);
   rawWrite("\x1B[2K");
-  rawWrite(chalk.gray(HLINE));
+  rawWrite(color("inactive")(HLINE));
 
   // Position cursor
   positionCursor();
@@ -365,7 +365,7 @@ function redrawInput(): void {
   const hint = buildHint();
   rawWrite(`\x1B[${h};1H`);
   rawWrite("\x1B[2K");
-  rawWrite(hint || chalk.gray(HLINE));
+  rawWrite(hint || color("inactive")(HLINE));
 
   positionCursor();
 }
@@ -396,12 +396,12 @@ function showCompletionMenu(): void {
   const items = _completionMatches.slice(0, COMPLETION_MAX_ROWS);
   const lines = items.map((m, i) => {
     const cmd = commands.find((c) => "/" + c.name === m);
-    const desc = cmd ? chalk.gray(`  ${cmd.description}`) : "";
-    const sel = i === _completionIdx ? chalk.cyan.bold(`> ${m}`) : `  ${m}`;
+    const desc = cmd ? color("inactive")(`  ${cmd.description}`) : "";
+    const sel = i === _completionIdx ? color("claude").bold(`> ${m}`) : `  ${m}`;
     return sel + desc;
   });
   if (_completionMatches.length > COMPLETION_MAX_ROWS) {
-    lines.push(chalk.gray(`  ... and ${_completionMatches.length - COMPLETION_MAX_ROWS} more`));
+    lines.push(color("inactive")(`  ... and ${_completionMatches.length - COMPLETION_MAX_ROWS} more`));
   }
   writeOutput(lines.join("\n"));
 }
@@ -478,7 +478,7 @@ function pushHistory(cmd: string): void {
 function confirmPrompt(message: string): Promise<boolean> {
   return new Promise((resolve) => {
     _confirming = true;
-    writeOutput(chalk.yellow(`  ${message} [y/N]`));
+    writeOutput(color("warning")(`  ${message} [y/N]`));
     _confirmCallback = (ok: boolean) => {
       _confirming = false;
       _confirmCallback = null;
@@ -497,10 +497,10 @@ const commands: SlashCommand[] = [
     handler: () => {
       const lines: string[] = [];
       for (const cmd of commands) {
-        lines.push(`  ${chalk.cyan.bold(cmd.usage.padEnd(28))} ${chalk.gray(cmd.description)}`);
+        lines.push(`  ${color("claude").bold(cmd.usage.padEnd(28))} ${color("inactive")(cmd.description)}`);
       }
       lines.push("");
-      lines.push(chalk.gray("  Up/Down: history  Tab: autocomplete  Ctrl+C: cancel  Ctrl+D: quit"));
+      lines.push(color("inactive")("  Up/Down: history  Tab: autocomplete  Ctrl+C: cancel  Ctrl+D: quit"));
       writeBox("Available Commands", lines);
     },
   },
@@ -520,11 +520,11 @@ const commands: SlashCommand[] = [
       const avg = lb.length > 0 ? Math.round(lb.reduce((s, h) => s + h.eloRating, 0) / lb.length) : 0;
 
       writeBox("Session Status", [
-        `  ${chalk.bold("ID:")}      ${ctx.sessionId.slice(0, 8)}  ${paused ? chalk.yellow("PAUSED") : chalk.green("RUNNING")}`,
-        `  ${chalk.bold("Time:")}    ${timeStr}`,
-        `  ${chalk.bold("Tokens:")}  ${formatTokens(tokens)}${ctx.budgetTokens > 0 ? ` / ${formatTokens(ctx.budgetTokens)} (${pct}%)` : ""}`,
-        `  ${chalk.bold("Hyps:")}    ${lb.length}  (avg elo: ${avg})`,
-        `  ${chalk.bold("Activity:")} ${lastActivity || "starting..."}`,
+        `  ${color("text").bold("ID:")}      ${ctx.sessionId.slice(0, 8)}  ${paused ? color("warning")("PAUSED") : color("success")("RUNNING")}`,
+        `  ${color("text").bold("Time:")}    ${timeStr}`,
+        `  ${color("text").bold("Tokens:")}  ${formatTokens(tokens)}${ctx.budgetTokens > 0 ? ` / ${formatTokens(ctx.budgetTokens)} (${pct}%)` : ""}`,
+        `  ${color("text").bold("Hyps:")}    ${lb.length}  (avg elo: ${avg})`,
+        `  ${color("text").bold("Activity:")} ${lastActivity || "starting..."}`,
       ]);
     },
   },
@@ -536,12 +536,12 @@ const commands: SlashCommand[] = [
     handler: (args, ctx) => {
       const lb = getLeaderboard(ctx);
       if (lb.length === 0) {
-        writeOutput(chalk.gray("  (no hypotheses yet)"));
+        writeOutput(color("inactive")("  (no hypotheses yet)"));
         return;
       }
       const lines: string[] = [];
       lines.push(`  ${"#".padStart(3)}  ${"Elo".padStart(5)}  ${"St".padEnd(2)}  Hypothesis`);
-      lines.push(chalk.gray("  " + "-".repeat(Math.min(70, termWidth() - 4))));
+      lines.push(color("inactive")("  " + "-".repeat(Math.min(70, termWidth() - 4))));
       const maxTitle = Math.max(20, termWidth() - 22);
       for (let i = 0; i < lb.length; i++) {
         const h = lb[i];
@@ -550,9 +550,9 @@ const commands: SlashCommand[] = [
           : h.status === "rejected" ? "x"
           : h.status === "evolved" ? "*"
           : ".";
-        const col = h.status === "active" ? chalk.white
-          : h.status === "rejected" ? chalk.red.dim
-          : chalk.gray;
+        const col = h.status === "active" ? color("text")
+          : h.status === "rejected" ? color("error").dim
+          : color("inactive");
         const title = stripAnsi(h.title);
         const trunc = title.length > maxTitle ? title.slice(0, maxTitle - 3) + "..." : title;
         lines.push(col(`  ${String(i + 1).padStart(3)}  ${String(Math.round(h.eloRating)).padStart(5)}  ${glyph.padEnd(2)}  ${trunc}`));
@@ -568,22 +568,22 @@ const commands: SlashCommand[] = [
     handler: async (args, ctx) => {
       const raw = args.trim();
       if (!raw) {
-        writeOutput(chalk.red("  Usage: /kill <index|id>"));
+        writeOutput(color("error")("  Usage: /kill <index|id>"));
         return;
       }
       const hyp = resolveHypothesis(ctx, raw);
       if (!hyp) {
-        writeOutput(chalk.red(`  Not found: ${stripAnsi(raw)}`) + chalk.gray("  Use /list"));
+        writeOutput(color("error")(`  Not found: ${stripAnsi(raw)}`) + color("inactive")("  Use /list"));
         return;
       }
       if (hyp.status === "rejected") {
-        writeOutput(chalk.yellow(`  Already rejected: ${stripAnsi(hyp.title).slice(0, 50)}`));
+        writeOutput(color("warning")(`  Already rejected: ${stripAnsi(hyp.title).slice(0, 50)}`));
         return;
       }
       const ok = await confirmPrompt(`Kill "${stripAnsi(hyp.title).slice(0, 50)}"?`);
-      if (!ok) { writeOutput(chalk.gray("  Cancelled.")); return; }
+      if (!ok) { writeOutput(color("inactive")("  Cancelled.")); return; }
       killHypothesis(ctx.memory, hyp.id);
-      writeOutput(chalk.red(`  Killed: ${stripAnsi(hyp.title)}`));
+      writeOutput(color("error")(`  Killed: ${stripAnsi(hyp.title)}`));
     },
   },
 
@@ -594,21 +594,21 @@ const commands: SlashCommand[] = [
     handler: (args, ctx) => {
       const parts = args.trim().split(/\s+/);
       if (parts.length < 2) {
-        writeOutput(chalk.red("  Usage: /boost <index|id> <elo>"));
+        writeOutput(color("error")("  Usage: /boost <index|id> <elo>"));
         return;
       }
       const [rawId, rawElo] = parts;
       const hyp = resolveHypothesis(ctx, rawId);
       if (!hyp) {
-        writeOutput(chalk.red(`  Not found: ${stripAnsi(rawId)}`) + chalk.gray("  Use /list"));
+        writeOutput(color("error")(`  Not found: ${stripAnsi(rawId)}`) + color("inactive")("  Use /list"));
         return;
       }
       const newElo = parseInt(rawElo, 10);
-      if (Number.isNaN(newElo)) { writeOutput(chalk.red(`  Invalid: ${stripAnsi(rawElo)}`)); return; }
-      if (newElo < ELO_MIN || newElo > ELO_MAX) { writeOutput(chalk.red(`  Range: ${ELO_MIN}-${ELO_MAX}`)); return; }
+      if (Number.isNaN(newElo)) { writeOutput(color("error")(`  Invalid: ${stripAnsi(rawElo)}`)); return; }
+      if (newElo < ELO_MIN || newElo > ELO_MAX) { writeOutput(color("error")(`  Range: ${ELO_MIN}-${ELO_MAX}`)); return; }
       const old = Math.round(hyp.eloRating);
       boostHypothesis(ctx.memory, hyp.id, newElo);
-      writeOutput(chalk.yellow(`  Boosted: ${stripAnsi(hyp.title).slice(0, 50)}`) + chalk.gray(`  ${old} -> ${newElo}`));
+      writeOutput(color("warning")(`  Boosted: ${stripAnsi(hyp.title).slice(0, 50)}`) + color("inactive")(`  ${old} -> ${newElo}`));
     },
   },
 
@@ -619,20 +619,20 @@ const commands: SlashCommand[] = [
     handler: (args, ctx) => {
       const sep = args.indexOf("|");
       if (sep === -1 || !args.trim()) {
-        writeOutput(chalk.red("  Usage: /inject <title> | <content>"));
+        writeOutput(color("error")("  Usage: /inject <title> | <content>"));
         return;
       }
       const rawTitle = args.slice(0, sep).trim();
       const rawContent = args.slice(sep + 1).trim();
-      if (!rawTitle || !rawContent) { writeOutput(chalk.red("  Title and content required.")); return; }
-      if (rawTitle.length > INJECT_TITLE_MAX) { writeOutput(chalk.red(`  Title max ${INJECT_TITLE_MAX} chars.`)); return; }
-      if (rawContent.length > INJECT_CONTENT_MAX) { writeOutput(chalk.red(`  Content max ${INJECT_CONTENT_MAX} chars.`)); return; }
+      if (!rawTitle || !rawContent) { writeOutput(color("error")("  Title and content required.")); return; }
+      if (rawTitle.length > INJECT_TITLE_MAX) { writeOutput(color("error")(`  Title max ${INJECT_TITLE_MAX} chars.`)); return; }
+      if (rawContent.length > INJECT_CONTENT_MAX) { writeOutput(color("error")(`  Content max ${INJECT_CONTENT_MAX} chars.`)); return; }
       const title = stripAnsi(rawTitle);
       const content = stripAnsi(rawContent);
       const allHyps = ctx.memory.getTopHypotheses(ctx.sessionId, 50);
       const round = allHyps.length > 0 ? Math.max(...allHyps.map((h: Hypothesis) => h.generationRound)) : 0;
       const hyp = injectHypothesis(ctx.memory, { sessionId: ctx.sessionId, title, summary: "", content, generationRound: round });
-      writeOutput(chalk.green(`  Injected: ${title}`) + chalk.gray(`  id=${hyp.id.slice(0, 8)}`));
+      writeOutput(color("success")(`  Injected: ${title}`) + color("inactive")(`  id=${hyp.id.slice(0, 8)}`));
     },
   },
 
@@ -641,9 +641,9 @@ const commands: SlashCommand[] = [
     description: "Pause the supervisor",
     usage: "/pause",
     handler: (args, ctx) => {
-      if (ctx.supervisor.isPaused()) { writeOutput(chalk.yellow("  Already paused.")); return; }
+      if (ctx.supervisor.isPaused()) { writeOutput(color("warning")("  Already paused.")); return; }
       ctx.supervisor.pause();
-      writeOutput(chalk.yellow("  Paused. /resume to continue."));
+      writeOutput(color("warning")("  Paused. /resume to continue."));
     },
   },
 
@@ -652,9 +652,9 @@ const commands: SlashCommand[] = [
     description: "Resume a paused session",
     usage: "/resume",
     handler: (args, ctx) => {
-      if (!ctx.supervisor.isPaused()) { writeOutput(chalk.gray("  Not paused.")); return; }
+      if (!ctx.supervisor.isPaused()) { writeOutput(color("inactive")("  Not paused.")); return; }
       ctx.supervisor.resume();
-      writeOutput(chalk.green("  Resumed."));
+      writeOutput(color("success")("  Resumed."));
     },
   },
 
@@ -698,13 +698,13 @@ async function dispatchCommand(raw: string, ctx: SlashCommandContext): Promise<v
         await cmd.handler(args, ctx);
       } catch (err) {
         const msg = stripAnsi((err as Error).message ?? "Unknown error");
-        writeOutput(chalk.red(`  Error: ${msg.slice(0, 300)}`));
+        writeOutput(color("error")(`  Error: ${msg.slice(0, 300)}`));
       }
     } else {
-      writeOutput(chalk.red(`  Unknown: /${stripAnsi(cmdName)}`) + chalk.gray("  /help for commands"));
+      writeOutput(color("error")(`  Unknown: /${stripAnsi(cmdName)}`) + color("inactive")("  /help for commands"));
     }
   } else {
-    writeOutput(chalk.gray("  /help for commands"));
+    writeOutput(color("inactive")("  /help for commands"));
   }
 }
 
@@ -730,30 +730,30 @@ function setupEventListeners(ctx: SlashCommandContext): void {
   });
 
   on(ctx.emitter, "hypothesis_added", (count: number) => {
-    writeOutput(chalk.green(`  + hypothesis #${count}`));
+    writeOutput(color("success")(`  + hypothesis #${count}`));
   });
 
   on(ctx.emitter, "match_completed", (round: number) => {
-    writeOutput(chalk.blue(`  - round ${round}`));
+    writeOutput(color("permission")(`  - round ${round}`));
   });
 
   on(ctx.emitter, "completed", (overview: string) => {
     writeOutput("");
-    writeOutput(chalk.bold.green("  Session completed!"));
+    writeOutput(color("success").bold("  Session completed!"));
     if (overview) {
       const preview = overview.slice(0, 400).split("\n").slice(0, 6).join("\n");
-      writeOutput(chalk.gray(preview));
-      if (overview.length > 400) writeOutput(chalk.gray("  ..."));
+      writeOutput(color("inactive")(preview));
+      if (overview.length > 400) writeOutput(color("inactive")("  ..."));
     }
     writeOutput("");
-    writeOutput(chalk.cyan(`  Results:  co-scientist results ${ctx.sessionId}`));
-    writeOutput(chalk.cyan(`  Overview: co-scientist overview ${ctx.sessionId}`));
-    writeOutput(chalk.cyan(`  Export:   co-scientist export ${ctx.sessionId}`));
+    writeOutput(color("claude")(`  Results:  co-scientist results ${ctx.sessionId}`));
+    writeOutput(color("claude")(`  Overview: co-scientist overview ${ctx.sessionId}`));
+    writeOutput(color("claude")(`  Export:   co-scientist export ${ctx.sessionId}`));
     ctx.onComplete();
   });
 
   on(ctx.emitter, "error", (err: Error) => {
-    writeOutput(chalk.red(`  Error: ${stripAnsi(err.message ?? "Unknown")}`));
+    writeOutput(color("error")(`  Error: ${stripAnsi(err.message ?? "Unknown")}`));
   });
 }
 
@@ -786,7 +786,7 @@ function handleKeypress(key: { name?: string; ctrl?: boolean; sequence?: string 
   if (ctrl && name === "c") {
     if (inputBuffer.length > 0) {
       inputBuffer = ""; cursorPos = 0; _historyIdx = -1;
-      writeOutput(chalk.gray("^C"));
+      writeOutput(color("inactive")("^C"));
     } else {
       gracefulQuit();
     }
@@ -893,7 +893,7 @@ function gracefulQuit(): void {
   writeOutput("  Stopping...");
   _ctx.supervisor.stop();
   _ctx.memory.updateSessionStatus(_ctx.sessionId, "paused");
-  writeOutput(chalk.cyan(`  Resume: co-scientist resume ${_ctx.sessionId}`));
+  writeOutput(color("claude")(`  Resume: co-scientist resume ${_ctx.sessionId}`));
   _ctx.onComplete();
   // Clean up terminal immediately so user isn't stuck in raw mode
   cleanupTerminal();
@@ -988,8 +988,8 @@ export function startSlashCommands(ctx: SlashCommandContext): { close: () => voi
   rawWrite("\x1B[1;1H"); // cursor to top
   startStatusBar();
   hideCursor();
-  writeOutput(chalk.cyan.bold("  Co-Scientist Interactive Mode"));
-  writeOutput(chalk.gray("  Type /help for commands. Tab to autocomplete. Up/Down for history."));
+  writeOutput(color("claude").bold("  Co-Scientist Interactive Mode"));
+  writeOutput(color("inactive")("  Type /help for commands. Tab to autocomplete. Up/Down for history."));
   writeOutput("");
   // Set scroll region and draw the fixed input box at the bottom
   setScrollRegion();

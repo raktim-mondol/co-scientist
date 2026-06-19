@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput } from "../../ink.js";
 import type { AppContext } from "../CommandRouter.js";
 import type { Hypothesis } from "../../../models/hypothesis.js";
 
@@ -48,7 +48,7 @@ export function Results({ appContext, focus }: ResultsProps) {
   if (hypotheses.length === 0) {
     return (
       <Box flexDirection="column" paddingX={1} paddingY={1}>
-        <Text color="gray">No hypotheses yet.</Text>
+        <Text dimColor>No hypotheses yet.</Text>
       </Box>
     );
   }
@@ -57,12 +57,12 @@ export function Results({ appContext, focus }: ResultsProps) {
 
   return (
     <Box flexDirection="column">
-      <Box flexDirection="column" borderStyle="round" borderColor="gray" paddingX={1} flexGrow={1}>
-        <Text color="cyan" bold>{"  #   Elo   St  Hypothesis"}</Text>
+      <Box flexDirection="column" borderStyle="round" borderColor="promptBorder" paddingX={1} flexGrow={1}>
+        <Text color="claude" bold>{"  #   Elo   St  Hypothesis"}</Text>
         {hypotheses.map((h, i) => {
           const sel = i === selected;
-          const bg = sel ? "cyan" : undefined;
-          const fg = sel ? "black" : "white";
+          const bg = sel ? "claude" : undefined;
+          const fg = sel ? "black" : "text";
           const cursor = sel ? "▶" : " ";
           const rank = String(i + 1).padStart(2);
           const elo = String(Math.round(h.eloRating)).padStart(4);
@@ -78,26 +78,26 @@ export function Results({ appContext, focus }: ResultsProps) {
       </Box>
 
       {expandedHyp && (
-        <Box flexDirection="column" borderStyle="single" borderColor="blue" paddingX={1} paddingY={1}>
-          <Text color="blue" bold>{expandedHyp.title}</Text>
-          <Text color="gray">Elo: {Math.round(expandedHyp.eloRating)}  |  Matches: {expandedHyp.matchesPlayed}  |  W/L/D: {expandedHyp.wins}/{expandedHyp.losses}/{expandedHyp.draws}</Text>
+        <Box flexDirection="column" borderStyle="single" borderColor="permission" paddingX={1} paddingY={1}>
+          <Text color="permission" bold>{expandedHyp.title}</Text>
+          <Text dimColor>Elo: {Math.round(expandedHyp.eloRating)}  |  Matches: {expandedHyp.matchesPlayed}  |  W/L/D: {expandedHyp.wins}/{expandedHyp.losses}/{expandedHyp.draws}</Text>
           {expandedHyp.summary && (
             <Box marginTop={1}>
-              <Text color="white">{expandedHyp.summary}</Text>
+              <Text color="text">{expandedHyp.summary}</Text>
             </Box>
           )}
           {expandedHyp.rationale && (
             <Box marginTop={1}>
-              <Text color="gray">Rationale: {expandedHyp.rationale.slice(0, 300)}</Text>
+              <Text dimColor>Rationale: {expandedHyp.rationale.slice(0, 300)}</Text>
             </Box>
           )}
           {expandedHyp.citations && expandedHyp.citations.length > 0 && (
             <Box marginTop={1}>
-              <Text color="gray">Citations: {expandedHyp.citations.length} source(s)</Text>
+              <Text dimColor>Citations: {expandedHyp.citations.length} source(s)</Text>
             </Box>
           )}
           <Box marginTop={1}>
-            <Text color="gray">[enter] collapse  [▲▼] navigate  [/] input</Text>
+            <Text dimColor>[enter] collapse  [▲▼] navigate  [/] input</Text>
           </Box>
         </Box>
       )}

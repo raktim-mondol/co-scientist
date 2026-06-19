@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput } from "../../ink.js";
 import type { AppContext } from "../CommandRouter.js";
 
 interface GraphProps {
@@ -46,8 +46,8 @@ export function Graph({ appContext, focus }: GraphProps) {
 
     const nodes: React.ReactNode[] = [
       <Box key={hyp.id}>
-        <Text color={depth === 0 ? "cyan" : "white"}>
-          {prefix}{hyp.title.slice(0, 50)} <Text color="gray">[{Math.round(hyp.eloRating)}]</Text>
+        <Text color={depth === 0 ? "claude" : "text"}>
+          {prefix}{hyp.title.slice(0, 50)} <Text dimColor>[{Math.round(hyp.eloRating)}]</Text>
         </Text>
       </Box>,
     ];
@@ -61,19 +61,19 @@ export function Graph({ appContext, focus }: GraphProps) {
   if (hypotheses.length === 0) {
     return (
       <Box paddingX={1} paddingY={1}>
-        <Text color="gray">No hypotheses to graph yet.</Text>
+        <Text dimColor>No hypotheses to graph yet.</Text>
       </Box>
     );
   }
 
   return (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
-      <Text color="cyan" bold>Hypothesis Graph ({hypotheses.length} nodes, {roots.length} roots)</Text>
+      <Text color="claude" bold>Hypothesis Graph ({hypotheses.length} nodes, {roots.length} roots)</Text>
       {roots.map((root) => (
         <React.Fragment key={root.id}>{renderTree(root.id)}</React.Fragment>
       ))}
         <Box marginTop={1}>
-          <Text color="gray">[/] return to input</Text>
+          <Text dimColor>[/] return to input</Text>
         </Box>
     </Box>
   );

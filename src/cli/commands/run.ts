@@ -1,5 +1,5 @@
 import { EventEmitter } from "events";
-import chalk from "chalk";
+import { color } from "../design-system/color.js";
 import ora from "ora";
 import { printBanner } from "../banner.js";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -43,7 +43,7 @@ export async function runCommand(options: RunOptions): Promise<void> {
   seedRng(seed);
   if (seed !== undefined) {
     console.log(
-      chalk.gray(
+      color("inactive")(
         `🎲 Deterministic seed: ${seed} ` +
         `(scheduling/sampling reproducible — add --max-workers 1 for stricter determinism)`
       )
@@ -81,7 +81,7 @@ export async function runCommand(options: RunOptions): Promise<void> {
     let currentSupervisor: SupervisorAgent | null = null;
     let currentSessionId: string | null = null;
 
-    console.log(chalk.cyan("\n🧬 Launching interactive TUI — type a research topic to begin.\n"));
+    console.log(color("claude")("\n🧬 Launching interactive TUI — type a research topic to begin.\n"));
 
     const tui = renderTUI({
       memory,
@@ -125,14 +125,14 @@ export async function runCommand(options: RunOptions): Promise<void> {
         currentSupervisor = supervisor;
         currentSessionId = sessionId;
 
-        console.log(chalk.yellow("\n📋 Research Goal:\n") + chalk.white(goalText.trim()));
-        console.log(chalk.yellow("\n🚀 Starting Co-Scientist...\n"));
+        console.log(color("warning")("\n📋 Research Goal:\n") + color("text")(goalText.trim()));
+        console.log(color("warning")("\n🚀 Starting Co-Scientist...\n"));
 
         // Start the supervisor loop in the background (don't await)
         supervisor.run(sessionId).catch((err) => {
           // Error is surfaced via emitter 'error' event
           if (!(err instanceof Error) || !err.message.includes("Session stopped")) {
-            console.error(chalk.red(`\n❌ Supervisor error: ${(err as Error).message}`));
+            console.error(color("error")(`\n❌ Supervisor error: ${(err as Error).message}`));
           }
         });
 
@@ -165,7 +165,7 @@ export async function runCommand(options: RunOptions): Promise<void> {
       if (shuttingDown) return;
       shuttingDown = true;
       tui.unmount();
-      console.log(chalk.yellow(`\n\n⏸  ${signal} received — shutting down...`));
+      console.log(color("warning")(`\n\n⏸  ${signal} received — shutting down...`));
       currentSupervisor?.stop();
       if (currentSessionId) {
         try {
@@ -174,7 +174,7 @@ export async function runCommand(options: RunOptions): Promise<void> {
       }
       try {
         closeDb();
-        console.log(chalk.gray("  Database checkpointed and closed."));
+        console.log(color("inactive")("  Database checkpointed and closed."));
       } catch { /* ignore */ }
       process.exit(0);
     };
@@ -207,7 +207,7 @@ export async function runCommand(options: RunOptions): Promise<void> {
   }
 
   if (!rawGoal?.trim()) {
-    console.error(chalk.red("❌ Research goal cannot be empty"));
+    console.error(color("error")("❌ Research goal cannot be empty"));
     process.exit(1);
   }
 
@@ -274,14 +274,14 @@ export async function runCommand(options: RunOptions): Promise<void> {
 
   try {
     sessionId = await supervisor.initSession(goal, sessionName);
-    sessionSpinner.succeed(`Session created: ${chalk.cyan(sessionId)}`);
+    sessionSpinner.succeed(`Session created: ${color("claude")(sessionId)}`);
   } catch (err) {
     sessionSpinner.fail(`Failed to initialize: ${(err as Error).message}`);
     process.exit(1);
   }
 
-  console.log(chalk.yellow("\n📋 Research Goal:\n") + chalk.white(rawGoal.trim()));
-  console.log(chalk.yellow("\n🚀 Starting Co-Scientist...\n"));
+  console.log(color("warning")("\n📋 Research Goal:\n") + color("text")(rawGoal.trim()));
+  console.log(color("warning")("\n🚀 Starting Co-Scientist...\n"));
 
   // Set up progress display
   const startTime = Date.now();
@@ -332,23 +332,23 @@ export async function runCommand(options: RunOptions): Promise<void> {
         lastStats = { ...lastStats, totalHypotheses: count };
         printProgress(lastStats, startTime);
       }
-      console.log(chalk.green(`\n  ✓ Hypotheses: ${count}`));
+      console.log(color("success")(`\n  ✓ Hypotheses: ${count}`));
     });
 
     emitter.on("match_completed", (round: number) => {
-      console.log(chalk.blue(`  ⚔  Tournament round ${round} complete`));
+      console.log(color("permission")(`  ⚔  Tournament round ${round} complete`));
     });
 
     emitter.on("completed", (overview: string) => {
-      console.log(chalk.bold.green("\n✅ Session completed!\n"));
+      console.log(color("success").bold("\n✅ Session completed!\n"));
       if (overview) {
-        console.log(chalk.cyan("📄 Research Overview Preview:"));
+        console.log(color("claude")("📄 Research Overview Preview:"));
         console.log(overview.slice(0, 500) + (overview.length > 500 ? "\n..." : ""));
       }
     });
 
     emitter.on("error", (err: Error) => {
-      console.error(chalk.red(`\n❌ Error: ${err.message}`));
+      console.error(color("error")(`\n❌ Error: ${err.message}`));
     });
   }
 
@@ -361,28 +361,28 @@ export async function runCommand(options: RunOptions): Promise<void> {
     shuttingDown = true;
 
     if (tui) tui.unmount();
-    console.log(chalk.yellow(`\n\n⏸  ${signal} received — pausing session...`));
+    console.log(color("warning")(`\n\n⏸  ${signal} received — pausing session...`));
 
     supervisor.stop();
 
     const memory = getContextStore();
     try {
       memory.updateSessionStatus(sessionId, "paused");
-      console.log(chalk.gray("  Session status saved."));
+      console.log(color("inactive")("  Session status saved."));
     } catch (err) {
-      console.log(chalk.gray(`  (Could not update session status: ${(err as Error).message})`));
+      console.log(color("inactive")(`  (Could not update session status: ${(err as Error).message})`));
     }
 
     // Checkpoint WAL + close DB + remove PID lock file
     try {
       closeDb();
-      console.log(chalk.gray("  Database checkpointed and closed."));
+      console.log(color("inactive")("  Database checkpointed and closed."));
     } catch (err) {
-      console.log(chalk.gray(`  (Database cleanup: ${(err as Error).message})`));
+      console.log(color("inactive")(`  (Database cleanup: ${(err as Error).message})`));
     }
 
     console.log(
-      chalk.cyan(`\n  Resume later with: co-scientist resume ${sessionId}`)
+      color("claude")(`\n  Resume later with: co-scientist resume ${sessionId}`)
     );
     process.exit(0);
   };
@@ -401,7 +401,7 @@ export async function runCommand(options: RunOptions): Promise<void> {
     if (tui) tui.unmount();
   } catch (err) {
     if (tui) tui.unmount();
-    console.error(chalk.red(`\n❌ Session error: ${(err as Error).message}`));
+    console.error(color("error")(`\n❌ Session error: ${(err as Error).message}`));
     const memory = getContextStore();
     memory.updateSessionStatus(sessionId, "error");
     process.exit(1);
@@ -411,26 +411,26 @@ export async function runCommand(options: RunOptions): Promise<void> {
   const memory = getContextStore();
   const topHyps = memory.getTopHypotheses(sessionId, 5);
 
-  console.log(chalk.bold.cyan(`\n🏆 TOP ${topHyps.length} HYPOTHESES:\n`));
+  console.log(color("claude").bold(`\n🏆 TOP ${topHyps.length} HYPOTHESES:\n`));
   topHyps.forEach((h, i) => {
     console.log(
-      chalk.yellow(`${i + 1}. [Rating: ${Math.round(h.eloRating)}] `) +
-      chalk.white.bold(h.title)
+      color("warning")(`${i + 1}. [Rating: ${Math.round(h.eloRating)}] `) +
+      color("text").bold(h.title)
     );
-    console.log(chalk.gray(`   ${h.summary}\n`));
+    console.log(color("inactive")(`   ${h.summary}\n`));
   });
 
   console.log(
-    chalk.cyan(`\n📊 Full results: `) +
-    chalk.white(`co-scientist results ${sessionId}`)
+    color("claude")(`\n📊 Full results: `) +
+    color("text")(`co-scientist results ${sessionId}`)
   );
   console.log(
-    chalk.cyan(`📄 Research overview: `) +
-    chalk.white(`co-scientist overview ${sessionId}`)
+    color("claude")(`📄 Research overview: `) +
+    color("text")(`co-scientist overview ${sessionId}`)
   );
   console.log(
-    chalk.cyan(`💾 Export: `) +
-    chalk.white(`co-scientist export ${sessionId}`)
+    color("claude")(`💾 Export: `) +
+    color("text")(`co-scientist export ${sessionId}`)
   );
 
   await getMCPManager().cleanup();
@@ -452,12 +452,12 @@ function printProgress(
       : 0;
 
   process.stdout.write(
-    `\r${chalk.cyan("⚡")} ${chalk.gray(stats.activity.padEnd(50))} ` +
-    `${chalk.yellow(`Hyp:${stats.totalHypotheses}`)} ` +
-    `${chalk.blue(`Rating:${Math.round(stats.avgTopTenElo)}`)} ` +
-    `${chalk.gray(`Tok:${formatTokens(stats.tokensUsed)}`)}` +
-    `${budget > 0 ? chalk.gray(`(${budgetPct}%)`) : ""} ` +
-    `${chalk.gray(timeStr)}   `
+    `\r${color("claude")("⚡")} ${color("inactive")(stats.activity.padEnd(50))} ` +
+    `${color("warning")(`Hyp:${stats.totalHypotheses}`)} ` +
+    `${color("permission")(`Rating:${Math.round(stats.avgTopTenElo)}`)} ` +
+    `${color("inactive")(`Tok:${formatTokens(stats.tokensUsed)}`)}` +
+    `${budget > 0 ? color("inactive")(`(${budgetPct}%)`) : ""} ` +
+    `${color("inactive")(timeStr)}   `
   );
 }
 

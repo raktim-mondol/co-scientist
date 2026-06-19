@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput } from "../../ink.js";
 import type { CoScientistSession } from "../../../models/session.js";
 
 interface DeleteModalProps {
@@ -66,40 +66,40 @@ export function DeleteModal({ sessions, onConfirm, onCancel }: DeleteModalProps)
   // Confirm stage
   if (stage === "confirm") {
     return (
-      <Box flexDirection="column" borderStyle="double" borderColor="red" paddingX={1}>
-        <Text color="red" bold>CONFIRM DELETE</Text>
+      <Box flexDirection="column" borderStyle="round" borderColor="error" paddingX={1}>
+        <Text color="error" bold>CONFIRM DELETE</Text>
         <Box marginTop={1} />
-        <Text color="red">
+        <Text color="error">
           This will permanently delete {toDelete.length} session(s) and all associated
           hypotheses, reviews, matches, and data. This cannot be undone.
         </Text>
         <Box marginTop={1} />
         {toDelete.map((s) => (
-          <Text key={s.id} color="white">
+          <Text key={s.id} color="text">
             ⨯ {s.name} ({s.id.slice(0, 8)}) — {s.stats?.totalHypotheses ?? 0} hypotheses
           </Text>
         ))}
         <Box marginTop={1} />
-        <Text color="gray">[y/enter] confirm delete   [n/esc] cancel</Text>
+        <Text dimColor>[y/enter] confirm delete   [n/esc] cancel</Text>
       </Box>
     );
   }
 
   // Select stage
   return (
-    <Box flexDirection="column" borderStyle="double" borderColor="red" paddingX={1}>
-      <Text color="red" bold>DELETE SESSIONS</Text>
-      <Text color="gray">Space to select, Enter to confirm:</Text>
+    <Box flexDirection="column" borderStyle="round" borderColor="error" paddingX={1}>
+      <Text color="error" bold>DELETE SESSIONS</Text>
+      <Text dimColor>Space to select, Enter to confirm:</Text>
       <Box marginTop={1} />
       {sessions.length === 0 ? (
-        <Text color="gray">No sessions to delete.</Text>
+        <Text dimColor>No sessions to delete.</Text>
       ) : (
         sessions.map((s, i) => {
           const sel = i === selected;
           const chk = checked.has(s.id);
           const status = s.status === "completed" ? "✓" : s.status === "running" ? "▶" : "⏸";
           return (
-            <Text key={s.id} color={sel ? "white" : "gray"}>
+            <Text key={s.id} dimColor={!sel}>
               {sel ? "▶" : " "} [{chk ? "*" : " "}] {status} {s.name} ({s.id.slice(0, 8)})
               {"  "}[{s.stats?.totalHypotheses ?? 0}h]
             </Text>
@@ -107,7 +107,7 @@ export function DeleteModal({ sessions, onConfirm, onCancel }: DeleteModalProps)
         })
       )}
       <Box marginTop={1} />
-      <Text color="gray">[▲▼] navigate   [space] toggle   [enter] confirm ({checked.size} selected)   [esc] cancel</Text>
+      <Text dimColor>[▲▼] navigate   [space] toggle   [enter] confirm ({checked.size} selected)   [esc] cancel</Text>
     </Box>
   );
 }

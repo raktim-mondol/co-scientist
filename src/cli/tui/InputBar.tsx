@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput } from "../ink.js";
 import { Toast } from "./Toast.js";
 import { CommandPalette } from "./CommandPalette.js";
 import type { AppContext, RouteResult } from "./CommandRouter.js";
@@ -180,14 +180,14 @@ export function InputBar({ focus, appContext, onRoute, clearKey }: InputBarProps
       )}
 
       <Box paddingX={1}>
-        <Text color="white">&gt; </Text>
-        <Text color="white">{text.slice(0, cursor)}</Text>
+        <Text color="text">&gt; </Text>
+        <Text color="text">{text.slice(0, cursor)}</Text>
         {cursor < text.length ? (
-          <Text inverse>{text[cursor]}</Text>
+          <Text color="inverseText" backgroundColor="text">{text[cursor]}</Text>
         ) : (
-          <Text color="white">▌</Text>
+          <Text color="text">▌</Text>
         )}
-        <Text color="white">{text.slice(cursor + 1)}</Text>
+        <Text color="text">{text.slice(cursor + 1)}</Text>
       </Box>
 
       {paletteVisible && (

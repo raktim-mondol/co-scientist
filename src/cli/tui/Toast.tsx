@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { Box, Text } from "ink";
+import { Box, Text } from "../ink.js";
 
 interface ToastProps {
   message: string;
@@ -18,7 +18,7 @@ export function Toast({ message, type, visible, onDismiss, durationMs = 3000 }: 
 
   if (!visible || !message) return null;
 
-  const color = type === "success" ? "green" : type === "error" ? "red" : "cyan";
+  const color = type === "success" ? "success" : type === "error" ? "error" : "claude";
 
   return (
     <Box paddingX={1}>

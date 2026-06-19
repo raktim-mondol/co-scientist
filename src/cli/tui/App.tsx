@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Box, Text, useApp, useInput } from "ink";
+import { Box, Text, useApp, useInput, Static } from "../ink.js";
 import EventEmitter from "events";
 import type { ContextStore } from "../../memory/contextStore.js";
 import type { SupervisorAgent } from "../../agents/supervisor.js";
@@ -224,31 +224,34 @@ export function App(props: AppProps) {
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
+  // FullscreenLayout pattern: scrollable content area + fixed bottom + modal overlay.
+  // Matches claude_code's REPL.tsx layout structure.
   return (
-    <Box flexDirection="column">
-      {/* Header: self-contained — handles empty, running, and paused states */}
-      <Header
-        sessionState={sessionState}
-        sessionId={sessionId}
-        goal={goal}
-        stats={stats}
-        startTime={startTime}
-        now={now}
-        budgetTokens={budgetTokens}
-      />
+    <Box flexDirection="column" height="100%">
+      {/* Scrollable content area: Header + MainView */}
+      <Box flexGrow={1} flexDirection="column">
+        <Header
+          sessionState={sessionState}
+          sessionId={sessionId}
+          goal={goal}
+          stats={stats}
+          startTime={startTime}
+          now={now}
+          budgetTokens={budgetTokens}
+        />
 
-      {/* Content area: always rendered through MainView */}
-      <MainView
-        activeView={activeView}
-        appContext={appContext}
-        focus={focus}
-        leaderboard={leaderboard}
-        ticker={ticker}
-        selected={selected}
-        setSelected={setSelected}
-      />
+        <MainView
+          activeView={activeView}
+          appContext={appContext}
+          focus={focus}
+          leaderboard={leaderboard}
+          ticker={ticker}
+          selected={selected}
+          setSelected={setSelected}
+        />
+      </Box>
 
-      {/* Existing modals */}
+      {/* Modal overlay — renders above the fixed bottom section */}
       {activeModal === "kill" && selectedHyp && (
         <KillModal
           title={selectedHyp.title}
@@ -319,7 +322,7 @@ export function App(props: AppProps) {
         />
       )}
 
-      {/* Task 11 — Action modals */}
+      {/* Action modals */}
       {activeModal === "export" && (
         <ExportModal
           onConfirm={(format, outputPath) => {
@@ -383,18 +386,21 @@ export function App(props: AppProps) {
         />
       )}
 
-      {/* Input bar at the bottom — clears on view switch */}
-      <InputBar focus={focus === "input"} appContext={appContext} onRoute={handleRoute} clearKey={activeView} />
+      {/* Fixed bottom section */}
+      <Box flexShrink={0} flexDirection="column">
+        {/* App-level toast (for command handlers) */}
+        {toastVisible && (
+          <Toast
+            message={toastMsg}
+            type={toastType}
+            visible={toastVisible}
+            onDismiss={() => setToastVisible(false)}
+          />
+        )}
 
-      {/* App-level toast (for command handlers) */}
-      {toastVisible && (
-        <Toast
-          message={toastMsg}
-          type={toastType}
-          visible={toastVisible}
-          onDismiss={() => setToastVisible(false)}
-        />
-      )}
+        {/* Input bar at the bottom — clears on view switch */}
+        <InputBar focus={focus === "input"} appContext={appContext} onRoute={handleRoute} clearKey={activeView} />
+      </Box>
     </Box>
   );
 }

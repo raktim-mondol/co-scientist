@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput } from "../../ink.js";
 
 interface FeedbackModalProps {
   hypothesisId?: string;
@@ -134,8 +134,8 @@ export function FeedbackModal({ hypothesisId: preSelectedId, hypotheses, onConfi
   });
 
   return (
-    <Box flexDirection="column" borderStyle="double" borderColor="magenta" paddingX={1}>
-      <Text color="magenta" bold>SUBMIT FEEDBACK</Text>
+    <Box flexDirection="column" borderStyle="round" borderColor="suggestion" paddingX={1}>
+      <Text color="suggestion" bold>SUBMIT FEEDBACK</Text>
       <Box marginTop={1} />
       {FIELDS.map((f) => {
         const active = field === f;
@@ -144,14 +144,14 @@ export function FeedbackModal({ hypothesisId: preSelectedId, hypotheses, onConfi
           ? (val.length > 50 ? val.slice(0, 47) + "..." : val)
           : (val || "_");
         return (
-          <Text key={f} color={active ? "white" : "gray"}>
+          <Text key={f} dimColor={!active}>
             {active ? "▶" : " "} {FIELD_LABELS[f].padEnd(18)} {display}
             {f === "hypothesis" && active ? " [▲▼]" : ""}
           </Text>
         );
       })}
       <Box marginTop={1} />
-      <Text color="gray">[tab] switch field   [enter] next/submit   [esc] cancel</Text>
+      <Text dimColor>[tab] switch field   [enter] next/submit   [esc] cancel</Text>
     </Box>
   );
 }

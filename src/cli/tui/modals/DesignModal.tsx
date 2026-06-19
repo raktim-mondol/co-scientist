@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput } from "../../ink.js";
 import type { Hypothesis } from "../../../models/hypothesis.js";
 import { ExperimentDesignAgent } from "../../../agents/experimentDesign.js";
 import type { ExperimentProtocol } from "../../../agents/experimentDesign.js";
@@ -103,12 +103,12 @@ export function DesignModal({ sessionId, hypothesisId: preSelectedId, hypotheses
   // Render: loading state
   if (stage === "loading") {
     return (
-      <Box flexDirection="column" borderStyle="double" borderColor="blue" paddingX={1}>
-        <Text color="blue" bold>EXPERIMENTAL DESIGN</Text>
+      <Box flexDirection="column" borderStyle="round" borderColor="permission" paddingX={1}>
+        <Text color="permission" bold>EXPERIMENTAL DESIGN</Text>
         <Box marginTop={1} />
-        <Text color="yellow">⏳ Generating experimental protocol for:</Text>
-        <Text color="white">{selectedHyp?.title.slice(0, 60)}</Text>
-        <Text color="gray">(this may take a moment)</Text>
+        <Text color="warning">⏳ Generating experimental protocol for:</Text>
+        <Text color="text">{selectedHyp?.title.slice(0, 60)}</Text>
+        <Text dimColor>(this may take a moment)</Text>
       </Box>
     );
   }
@@ -117,42 +117,42 @@ export function DesignModal({ sessionId, hypothesisId: preSelectedId, hypotheses
   if (stage === "done" && protocol) {
     const visible = protocolLines.slice(scrollOff, scrollOff + 8);
     return (
-      <Box flexDirection="column" borderStyle="double" borderColor="blue" paddingX={1}>
-        <Text color="blue" bold>EXPERIMENTAL PROTOCOL</Text>
-        <Text color="cyan">{protocol.hypothesisTitle.slice(0, 60)}</Text>
+      <Box flexDirection="column" borderStyle="round" borderColor="permission" paddingX={1}>
+        <Text color="permission" bold>EXPERIMENTAL PROTOCOL</Text>
+        <Text color="claude">{protocol.hypothesisTitle.slice(0, 60)}</Text>
         <Box marginTop={1} />
         {visible.map((line, i) => (
-          <Text key={i} color="white">{line}</Text>
+          <Text key={i} color="text">{line}</Text>
         ))}
         <Box marginTop={1} />
-        <Text color="gray">[▲▼] scroll ({scrollOff + 1}-{Math.min(scrollOff + 8, protocolLines.length)} of {protocolLines.length})   [esc] picker   [/] back</Text>
+        <Text dimColor>[▲▼] scroll ({scrollOff + 1}-{Math.min(scrollOff + 8, protocolLines.length)} of {protocolLines.length})   [esc] picker   [/] back</Text>
       </Box>
     );
   }
 
   // Render: picker (default)
   return (
-    <Box flexDirection="column" borderStyle="double" borderColor="blue" paddingX={1}>
-      <Text color="blue" bold>DESIGN EXPERIMENT</Text>
-      <Text color="gray">Select a hypothesis to generate experimental protocol:</Text>
+    <Box flexDirection="column" borderStyle="round" borderColor="permission" paddingX={1}>
+      <Text color="permission" bold>DESIGN EXPERIMENT</Text>
+      <Text dimColor>Select a hypothesis to generate experimental protocol:</Text>
       <Box marginTop={1} />
       {hypotheses.length === 0 ? (
-        <Text color="gray">No hypotheses available.</Text>
+        <Text dimColor>No hypotheses available.</Text>
       ) : (
         hypotheses.slice(0, 15).map((h, i) => {
           const sel = i === selectedIdx;
           return (
-            <Text key={h.id} color={sel ? "white" : "gray"}>
+            <Text key={h.id} dimColor={!sel}>
               {sel ? "▶" : " "} [{Math.round(h.eloRating)}] {h.title.slice(0, 55)}
             </Text>
           );
         })
       )}
       {error && (
-        <Text color="red">{error}</Text>
+        <Text color="error">{error}</Text>
       )}
       <Box marginTop={1} />
-      <Text color="gray">[▲▼] navigate   [enter] generate   [esc] cancel</Text>
+      <Text dimColor>[▲▼] navigate   [enter] generate   [esc] cancel</Text>
     </Box>
   );
 }

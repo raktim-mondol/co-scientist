@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput } from "../../ink.js";
 
 interface ExportModalProps {
   onConfirm: (format: "md" | "json", outputPath?: string) => void;
@@ -57,19 +57,19 @@ export function ExportModal({ onConfirm, onCancel }: ExportModalProps) {
   });
 
   return (
-    <Box flexDirection="column" borderStyle="double" borderColor="green" paddingX={1}>
-      <Text color="green" bold>EXPORT SESSION</Text>
+    <Box flexDirection="column" borderStyle="round" borderColor="success" paddingX={1}>
+      <Text color="success" bold>EXPORT SESSION</Text>
       <Box marginTop={1} />
-      <Text color={field === "format" ? "white" : "gray"}>
-        {field === "format" ? "▶" : " "} Format:   <Text color="cyan">{format === "md" ? "markdown" : "json"}</Text>
+      <Text dimColor={field !== "format"}>
+        {field === "format" ? "▶" : " "} Format:   <Text color="claude">{format === "md" ? "markdown" : "json"}</Text>
         {"  "}
-        <Text color="gray">[space/←→] toggle</Text>
+        <Text dimColor>[space/←→] toggle</Text>
       </Text>
-      <Text color={field === "path" ? "white" : "gray"}>
+      <Text dimColor={field !== "path"}>
         {field === "path" ? "▶" : " "} Path:     {path || "(default)"}
       </Text>
       <Box marginTop={1} />
-      <Text color="gray">[tab] switch field   [enter] confirm   [esc] cancel</Text>
+      <Text dimColor>[tab] switch field   [enter] confirm   [esc] cancel</Text>
     </Box>
   );
 }
