@@ -4,6 +4,9 @@
  * Top-level interactive REPL — launched when `co-scientist` is run with no
  * arguments. Shows the banner + a persistent text input, Claude Code style.
  *
+ * Uses DECSTBM scroll region to pin the input box to the bottom 3 rows.
+ * Output scrolls naturally above it. The box is drawn once and never cleared.
+ *
  * Supports:
  *   /run <goal>      — Start a new research session
  *   /resume <id>     — Resume a paused session
@@ -41,16 +44,25 @@ function rawWrite(str: string): void {
   }
 }
 
-function clearLine(): void {
-  rawWrite("\r\x1B[2K");
-}
-
 function hideCursor(): void {
   rawWrite("\x1B[?25l");
 }
 
 function showCursor(): void {
   rawWrite("\x1B[?25h");
+}
+
+function termWidth(): number {
+  return process.stdout.columns || 80;
+}
+
+function termHeight(): number {
+  return process.stdout.rows || 24;
+}
+
+function stripAnsi(str: string): string {
+  // eslint-disable-next-line no-control-regex
+  return str.replace(/\x1B(?:\[[0-9;]*[a-zA-Z]|][^\x07]*\x07|[^[].)/g, "");
 }
 
 // ─── State ───────────────────────────────────────────────────────────────────
@@ -66,9 +78,51 @@ let _historySaved = "";
 
 const INPUT_BOX_WIDTH = 80;
 const HLINE = "─".repeat(INPUT_BOX_WIDTH);
+/** Number of terminal rows reserved for the fixed input box at the bottom. */
+const BOX_ROWS = 3;
 
-function drawTopLine(): void {
-  rawWrite(chalk.gray(HLINE) + "\n");
+// ─── Scroll Region & Fixed Box ──────────────────────────────────────────────
+
+/**
+ * Set the DECSTBM scroll region to rows 1..(H-BOX_ROWS).
+ * This pins the bottom BOX_ROWS rows outside the scroll area — anything
+ * written to the scroll region scrolls naturally, leaving the box untouched.
+ */
+function setScrollRegion(): void {
+  const h = termHeight();
+  const scrollBottom = h - BOX_ROWS;
+  if (scrollBottom < 1) return;
+  rawWrite(`\x1B[1;${scrollBottom}r`);
+  // Move cursor to the bottom of the scroll region (last output row)
+  rawWrite(`\x1B[${scrollBottom};1H`);
+}
+
+/**
+ * Draw the 3-line input box at the bottom of the terminal.
+ * These rows are outside the scroll region, so they stay fixed.
+ * Only called once at startup (and on terminal resize).
+ */
+function drawFixedBox(): void {
+  const h = termHeight();
+  const inputRow = h - 1; // middle row of the 3-line box
+
+  // Row h-2: top line
+  rawWrite(`\x1B[${h - 2};1H`);
+  rawWrite("\x1B[2K"); // clear line
+  rawWrite(chalk.gray(HLINE));
+
+  // Row h-1: input line (will be updated by redrawInput)
+  rawWrite(`\x1B[${inputRow};1H`);
+  rawWrite("\x1B[2K");
+  rawWrite(buildPrompt() + inputBuffer);
+
+  // Row h: bottom line
+  rawWrite(`\x1B[${h};1H`);
+  rawWrite("\x1B[2K");
+  rawWrite(chalk.gray(HLINE));
+
+  // Position cursor on the input line
+  positionCursor();
 }
 
 // ─── Prompt ──────────────────────────────────────────────────────────────────
@@ -77,57 +131,53 @@ function buildPrompt(): string {
   return chalk.gray(" ") + chalk.green(">") + chalk.white(" ");
 }
 
+/**
+ * Update only the input line of the fixed box (row H-1).
+ * The top and bottom lines never change.
+ */
 function redrawInput(): void {
   if (_closed) return;
-  // Clear from current position down (prompt line + bottom line)
-  rawWrite("\r\x1B[J");
+  const h = termHeight();
+  const inputRow = h - 1;
+
+  // Move to the input row, clear it, redraw
+  rawWrite(`\x1B[${inputRow};1H`);
+  rawWrite("\x1B[2K");
   rawWrite(buildPrompt() + inputBuffer);
-  const overshoot = inputBuffer.length - cursorPos;
-  if (overshoot > 0) {
-    rawWrite(`\x1B[${overshoot}D`);
-  }
-  // Draw bottom line below input
-  rawWrite("\n" + chalk.gray(HLINE));
-  // Move cursor back up to the input line
-  rawWrite("\x1B[1A");
-  // Reposition cursor to correct column
-  const promptLen = stripAnsi(buildPrompt()).length;
-  const targetCol = promptLen + cursorPos + 1;
-  rawWrite(`\r\x1B[${targetCol}G`);
+  positionCursor();
 }
 
-function stripAnsi(str: string): string {
-  // eslint-disable-next-line no-control-regex
-  return str.replace(/\x1B(?:\[[0-9;]*[a-zA-Z]|][^\x07]*\x07|[^[].)/g, "");
+/**
+ * Position the cursor at the correct column on the input line.
+ */
+function positionCursor(): void {
+  const h = termHeight();
+  const inputRow = h - 1;
+  const promptLen = stripAnsi(buildPrompt()).length;
+  const col = promptLen + cursorPos + 1;
+  rawWrite(`\x1B[${inputRow};${col}H`);
 }
 
 // ─── Output ──────────────────────────────────────────────────────────────────
 
-const _outputBuffer: string[] = [];
-let _flushScheduled = false;
-
-function scheduleFlush(): void {
-  if (_flushScheduled) return;
-  _flushScheduled = true;
-  queueMicrotask(flushOutput);
-}
-
-function flushOutput(): void {
-  _flushScheduled = false;
-  if (_outputBuffer.length === 0) return;
-  const w = _originalStdoutWrite ?? process.stdout.write.bind(process.stdout);
-  // Clear the bottom line + prompt line
-  rawWrite("\r\x1B[J");
-  for (const line of _outputBuffer) {
-    w(line + "\n");
-  }
-  _outputBuffer.length = 0;
-  redrawInput();
-}
-
+/**
+ * Write output into the scroll region. The scroll region handles scrolling
+ * automatically — no clearing or redrawing of the input box needed.
+ */
 function writeOutput(text: string): void {
-  _outputBuffer.push(text);
-  scheduleFlush();
+  if (_closed) {
+    process.stdout.write(text + "\n");
+    return;
+  }
+  // Save cursor, move to bottom of scroll region, write, restore cursor
+  rawWrite("\x1B[s");
+  const scrollBottom = termHeight() - BOX_ROWS;
+  rawWrite(`\x1B[${scrollBottom};1H`);
+  // Clear from cursor to end of scroll region (makes room for the new line)
+  rawWrite("\x1B[J");
+  const w = _originalStdoutWrite ?? process.stdout.write.bind(process.stdout);
+  w(text + "\n");
+  rawWrite("\x1B[u");
 }
 
 // ─── History ─────────────────────────────────────────────────────────────────
@@ -535,8 +585,10 @@ export async function startInteractive(): Promise<void> {
   process.stdin.setEncoding("utf8");
 
   hideCursor();
-  drawTopLine();
-  redrawInput();
+
+  // Set scroll region and draw the fixed input box at the bottom
+  setScrollRegion();
+  drawFixedBox();
 
   let _dispatching = false;
 
@@ -631,6 +683,8 @@ export async function startInteractive(): Promise<void> {
   // Safety net: restore terminal on unexpected exit
   const exitHandler = () => {
     showCursor();
+    // Reset scroll region to full screen
+    rawWrite("\x1B[r");
     if (process.stdin.isTTY) try { process.stdin.setRawMode(false); } catch { /* */ }
     if (_originalStdoutWrite) process.stdout.write = _originalStdoutWrite;
   };
@@ -654,8 +708,8 @@ export async function startInteractive(): Promise<void> {
     try { process.stdin.setRawMode(false); } catch { /* */ }
   }
   process.stdin.pause();
-  // Clear the bordered input area (bottom line + prompt line)
-  rawWrite("\r\x1B[J");
+  // Reset scroll region to full screen
+  rawWrite("\x1B[r");
   process.stdout.write = _originalStdoutWrite;
   console.log(chalk.gray("Goodbye!"));
   closeDb();

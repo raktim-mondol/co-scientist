@@ -54,6 +54,8 @@ const COMPLETION_MAX_ROWS = 8;
 /** Width of the bordered input box. */
 const INPUT_BOX_WIDTH = 80;
 const HLINE = "─".repeat(INPUT_BOX_WIDTH);
+/** Number of terminal rows reserved for the fixed input box at the bottom. */
+const BOX_ROWS = 3;
 
 // ─── Terminal Helpers ─────────────────────────────────────────────────────────
 
@@ -86,39 +88,18 @@ function termHeight(): number {
 function hideCursor(): void { rawWrite("\x1B[?25l"); }
 function showCursor(): void { rawWrite("\x1B[?25h"); }
 
-// ─── Output Batching ─────────────────────────────────────────────────────────
-
-const _outputBuffer: string[] = [];
-let _flushScheduled = false;
-
-function scheduleFlush(): void {
-  if (_flushScheduled) return;
-  _flushScheduled = true;
-  queueMicrotask(flushOutput);
-}
-
-function flushOutput(): void {
-  _flushScheduled = false;
-  if (_outputBuffer.length === 0) return;
-
-  if (_closed) {
-    for (const line of _outputBuffer) process.stdout.write(line + "\n");
-    _outputBuffer.length = 0;
-    return;
-  }
-
-  const w = _originalStdoutWrite ?? process.stdout.write.bind(process.stdout);
-  clearAllInputLines();
-  for (const line of _outputBuffer) w(line + "\n");
-  _outputBuffer.length = 0;
-  drawTopLine();
-  redrawInput();
-}
+// ─── Output ──────────────────────────────────────────────────────────────────
 
 function writeOutput(text: string): void {
   if (_closed) { process.stdout.write(text + "\n"); return; }
-  _outputBuffer.push(text);
-  scheduleFlush();
+  // Save cursor, write into scroll region, restore cursor
+  rawWrite("\x1B[s");
+  const scrollBottom = termHeight() - BOX_ROWS;
+  rawWrite(`\x1B[${scrollBottom};1H`);
+  rawWrite("\x1B[J");
+  const w = _originalStdoutWrite ?? process.stdout.write.bind(process.stdout);
+  w(text + "\n");
+  rawWrite("\x1B[u");
 }
 
 // ─── Shared State ────────────────────────────────────────────────────────────
@@ -331,54 +312,70 @@ function visualLineCount(str: string, width: number): number {
   return total;
 }
 
-/** Clear ALL lines occupied by the bordered input (top line + prompt + hint + bottom line). */
-function clearAllInputLines(): void {
-  if (_closed) return;
-  // We need to clear: top line + prompt/input line + optional hint + bottom line
-  // Move up to the top line and clear everything below
-  rawWrite("\r");
-  // Move up 3 lines (bottom line + prompt line + optional hint) to reach top line
-  const hint = buildHint();
-  const linesToClear = hint ? 3 : 2;
-  if (linesToClear > 1) rawWrite(`\x1B[${linesToClear - 1}A`);
-  rawWrite("\x1B[J");
+/**
+ * Set the DECSTBM scroll region to rows 1..(H-BOX_ROWS).
+ * Bottom BOX_ROWS rows are pinned for the input box.
+ */
+function setScrollRegion(): void {
+  const h = termHeight();
+  const scrollBottom = h - BOX_ROWS;
+  if (scrollBottom < 1) return;
+  rawWrite(`\x1B[1;${scrollBottom}r`);
+  rawWrite(`\x1B[${scrollBottom};1H`);
 }
 
-/** Draw the top horizontal line. */
-function drawTopLine(): void {
-  rawWrite(chalk.gray(HLINE) + "\n");
+/**
+ * Draw the 3-line input box at the bottom of the terminal.
+ * Called once at startup. Top and bottom lines never change.
+ */
+function drawFixedBox(): void {
+  const h = termHeight();
+  const inputRow = h - 1;
+
+  // Row h-2: top line
+  rawWrite(`\x1B[${h - 2};1H`);
+  rawWrite("\x1B[2K");
+  rawWrite(chalk.gray(HLINE));
+
+  // Row h-1: input line
+  rawWrite(`\x1B[${inputRow};1H`);
+  rawWrite("\x1B[2K");
+  rawWrite(buildPrompt() + highlightInput());
+
+  // Row h: bottom line
+  rawWrite(`\x1B[${h};1H`);
+  rawWrite("\x1B[2K");
+  rawWrite(chalk.gray(HLINE));
+
+  // Position cursor
+  positionCursor();
 }
 
 function redrawInput(): void {
   if (_closed) return;
-  const prompt = buildPrompt();
-  const input = highlightInput();
+  const h = termHeight();
+  const inputRow = h - 1;
+
+  // Update only the input row
+  rawWrite(`\x1B[${inputRow};1H`);
+  rawWrite("\x1B[2K");
+  rawWrite(buildPrompt() + highlightInput());
+
+  // Show hint on the bottom line if command is partially typed
   const hint = buildHint();
+  rawWrite(`\x1B[${h};1H`);
+  rawWrite("\x1B[2K");
+  rawWrite(hint || chalk.gray(HLINE));
 
-  // Draw prompt + input on the current line
-  rawWrite(prompt + input);
+  positionCursor();
+}
 
-  // Show hint below if command is partially typed, then bottom line
-  if (hint) {
-    rawWrite("\n" + hint);
-    rawWrite("\n" + chalk.gray(HLINE));
-    // Move cursor back up to the input line (2 lines: hint + bottom)
-    rawWrite("\x1B[2A");
-  } else {
-    rawWrite("\n" + chalk.gray(HLINE));
-    // Move cursor back up to the input line (1 line: bottom)
-    rawWrite("\x1B[1A");
-  }
-
-  // Position cursor correctly
-  const promptLen = stripAnsi(prompt).length;
-  const cursorAbsPos = promptLen + cursorPos;
-  const width = termWidth();
-  const targetCol = (cursorAbsPos % width) + 1;
-  const targetRow = Math.floor(cursorAbsPos / width) + 1;
-  rawWrite(`\r`);
-  if (targetRow > 1) rawWrite(`\x1B[${targetRow - 1}B`);
-  rawWrite(`\x1B[${targetCol}G`);
+function positionCursor(): void {
+  const h = termHeight();
+  const inputRow = h - 1;
+  const promptLen = stripAnsi(buildPrompt()).length;
+  const col = promptLen + cursorPos + 1;
+  rawWrite(`\x1B[${inputRow};${col}H`);
 }
 
 // ─── Tab Completion ──────────────────────────────────────────────────────────
@@ -859,7 +856,6 @@ function handleKeypress(key: { name?: string; ctrl?: boolean; sequence?: string 
 function cleanupTerminal(): void {
   if (_closed) return;
   _closed = true;
-  if (_outputBuffer.length > 0) flushOutput();
   stopStatusBar();
   _ctx = null;
   showCursor();
@@ -867,7 +863,8 @@ function cleanupTerminal(): void {
   if (_onDataRef) process.stdin.removeListener("data", _onDataRef);
   if (process.stdin.isTTY) try { process.stdin.setRawMode(false); } catch { /* */ }
   process.stdin.pause();
-  clearAllInputLines();
+  // Reset scroll region to full screen
+  rawWrite("\x1B[r");
   if (_originalStdoutWrite) process.stdout.write = _originalStdoutWrite;
   if (_originalStderrWrite) process.stderr.write = _originalStderrWrite;
   _originalStdoutWrite = null;
@@ -896,7 +893,6 @@ export function startSlashCommands(ctx: SlashCommandContext): { close: () => voi
   _completing = false; _completionMatches = []; _completionIdx = 0;
   _historyIdx = -1; _historySaved = "";
   _history.length = 0;  // Clear history between sessions
-  _outputBuffer.length = 0; _flushScheduled = false;
   _listeners.length = 0;
 
   _ctx = ctx;
@@ -916,22 +912,17 @@ export function startSlashCommands(ctx: SlashCommandContext): { close: () => voi
     try { str = typeof chunk === "string" ? chunk : String(chunk); }
     catch { return original(chunk, ...rest); }
 
-    // \r-only progress lines
-    if (str.includes("\r") && !str.includes("\n")) {
-      _outputBuffer.push(str.replace(/\r/g, ""));
-      scheduleFlush();
-      return true;
-    }
+    // Write into the scroll region — save cursor, go to scroll bottom, write, restore
+    rawWrite("\x1B[s");
+    const scrollBottom = termHeight() - BOX_ROWS;
+    rawWrite(`\x1B[${scrollBottom};1H`);
+    rawWrite("\x1B[J");
 
-    // Multi-line
-    const lines = str.split("\n");
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const isLast = i === lines.length - 1;
-      if (!isLast) { _outputBuffer.push(line); }
-      else if (line.length > 0) { _outputBuffer.push(line); }
-    }
-    scheduleFlush();
+    // Strip \r-only progress lines to just the content
+    const clean = str.replace(/\r(?!\n)/g, "");
+    original(clean, ...rest);
+
+    rawWrite("\x1B[u");
     return true;
   }
 
@@ -968,6 +959,7 @@ export function startSlashCommands(ctx: SlashCommandContext): { close: () => voi
   _exitHandler = () => {
     showCursor();
     stopStatusBar();
+    rawWrite("\x1B[r"); // reset scroll region
     if (process.stdin.isTTY) try { process.stdin.setRawMode(false); } catch { /* */ }
     if (_originalStdoutWrite) {
       process.stdout.write = _originalStdoutWrite;
@@ -984,8 +976,9 @@ export function startSlashCommands(ctx: SlashCommandContext): { close: () => voi
   writeOutput(chalk.cyan.bold("  Co-Scientist Interactive Mode"));
   writeOutput(chalk.gray("  Type /help for commands. Tab to autocomplete. Up/Down for history."));
   writeOutput("");
-  drawTopLine();
-  redrawInput();
+  // Set scroll region and draw the fixed input box at the bottom
+  setScrollRegion();
+  drawFixedBox();
 
   return {
     close: () => cleanupTerminal(),
