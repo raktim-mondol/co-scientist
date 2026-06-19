@@ -659,6 +659,21 @@ const commands: SlashCommand[] = [
   },
 
   {
+    name: "clear",
+    description: "Clear the screen",
+    usage: "/clear",
+    handler: () => {
+      const h = termHeight();
+      const scrollBottom = h - BOX_ROWS;
+      for (let row = 1; row <= scrollBottom; row++) {
+        rawWrite(`\x1B[${row};1H`);
+        rawWrite("\x1B[2K");
+      }
+      rawWrite(`\x1B[${scrollBottom};1H`);
+    },
+  },
+
+  {
     name: "quit",
     description: "Stop session (save as paused, resumable)",
     usage: "/quit",

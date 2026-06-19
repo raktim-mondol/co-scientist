@@ -316,6 +316,7 @@ async function handleCommand(raw: string): Promise<void> {
       writeOutput(chalk.white("  /graph <id>") + chalk.gray("       Show knowledge graph"));
       writeOutput(chalk.white("  /safety <id>") + chalk.gray("      Inspect quarantined hypotheses"));
       writeOutput(chalk.white("  /activity <id>") + chalk.gray("   Show activity log"));
+      writeOutput(chalk.white("  /clear") + chalk.gray("            Clear screen"));
       writeOutput(chalk.white("  /quit") + chalk.gray("              Exit co-scientist"));
       writeOutput(chalk.gray("  Up/Down arrows for command history."));
       break;
@@ -555,6 +556,17 @@ async function handleCommand(raw: string): Promise<void> {
     case "exit":
       _closed = true;
       break;
+
+    case "clear": {
+      // Clear only the scroll region (above the fixed input box)
+      const scrollBottom = termHeight() - BOX_ROWS;
+      for (let row = 1; row <= scrollBottom; row++) {
+        rawWrite(`\x1B[${row};1H`);
+        rawWrite("\x1B[2K");
+      }
+      rawWrite(`\x1B[${scrollBottom};1H`);
+      break;
+    }
 
     default:
       writeOutput(chalk.red(`  Unknown command: /${cmd}`));
