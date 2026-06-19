@@ -79,9 +79,6 @@ COMPUTE_BUDGET_TOKENS=500000
 # Reproducibility (optional) — seeds all scheduling/sampling RNG. Unset = non-deterministic.
 # SEED=42
 
-# Citation integrity — headless browser fallback for Cloudflare-blocked URLs (optional)
-# Requires: bun add playwright && npx playwright install chromium (~200MB one-time)
-# CITATION_HEADLESS_BROWSER=true
 
 # Safety gate — dual-use / biosecurity quarantine (recommended: keep enabled)
 # SAFETY_GATE=false                 # disable entirely (not recommended)
@@ -468,14 +465,6 @@ Citation string
   └────┬────┘   Parallel AI also blocked / unavailable?
        │
        ▼
-  ┌─────────┐    DOI in HTML?   ┌──────────────┐
-  │ Step 2c │────────────────▶│ Crossref API  │──▶ verified / unverified (page-sourced)
-  │ Headless│    (opt-in,       └──────────────┘
-  │ Chromium│     full JS exec)
-  │(Playwright)
-  └────┬────┘   no URL, or all URL steps failed?
-       │
-       ▼
   ┌─────────┐   title match?   ┌──────────────┐
   │ Step 3  │────────────────▶│ Crossref API  │──▶ verified (Dice ≥ 0.7) / unverified
   │ Crossref│    bibliographic  └──────────────┘
@@ -489,7 +478,6 @@ Citation string
 | **1** | DOI extracted directly from the citation string | Bare DOIs (`10.1038/abc`), DOI URLs (`doi.org/10.1038/abc`), DOIs embedded in publisher URLs |
 | **2a** | Raw `fetch()` the URL, parse HTML for `citation_doi` / `dc.identifier` / JSON-LD / body regex | Publisher pages with server-rendered metadata (Nature, PMC, Science) |
 | **2b** | Parallel AI `/v1/extract` (JS-rendered extract) | Cloudflare JS challenges, SPA-rendered pages (requires `PARALLEL_AI_API_KEY`) |
-| **2c** | Headless Chromium via Playwright (opt-in) | Cloudflare-protected pages when Parallel AI is unavailable or also blocked |
 | **3** | Crossref bibliographic title search | Free-text citations with no DOI or URL |
 
 The extracted DOI is resolved against the [Crossref REST API](https://api.crossref.org) (no auth required) and classified:
@@ -500,40 +488,7 @@ The extracted DOI is resolved against the [Crossref REST API](https://api.crossr
 | ⚠️ `unverified` | No confident match, DOI extracted from a page but not in Crossref, or network failures (fails safe) |
 | ❌ `fabricated` | **User-provided** DOI returns 404 — the paper does not exist. Only applies to DOIs the user typed directly. |
 
-> **Important:** DOIs extracted from fetched pages (Steps 2a/2b/2c) that 404 on Crossref are marked **unverified**, not fabricated. A real publisher page containing a DOI-like identifier isn't fabrication — it's just not in Crossref (e.g., DataCite DOIs, non-DOI strings matching the regex).
-
-### Headless browser fallback (Step 2c)
-
-Many major academic publishers (Oxford Academic, Frontiers) protect their pages with Cloudflare JS challenges that block plain `fetch()`. When both raw fetch and Parallel AI extract fail, an optional **headless Chromium** can render the page with full JavaScript execution.
-
-> **This is optional.** If you don't install it, Step 2c is simply skipped — citation verification still works through Steps 1–3. Only URLs behind Cloudflare JS challenges will remain unverified.
-
-#### Installation
-
-The `playwright` npm package is already in `package.json` and installed with `bun install`. You only need to download the Chromium browser binary (~200MB, one-time):
-
-```bash
-npx playwright install chromium
-```
-
-#### Enable
-
-```bash
-# Add to .env
-CITATION_HEADLESS_BROWSER=true
-```
-
-#### Verify it's working
-
-```bash
-bun run -e "
-import { fetchWithHeadlessBrowser } from './src/tools/headlessResolver.js';
-const html = await fetchWithHeadlessBrowser('https://academic.oup.com/bioinformatics/article/39/7/btad410/7208864');
-console.log(html ? '✅ Headless browser working — got ' + html.length + ' chars' : '❌ Failed');
-"
-```
-
-Playwright is lazy-loaded — zero startup cost unless Step 2c is actually triggered. It can handle non-interactive Cloudflare Turnstile challenges (JS execution + browser fingerprint) but cannot solve interactive CAPTCHAs (reCAPTCHA v2 checkbox, hCaptcha). Most academic publisher pages use only the non-interactive type.
+> **Important:** DOIs extracted from fetched pages (Steps 2a/2b) that 404 on Crossref are marked **unverified**, not fabricated. A real publisher page containing a DOI-like identifier isn't fabrication — it's just not in Crossref (e.g., DataCite DOIs, non-DOI strings matching the regex).
 
 ### Soft Glicko-2 penalty
 
@@ -704,7 +659,6 @@ flowchart TD
     CON(["Consensus MCP"])
     SCITE(["Scite MCP<br/>(fallback)"])
     XREF(["Crossref API"])
-    HEADLESS(["Headless Chromium<br/>(Playwright · opt-in)"])
     EVBANK[("Evidence Bank<br/>(evidence_sources)")]
 
     SUP["① Supervisor"]
@@ -712,7 +666,7 @@ flowchart TD
     REF["③ Reflection<br/>(3-stage review pipeline)"]
     SAFE["④ Safety Gate<br/>(dual-use quarantine)"]
     PROV["⑤ Provenance"]
-    CITE["⑥ Citation Integrity<br/>(4-step resolution<br/>· soft Glicko-2 penalty)"]
+    CITE["⑥ Citation Integrity<br/>(3-step resolution<br/>· soft Glicko-2 penalty)"]
     RANK["⑦ Ranking<br/>(Glicko-2 Tournament<br/>· position-bias-robust judging)"]
 
     subgraph PROXVEC["Proximity + Vector Store"]
@@ -743,7 +697,6 @@ flowchart TD
     SCITE --> PROV
     XREF --> CITE
     PAI -->|extract pages| CITE
-    HEADLESS -->|JS-rendered HTML| CITE
     CON --> EVOL
     SCITE --> EVOL
     CON --> DESIGN
@@ -784,7 +737,6 @@ flowchart TD
     style CON      fill:#00695C,color:#fff,stroke:#004D40
     style SCITE    fill:#00695C,color:#fff,stroke:#004D40
     style XREF     fill:#00695C,color:#fff,stroke:#004D40
-    style HEADLESS fill:#00695C,color:#fff,stroke:#004D40
     style EVBANK   fill:#37474F,color:#fff,stroke:#263238
     style SUP      fill:#6A1B9A,color:#fff,stroke:#4A148C
     style META     fill:#6A1B9A,color:#fff,stroke:#4A148C
