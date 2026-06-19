@@ -197,10 +197,16 @@ program.action(async () => {
   const { v4: uuidv4 } = await import("uuid");
   const { renderTUI } = await import("./tui/index.js");
 
-  // Initialize database and MCP silently — output would be wiped by the
-  // screen clear below anyway.
+  // Suppress [INFO] log output during init — screen clear below wipes it
+  // anyway, and MCP logs pollute the terminal before the TUI takes over.
+  const prevLogLevel = process.env.LOG_LEVEL;
+  process.env.LOG_LEVEL = "warn";
+  const { resetConfig } = await import("../config.js");
+  resetConfig();
   await runMigrations();
   await getMCPManager().initialize().catch(() => {});
+  process.env.LOG_LEVEL = prevLogLevel ?? "";
+  resetConfig();
 
   const memory = getContextStore();
   const budgetTokens = getConfig().compute.budgetTokens;
