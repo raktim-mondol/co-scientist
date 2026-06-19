@@ -2,7 +2,6 @@
 import { Command } from "commander";
 import "dotenv/config";
 import chalk from "chalk";
-import { printBanner } from "./banner.js";
 import { withDb } from "./commands/withDb.js";
 import { runCommand } from "./commands/run.js";
 import { resumeCommand } from "./commands/resume.js";

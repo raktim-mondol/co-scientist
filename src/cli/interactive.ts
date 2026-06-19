@@ -28,7 +28,6 @@ import { getMCPManager } from "../tools/mcpClient.js";
 import { EventEmitter } from "events";
 import { v4 as uuidv4 } from "uuid";
 import type { ResearchGoal } from "../models/researchGoal.js";
-import type { SessionStats } from "../models/session.js";
 
 // ─── Terminal Helpers ─────────────────────────────────────────────────────────
 
@@ -63,20 +62,43 @@ const _history: string[] = [];
 let _historyIdx = -1;
 let _historySaved = "";
 
+// ─── Constants ──────────────────────────────────────────────────────────────
+
+const INPUT_BOX_WIDTH = 80;
+const HLINE = "─".repeat(INPUT_BOX_WIDTH);
+
+function drawTopLine(): void {
+  rawWrite(chalk.gray(HLINE) + "\n");
+}
+
 // ─── Prompt ──────────────────────────────────────────────────────────────────
 
 function buildPrompt(): string {
-  return chalk.green("> ") + chalk.cyan("co-scientist") + chalk.white(" ");
+  return chalk.gray(" ") + chalk.green(">") + chalk.white(" ");
 }
 
 function redrawInput(): void {
   if (_closed) return;
-  clearLine();
+  // Clear from current position down (prompt line + bottom line)
+  rawWrite("\r\x1B[J");
   rawWrite(buildPrompt() + inputBuffer);
   const overshoot = inputBuffer.length - cursorPos;
   if (overshoot > 0) {
     rawWrite(`\x1B[${overshoot}D`);
   }
+  // Draw bottom line below input
+  rawWrite("\n" + chalk.gray(HLINE));
+  // Move cursor back up to the input line
+  rawWrite("\x1B[1A");
+  // Reposition cursor to correct column
+  const promptLen = stripAnsi(buildPrompt()).length;
+  const targetCol = promptLen + cursorPos + 1;
+  rawWrite(`\r\x1B[${targetCol}G`);
+}
+
+function stripAnsi(str: string): string {
+  // eslint-disable-next-line no-control-regex
+  return str.replace(/\x1B(?:\[[0-9;]*[a-zA-Z]|][^\x07]*\x07|[^[].)/g, "");
 }
 
 // ─── Output ──────────────────────────────────────────────────────────────────
@@ -94,7 +116,8 @@ function flushOutput(): void {
   _flushScheduled = false;
   if (_outputBuffer.length === 0) return;
   const w = _originalStdoutWrite ?? process.stdout.write.bind(process.stdout);
-  clearLine();
+  // Clear the bottom line + prompt line
+  rawWrite("\r\x1B[J");
   for (const line of _outputBuffer) {
     w(line + "\n");
   }
@@ -512,6 +535,7 @@ export async function startInteractive(): Promise<void> {
   process.stdin.setEncoding("utf8");
 
   hideCursor();
+  drawTopLine();
   redrawInput();
 
   let _dispatching = false;
@@ -630,7 +654,8 @@ export async function startInteractive(): Promise<void> {
     try { process.stdin.setRawMode(false); } catch { /* */ }
   }
   process.stdin.pause();
-  clearLine();
+  // Clear the bordered input area (bottom line + prompt line)
+  rawWrite("\r\x1B[J");
   process.stdout.write = _originalStdoutWrite;
   console.log(chalk.gray("Goodbye!"));
   closeDb();

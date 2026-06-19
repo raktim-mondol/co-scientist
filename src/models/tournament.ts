@@ -290,16 +290,5 @@ export function computeEloUpdate(
   };
 }
 
-/**
- * @deprecated Use seededGlicko2FromReviewScores instead.
- */
-export function seededEloFromReviewScores(
-  novelty?: number,
-  correctness?: number,
-  testability?: number
-): number {
-  return seededGlicko2FromReviewScores(novelty, correctness, testability).rating;
-}
-
 /** Canonical Glicko-2 name for seeding a rating from review scores. */
 export const seededGlicko2Rating = seededGlicko2FromReviewScores;

@@ -2,7 +2,6 @@ import { EventEmitter } from "events";
 import chalk from "chalk";
 import ora from "ora";
 import { printBanner } from "../banner.js";
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 import inquirer from "inquirer";
 import { v4 as uuidv4 } from "uuid";
 import { SupervisorAgent } from "../../agents/supervisor.js";

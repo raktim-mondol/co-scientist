@@ -106,24 +106,6 @@ export function safeValidateExperimentalFeedback(
   return r.success ? { success: true, data: r.data } : { success: false, error: r.error };
 }
 
-export function validateExperimentalFeedbackInput(input: unknown): ExperimentalFeedbackInput {
-  return ExperimentalFeedbackInputSchema.parse(input);
-}
-
-export function safeValidateExperimentalFeedbackInput(
-  input: unknown,
-): { success: true; data: ExperimentalFeedbackInput } | { success: false; error: z.ZodError } {
-  const r = ExperimentalFeedbackInputSchema.safeParse(input);
-  return r.success ? { success: true, data: r.data } : { success: false, error: r.error };
-}
-
 export function validateRewardMemory(input: unknown): RewardMemory {
   return RewardMemorySchema.parse(input);
-}
-
-export function safeValidateRewardMemory(
-  input: unknown,
-): { success: true; data: RewardMemory } | { success: false; error: z.ZodError } {
-  const r = RewardMemorySchema.safeParse(input);
-  return r.success ? { success: true, data: r.data } : { success: false, error: r.error };
 }

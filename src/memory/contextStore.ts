@@ -10,7 +10,6 @@ import type { AgentTask } from "../models/agentTask.js";
 import type { ExperimentalFeedback } from "../models/feedback.js";
 import type { EvidenceSource } from "../models/evidence.js";
 import { cosineSimilarity } from "../util/vector.js";
-import { logger } from "../config.js";
 
 export interface SafetyAssessmentRow {
   severity: string;

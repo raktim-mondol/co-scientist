@@ -51,6 +51,9 @@ const INJECT_CONTENT_MAX = 10_000;
 const MAX_HISTORY = 100;
 /** Max rows for tab-completion menu. */
 const COMPLETION_MAX_ROWS = 8;
+/** Width of the bordered input box. */
+const INPUT_BOX_WIDTH = 80;
+const HLINE = "─".repeat(INPUT_BOX_WIDTH);
 
 // ─── Terminal Helpers ─────────────────────────────────────────────────────────
 
@@ -108,6 +111,7 @@ function flushOutput(): void {
   clearAllInputLines();
   for (const line of _outputBuffer) w(line + "\n");
   _outputBuffer.length = 0;
+  drawTopLine();
   redrawInput();
 }
 
@@ -269,10 +273,11 @@ function stopStatusBar(): void {
 // ─── Prompt & Input Rendering ────────────────────────────────────────────────
 
 function buildPrompt(): string {
-  if (_dispatching) return chalk.gray("... ");
-  if (!_ctx) return chalk.white("> ");
+  if (_dispatching) return chalk.gray(" ") + chalk.gray("...") + chalk.white(" ");
+  if (!_ctx) return chalk.gray(" ") + chalk.green(">") + chalk.white(" ");
   const paused = _ctx.supervisor.isPaused();
-  return paused ? chalk.yellow("> ") : chalk.green("> ");
+  const marker = paused ? chalk.yellow(">") : chalk.green(">");
+  return chalk.gray(" ") + marker + chalk.white(" ");
 }
 
 /**
@@ -326,51 +331,54 @@ function visualLineCount(str: string, width: number): number {
   return total;
 }
 
-/** Clear ALL lines occupied by the current input + hint (handles wrapping). */
+/** Clear ALL lines occupied by the bordered input (top line + prompt + hint + bottom line). */
 function clearAllInputLines(): void {
   if (_closed) return;
-  const prompt = buildPrompt();
-  const input = highlightInput();
-  const hint = buildHint();
-  const width = termWidth();
-  const fullLine = prompt + input;
-  const totalLines = visualLineCount(fullLine, width) + (hint ? 1 : 0);
-
+  // We need to clear: top line + prompt/input line + optional hint + bottom line
+  // Move up to the top line and clear everything below
   rawWrite("\r");
-  if (totalLines > 1) rawWrite(`\x1B[${totalLines - 1}A`);
+  // Move up 3 lines (bottom line + prompt line + optional hint) to reach top line
+  const hint = buildHint();
+  const linesToClear = hint ? 3 : 2;
+  if (linesToClear > 1) rawWrite(`\x1B[${linesToClear - 1}A`);
   rawWrite("\x1B[J");
+}
+
+/** Draw the top horizontal line. */
+function drawTopLine(): void {
+  rawWrite(chalk.gray(HLINE) + "\n");
 }
 
 function redrawInput(): void {
   if (_closed) return;
   const prompt = buildPrompt();
   const input = highlightInput();
+  const hint = buildHint();
+
+  // Draw prompt + input on the current line
   rawWrite(prompt + input);
 
-  // Show hint below if command is partially typed
-  const hint = buildHint();
+  // Show hint below if command is partially typed, then bottom line
   if (hint) {
     rawWrite("\n" + hint);
-    // Move cursor back up to the input line
+    rawWrite("\n" + chalk.gray(HLINE));
+    // Move cursor back up to the input line (2 lines: hint + bottom)
+    rawWrite("\x1B[2A");
+  } else {
+    rawWrite("\n" + chalk.gray(HLINE));
+    // Move cursor back up to the input line (1 line: bottom)
     rawWrite("\x1B[1A");
   }
 
   // Position cursor correctly
-  const displayLen = stripAnsi(prompt + input).length;
   const promptLen = stripAnsi(prompt).length;
   const cursorAbsPos = promptLen + cursorPos;
   const width = termWidth();
-  const currentRow = Math.ceil((cursorAbsPos + 1) / width);
-  const totalRows = Math.ceil(Math.max(1, displayLen + 1) / width);
-  if (totalRows > currentRow) {
-    rawWrite(`\x1B[${totalRows - currentRow}A`);
-  }
+  const targetCol = (cursorAbsPos % width) + 1;
+  const targetRow = Math.floor(cursorAbsPos / width) + 1;
   rawWrite(`\r`);
-  if (cursorAbsPos > 0) {
-    // Move right to cursor position
-    const targetCol = (cursorAbsPos % width) + 1;
-    rawWrite(`\x1B[${targetCol}G`);
-  }
+  if (targetRow > 1) rawWrite(`\x1B[${targetRow - 1}B`);
+  rawWrite(`\x1B[${targetCol}G`);
 }
 
 // ─── Tab Completion ──────────────────────────────────────────────────────────
@@ -976,6 +984,7 @@ export function startSlashCommands(ctx: SlashCommandContext): { close: () => voi
   writeOutput(chalk.cyan.bold("  Co-Scientist Interactive Mode"));
   writeOutput(chalk.gray("  Type /help for commands. Tab to autocomplete. Up/Down for history."));
   writeOutput("");
+  drawTopLine();
   redrawInput();
 
   return {

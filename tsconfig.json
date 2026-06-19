@@ -9,9 +9,6 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true,
-    "jsx": "react-jsx",
-    "experimentalDecorators": true,
-    "emitDecoratorMetadata": false,
     "types": ["bun"]
   },
   "include": ["src/**/*"],

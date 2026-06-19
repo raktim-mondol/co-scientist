@@ -43,19 +43,3 @@ export const AgentTaskSchema = z.object({
 });
 
 export type AgentTask = z.infer<typeof AgentTaskSchema>;
-
-// Task priorities
-export const TASK_PRIORITIES: Record<TaskType, number> = {
-  supervisor_init: 10,
-  supervisor_stats: 9,
-  reflection: 8,
-  ranking: 7,
-  generation: 6,
-  evolution: 5,
-  proximity: 4,
-  meta_review: 3,
-  research_overview: 2,
-  experiment_design: 1,
-  knowledge_graph: 4,
-  provenance: 7,  // runs right after reflection, before ranking
-};

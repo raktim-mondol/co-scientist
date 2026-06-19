@@ -1,7 +1,7 @@
 {
   "name": "co-scientist",
   "version": "1.0.0",
-  "description": "Multi-agent AI system for automated scientific hypothesis generation and ranking — inspired by the Co-Scientist paper (Gottweis et al., Nature 2026), with significant extensions including Glicko-2 ranking, provenance tracking, knowledge graph, experiment design, and local vector search",
+  "description": "Multi-agent AI system for automated scientific hypothesis generation and ranking \u2014 inspired by the Co-Scientist paper (Gottweis et al., Nature 2026), with significant extensions including Glicko-2 ranking, provenance tracking, knowledge graph, experiment design, and local vector search",
   "type": "module",
   "bin": {
     "co-scientist": "src/cli/index.ts"
@@ -28,8 +28,6 @@
     "ora": "^8.2.0",
     "p-queue": "^8.1.1",
     "parallel-web": "^0.5.0",
-    "react": "^18.3.1",
-    "react-devtools-core": "^7.0.1",
     "sqlite-vec": "^0.1.9",
     "uuid": "^14.0.0",
     "yaml": "^2.9.0",
@@ -37,10 +35,8 @@
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",
-    "@types/handlebars": "^4.1.0",
     "@types/inquirer": "^9.0.10",
     "@types/node": "^20.19.43",
-    "@types/react": "^18.3.31",
     "@types/uuid": "^10.0.0",
     "drizzle-kit": "^0.31.10",
     "typescript": "^6.0.3"
