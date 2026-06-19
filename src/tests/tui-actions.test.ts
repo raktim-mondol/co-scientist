@@ -17,7 +17,7 @@ import { resetDb } from "../db/index.js";
 import { runMigrations } from "../db/migrate.js";
 import { getContextStore, resetContextStore } from "../memory/contextStore.js";
 import { resetConfig } from "../config.js";
-import { killHypothesis, boostHypothesis, injectHypothesis } from "../cli/tui/actions.js";
+import { killHypothesis, boostHypothesis, injectHypothesis } from "../cli/actions.js";
 import type { ContextStore } from "../memory/contextStore.js";
 
 let store: ContextStore;

@@ -60,6 +60,52 @@ export class ContextStore {
     return this._rowToSession(row);
   }
 
+  /**
+   * Resolve a session by UUID, partial UUID, or name. Returns the session or null.
+   * Tries: exact UUID → partial UUID prefix → case-insensitive name.
+   */
+  resolveSession(identifier: string): CoScientistSession | null {
+    // Try exact UUID first
+    const byId = this.getSession(identifier);
+    if (byId) return byId;
+
+    // Try partial UUID prefix match (min 4 chars to avoid false positives)
+    if (identifier.length >= 4 && /^[\da-f-]+$/i.test(identifier)) {
+      const rows = this.db
+        .select()
+        .from(schema.sessions)
+        .where(sql`${schema.sessions.id} LIKE ${identifier + "%"}`)
+        .orderBy(desc(schema.sessions.createdAt))
+        .all();
+      if (rows.length === 1) return this._rowToSession(rows[0]);
+      // Multiple prefix matches — ambiguous, fall through to name match
+    }
+
+    // Try by name (case-insensitive, most recent first)
+    const rows = this.db
+      .select()
+      .from(schema.sessions)
+      .where(sql`lower(${schema.sessions.name}) = lower(${identifier})`)
+      .orderBy(desc(schema.sessions.createdAt))
+      .all();
+    if (rows.length === 0) return null;
+    return this._rowToSession(rows[0]);
+  }
+
+  /**
+   * Mark sessions stuck in "running" or "initializing" for >24h as "interrupted".
+   * Returns the count of cleaned-up sessions.
+   */
+  cleanupStaleSessions(): number {
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const stmt = this.sqlite.query(
+      `UPDATE sessions SET status = 'interrupted', updated_at = ?1
+       WHERE status IN ('running', 'initializing') AND updated_at < ?2`
+    );
+    const result = stmt.run(new Date().toISOString(), cutoff.toISOString()) as unknown as { changes: number };
+    return result.changes ?? 0;
+  }
+
   getResearchGoal(sessionId: string): ResearchGoal | null {
     const row = this.db
       .select({ researchGoalJson: schema.sessions.researchGoalJson })

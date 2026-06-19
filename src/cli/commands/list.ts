@@ -7,6 +7,13 @@ import { formatCitationIntegrity } from "../../agents/citationIntegrity.js";
 export async function listCommand(): Promise<void> {
   await runMigrations();
   const memory = getContextStore();
+
+  // Clean up stale sessions (running/initializing for >24h)
+  const cleaned = memory.cleanupStaleSessions();
+  if (cleaned > 0) {
+    console.log(chalk.gray(`  (${cleaned} stale session(s) marked as interrupted)\n`));
+  }
+
   const sessions = memory.listSessions();
 
   if (sessions.length === 0) {
@@ -56,7 +63,7 @@ export async function resultsCommand(
 ): Promise<void> {
   await runMigrations();
   const memory = getContextStore();
-  const session = memory.getSession(sessionId);
+  const session = memory.resolveSession(sessionId);
 
   if (!session) {
     console.error(chalk.red(`Session not found: ${sessionId}`));
@@ -221,7 +228,7 @@ export async function resultsCommand(
 export async function overviewCommand(sessionId: string): Promise<void> {
   await runMigrations();
   const memory = getContextStore();
-  const session = memory.getSession(sessionId);
+  const session = memory.resolveSession(sessionId);
 
   if (!session) {
     console.error(chalk.red(`Session not found: ${sessionId}`));
@@ -249,7 +256,7 @@ export async function overviewCommand(sessionId: string): Promise<void> {
 export async function resumeCommand(sessionId: string): Promise<void> {
   await runMigrations();
   const memory = getContextStore();
-  const session = memory.getSession(sessionId);
+  const session = memory.resolveSession(sessionId);
 
   if (!session) {
     console.error(chalk.red(`Session not found: ${sessionId}`));
@@ -380,7 +387,7 @@ export async function feedbackCommand(
   await runMigrations();
   const { default: inquirer } = await import("inquirer");
   const memory = getContextStore();
-  const session = memory.getSession(sessionId);
+  const session = memory.resolveSession(sessionId);
 
   if (!session) {
     console.error(chalk.red(`Session not found: ${sessionId}`));

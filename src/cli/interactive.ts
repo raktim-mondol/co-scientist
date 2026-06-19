@@ -266,15 +266,10 @@ async function handleCommand(raw: string): Promise<void> {
       resetConfig();
       await runMigrations();
       const memory = getContextStore();
-      let session = memory.getSession(args);
+      const session = memory.resolveSession(args);
       if (!session) {
-        // Try partial match
-        const allSessions = memory.listSessions();
-        session = allSessions.find(s => s.id.startsWith(args)) ?? null;
-        if (!session) {
-          writeOutput(chalk.red(`  Session not found: ${args}`));
-          break;
-        }
+        writeOutput(chalk.red(`  Session not found: ${args}`));
+        break;
       }
       if (session.status !== "paused") {
         writeOutput(chalk.yellow(`  Session "${session.name}" is ${session.status}, not paused.`));
@@ -325,7 +320,7 @@ async function handleCommand(raw: string): Promise<void> {
       }
       await runMigrations();
       const memory = getContextStore();
-      const session = memory.getSession(args) || memory.listSessions().find(s => s.id.startsWith(args));
+      const session = memory.resolveSession(args);
       if (!session) {
         writeOutput(chalk.red(`  Session not found: ${args}`));
         break;
@@ -354,7 +349,7 @@ async function handleCommand(raw: string): Promise<void> {
       }
       await runMigrations();
       const memory = getContextStore();
-      const session = memory.getSession(args) || memory.listSessions().find(s => s.id.startsWith(args));
+      const session = memory.resolveSession(args);
       if (!session) {
         writeOutput(chalk.red(`  Session not found: ${args}`));
         break;
@@ -379,7 +374,7 @@ async function handleCommand(raw: string): Promise<void> {
       }
       await runMigrations();
       const memory = getContextStore();
-      const session = memory.getSession(args) || memory.listSessions().find(s => s.id.startsWith(args));
+      const session = memory.resolveSession(args);
       if (!session) {
         writeOutput(chalk.red(`  Session not found: ${args}`));
         break;

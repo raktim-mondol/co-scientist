@@ -11,7 +11,7 @@ export async function graphCommand(
   await runMigrations();
   const memory = getContextStore();
 
-  const session = memory.getSession(sessionId);
+  const session = memory.resolveSession(sessionId);
   if (!session) {
     console.error(chalk.red(`Session not found: ${sessionId}`));
     process.exit(1);

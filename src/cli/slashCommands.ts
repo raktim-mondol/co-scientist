@@ -20,7 +20,7 @@ import type { ContextStore } from "../memory/contextStore.js";
 import type { SupervisorAgent } from "../agents/supervisor.js";
 import type { SessionStats } from "../models/session.js";
 import type { Hypothesis } from "../models/hypothesis.js";
-import { killHypothesis, boostHypothesis, injectHypothesis } from "./tui/actions.js";
+import { killHypothesis, boostHypothesis, injectHypothesis } from "./actions.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 

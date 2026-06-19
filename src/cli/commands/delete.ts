@@ -85,7 +85,7 @@ export async function deleteCommand(
     process.exit(1);
   }
 
-  const session = memory.getSession(sessionId);
+  const session = memory.resolveSession(sessionId);
 
   // Edge case: session not found
   if (!session) {

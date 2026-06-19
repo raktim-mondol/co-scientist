@@ -3,6 +3,7 @@ import { Command } from "commander";
 import "dotenv/config";
 import chalk from "chalk";
 import { printBanner } from "./banner.js";
+import { withDb } from "./commands/withDb.js";
 import { runCommand } from "./commands/run.js";
 import { resumeCommand } from "./commands/resume.js";
 import { resultsCommand } from "./commands/results.js";
@@ -48,7 +49,7 @@ program
 program
   .command("list")
   .description("List all research sessions")
-  .action(listCommand);
+  .action(() => withDb(listCommand));
 
 program
   .command("results <sessionId>")
@@ -61,12 +62,12 @@ program
   .option("-n, --top <n>", "Show top N hypotheses", "10")
   .option("--all", "Show all hypotheses including rejected")
   .option("--show-feedback", "Show full experimental feedback details per hypothesis")
-  .action(resultsCommand);
+  .action((sessionId, opts) => withDb(() => resultsCommand(sessionId, opts)));
 
 program
   .command("overview <sessionId>")
   .description("Display the final research overview")
-  .action(overviewCommand);
+  .action((sessionId) => withDb(() => overviewCommand(sessionId)));
 
 program
   .command("feedback <sessionId>")
@@ -79,7 +80,7 @@ program
   .option("--hypothesis", "Submit a new hypothesis")
   .option("--review <hypothesisId>", "Submit a review for a specific hypothesis")
   .option("--experimental", "Submit empirical/experimental feedback (RLEF)")
-  .action(feedbackCommand);
+  .action((sessionId, opts) => withDb(() => feedbackCommand(sessionId, opts)));
 
 program
   .command("export <sessionId>")
@@ -92,7 +93,7 @@ program
   .option("-f, --format <fmt>", "Output format: markdown | json", "markdown")
   .option("-o, --output <path>", "Output file path")
   .option("--all", "Export all active hypotheses (default: top 20)")
-  .action(exportCommand);
+  .action((sessionId, opts) => withDb(() => exportCommand(sessionId, opts)));
 
 program
   .command("delete [sessionId]")
@@ -103,7 +104,7 @@ program
   )
   .option("-f, --force", "Skip confirmation prompt")
   .option("--all", "Delete all sessions")
-  .action(deleteCommand);
+  .action((sessionId, opts) => withDb(() => deleteCommand(sessionId, opts)));
 
 program
   .command("design <sessionId>")
@@ -112,28 +113,28 @@ program
     "  --hypothesis-id <id>   Target hypothesis (default: top-1 by Elo)"
   )
   .option("--hypothesis-id <id>", "Target a specific hypothesis (default: top-1 by Elo)")
-  .action(designCommand);
+  .action((sessionId, opts) => withDb(() => designCommand(sessionId, opts)));
 
 program
   .command("graph <sessionId>")
   .description(
     "Display or export the knowledge graph for a session\n" +
     "  --format text|dot|json   Output format (default: text)\n" +
-    "  --output <path>          Write to file instead of stdout"
+    "  --output <path>          Write output to file instead of stdout"
   )
   .option("-f, --format <fmt>", "Output format: text | dot | json", "text")
   .option("-o, --output <path>", "Write output to file instead of stdout")
-  .action(graphCommand);
+  .action((sessionId, opts) => withDb(() => graphCommand(sessionId, opts)));
 
 program
   .command("compare <sessionId> <hypothesisId1> <hypothesisId2>")
   .description("Run a manual head-to-head match between two hypotheses")
-  .action(compareCommand);
+  .action((s, h1, h2) => withDb(() => compareCommand(s, h1, h2)));
 
 program
   .command("diff <sessionId> <hypothesisId>")
   .description("Show lineage and diff of an evolved hypothesis vs its parent")
-  .action(diffCommand);
+  .action((sessionId, hypId) => withDb(() => diffCommand(sessionId, hypId)));
 
 program
   .command("safety <sessionId>")
@@ -146,19 +147,19 @@ program
   .option("--release <hypothesisId>", "Release a quarantined hypothesis (override)")
   .option("--reason <text>", "Justification for the release (required with --release)")
   .option("--by <name>", "Who is authorising the release", "operator")
-  .action(safetyCommand);
+  .action((sessionId, opts) => withDb(() => safetyCommand(sessionId, opts)));
 
 program
   .command("thinking <sessionId>")
   .description("Display the thinking trace (chain-of-thought) for a session")
   .option("--export <path>", "Export thinking traces to a markdown file")
-  .action(thinkingCommand);
+  .action((sessionId, opts) => withDb(() => thinkingCommand(sessionId, opts)));
 
 program
   .command("activity <sessionId>")
   .description("Display the full activity log for a session")
   .option("--export <path>", "Export activity log to a markdown file")
-  .action(activityCommand);
+  .action((sessionId, opts) => withDb(() => activityCommand(sessionId, opts)));
 
 program
   .command("login")
@@ -167,7 +168,7 @@ program
     "  --provider <name>   consensus | scite | all (default: all)"
   )
   .option("-p, --provider <name>", "Provider to log in to: consensus | scite | all", "all")
-  .action(loginCommand);
+  .action((opts) => withDb(() => loginCommand(opts)));
 
 program
   .command("logout")
@@ -176,7 +177,7 @@ program
     "  --provider <name>   consensus | scite | all (default: all)"
   )
   .option("-p, --provider <name>", "Provider to log out of: consensus | scite | all", "all")
-  .action(logoutCommand);
+  .action((opts) => withDb(() => logoutCommand(opts)));
 
 program.action(async () => {
   const { startInteractive } = await import("./interactive.js");

@@ -1,5 +1,5 @@
-import type { ContextStore } from "../../memory/contextStore.js";
-import type { Hypothesis } from "../../models/hypothesis.js";
+import type { ContextStore } from "../memory/contextStore.js";
+import type { Hypothesis } from "../models/hypothesis.js";
 
 /** Reject a hypothesis so the supervisor stops scheduling work on it. */
 export function killHypothesis(memory: ContextStore, hypothesisId: string): void {
