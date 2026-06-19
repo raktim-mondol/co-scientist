@@ -242,7 +242,6 @@ async function handleCommand(raw: string): Promise<void> {
       writeOutput(chalk.white("  /design <id>") + chalk.gray("      Generate experimental protocol"));
       writeOutput(chalk.white("  /graph <id>") + chalk.gray("       Show knowledge graph"));
       writeOutput(chalk.white("  /safety <id>") + chalk.gray("      Inspect quarantined hypotheses"));
-      writeOutput(chalk.white("  /thinking <id>") + chalk.gray("    Show thinking traces"));
       writeOutput(chalk.white("  /activity <id>") + chalk.gray("   Show activity log"));
       writeOutput(chalk.white("  /quit") + chalk.gray("              Exit co-scientist"));
       writeOutput(chalk.gray("  Up/Down arrows for command history."));
@@ -459,23 +458,6 @@ async function handleCommand(raw: string): Promise<void> {
       }
       const { safetyCommand } = await import("./commands/safety.js");
       await safetyCommand(session.id, {});
-      break;
-    }
-
-    case "thinking": {
-      if (!args) {
-        writeOutput(chalk.red("  Usage: /thinking <sessionId>"));
-        break;
-      }
-      await runMigrations();
-      const memory = getContextStore();
-      const session = memory.resolveSession(args);
-      if (!session) {
-        writeOutput(chalk.red(`  Session not found: ${args}`));
-        break;
-      }
-      const { thinkingCommand } = await import("./commands/thinking.js");
-      await thinkingCommand(session.id, {});
       break;
     }
 

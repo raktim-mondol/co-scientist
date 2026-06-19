@@ -157,7 +157,7 @@ export class ContextStore {
 
       this.db.delete(schema.experimentalFeedback).where(eq(schema.experimentalFeedback.sessionId, id)).run();
       this.sqlite.query(`DELETE FROM reward_memory WHERE session_id = ?`).run(id);
-      this.db.delete(schema.thinkingTraces).where(eq(schema.thinkingTraces.sessionId, id)).run();
+      this.sqlite.query(`DELETE FROM thinking_traces WHERE session_id = ?`).run(id);
       this.db.delete(schema.sessionActivity).where(eq(schema.sessionActivity.sessionId, id)).run();
       this.db.delete(schema.kgEdges).where(eq(schema.kgEdges.sessionId, id)).run();
       this.db.delete(schema.kgNodes).where(eq(schema.kgNodes.sessionId, id)).run();
@@ -1227,56 +1227,6 @@ export class ContextStore {
       ORDER BY created_at DESC
     `).all(sessionId) as Array<Record<string, unknown>>;
     return rows.map(this._rowToFeedback);
-  }
-
-  // ─── Thinking Traces ─────────────────────────────────────────────────────
-
-  /** Persist a DeepSeek reasoning trace to the DB. */
-  saveThinkingTrace(params: {
-    id: string;
-    sessionId: string;
-    agent: string;
-    reasoning: string;
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
-  }): void {
-    this.db.insert(schema.thinkingTraces).values({
-      id: params.id,
-      sessionId: params.sessionId,
-      agent: params.agent,
-      reasoning: params.reasoning,
-      promptTokens: params.promptTokens,
-      completionTokens: params.completionTokens,
-      totalTokens: params.totalTokens,
-      createdAt: new Date(),
-    }).run();
-  }
-
-  /** Get all thinking traces for a session. */
-  getThinkingTraces(sessionId: string): Array<{
-    id: string;
-    agent: string;
-    reasoning: string;
-    tokens: number;
-    createdAt: Date;
-  }> {
-    return (this.sqlite.query(`
-      SELECT id, agent, reasoning, total_tokens AS tokens, created_at AS createdAt
-      FROM thinking_traces
-      WHERE session_id = ?
-      ORDER BY created_at ASC
-    `).all(sessionId) as Array<{
-      id: string; agent: string; reasoning: string; tokens: number; createdAt: number;
-    }>).map((r) => ({ ...r, createdAt: new Date(r.createdAt * 1000) }));
-  }
-  
-  /** Check if a session has any thinking traces. */
-  hasThinkingTraces(sessionId: string): boolean {
-    const row = this.sqlite.query(`
-      SELECT 1 FROM thinking_traces WHERE session_id = ? LIMIT 1
-    `).get(sessionId) as { 1: number } | undefined;
-    return row !== undefined;
   }
 
   // ─── Session Activity Log ─────────────────────────────────────────────────

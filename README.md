@@ -133,7 +133,6 @@ co-scientist run --no-interactive --goal "..."
 | `co-scientist safety <id> --release <hyp> --reason "..."` | Release a quarantined hypothesis with justification |
 | `co-scientist export <id>` | Export to Markdown or JSON |
 | `co-scientist delete <id>` | Delete a session and all its data |
-| `co-scientist thinking <id>` | Display the thinking trace (chain-of-thought) |
 | `co-scientist activity <id>` | Display the full activity log |
 | `co-scientist login` | Sign in to Scite/Consensus via OAuth |
 | `co-scientist logout` | Sign out of Scite/Consensus |

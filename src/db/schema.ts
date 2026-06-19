@@ -261,20 +261,6 @@ export const citationVerifications = sqliteTable("citation_verifications", {
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
 
-// ─── Thinking Traces ─────────────────────────────────────────────────────────
-// DeepSeek chain-of-thought reasoning traces captured from reason() calls.
-// One row per LLM call that produced reasoning (streamed and non-streamed).
-export const thinkingTraces = sqliteTable("thinking_traces", {
-  id: text("id").primaryKey(),
-  sessionId: text("session_id").notNull().references(() => sessions.id),
-  agent: text("agent").notNull(),             // e.g. "Reflection", "Ranking", "MetaReview"
-  reasoning: text("reasoning").notNull(),     // full chain-of-thought text
-  promptTokens: integer("prompt_tokens").notNull().default(0),
-  completionTokens: integer("completion_tokens").notNull().default(0),
-  totalTokens: integer("total_tokens").notNull().default(0),
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
-
 // ─── Session Activity Log ────────────────────────────────────────────────────
 // Chronological record of every significant event in a session: LLM calls,
 // searches, tool invocations, agent actions, lifecycle events, and reports.

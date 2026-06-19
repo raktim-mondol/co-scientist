@@ -17,7 +17,7 @@ import { graphCommand } from "./commands/graph.js";
 import { compareCommand } from "./commands/compare.js";
 import { diffCommand } from "./commands/diff.js";
 import { safetyCommand } from "./commands/safety.js";
-import { thinkingCommand } from "./commands/thinking.js";
+
 import { activityCommand } from "./commands/activity.js";
 import { loginCommand } from "./commands/login.js";
 import { logoutCommand } from "./commands/logout.js";
@@ -149,12 +149,6 @@ program
   .option("--reason <text>", "Justification for the release (required with --release)")
   .option("--by <name>", "Who is authorising the release", "operator")
   .action((sessionId, opts) => withDb(() => safetyCommand(sessionId, opts)));
-
-program
-  .command("thinking <sessionId>")
-  .description("Display the thinking trace (chain-of-thought) for a session")
-  .option("--export <path>", "Export thinking traces to a markdown file")
-  .action((sessionId, opts) => withDb(() => thinkingCommand(sessionId, opts)));
 
 program
   .command("activity <sessionId>")
