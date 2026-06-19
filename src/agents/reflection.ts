@@ -198,9 +198,9 @@ export class ReflectionAgent extends BaseAgent {
   // ─── Initial Review (no search) ───────────────────────────────────────────
   private async _initialReview(hyp: Hypothesis, rlefBlock = ""): Promise<ReviewResult> {
     const { system, userPrompt } = this.loadPrompt("reflection", "initial_review", {
-      title: hyp.title,
-      content: hyp.content,
-      rationale: hyp.rationale,
+      title: BaseAgent.wrapContent(hyp.title),
+      content: BaseAgent.wrapContent(hyp.content),
+      rationale: BaseAgent.wrapContent(hyp.rationale),
       keyAssumptions: hyp.keyAssumptions.join("; "),
     });
 
@@ -230,9 +230,9 @@ export class ReflectionAgent extends BaseAgent {
     const context = this.formatSearchContext(results);
 
     const { system, userPrompt } = this.loadPrompt("reflection", "full_review", {
-      title: hyp.title,
-      content: hyp.content,
-      rationale: hyp.rationale,
+      title: BaseAgent.wrapContent(hyp.title),
+      content: BaseAgent.wrapContent(hyp.content),
+      rationale: BaseAgent.wrapContent(hyp.rationale),
       experimentalPlan: hyp.experimentalPlan ?? "Not specified",
       literatureContext: context,
     });
@@ -256,10 +256,10 @@ export class ReflectionAgent extends BaseAgent {
   // ─── Deep Verification (assumption decomposition) ─────────────────────────
   private async _deepVerificationReview(hyp: Hypothesis): Promise<ReviewResult> {
     const { system, userPrompt } = this.loadPrompt("reflection", "deep_verification", {
-      title: hyp.title,
-      content: hyp.content,
+      title: BaseAgent.wrapContent(hyp.title),
+      content: BaseAgent.wrapContent(hyp.content),
       keyAssumptions: hyp.keyAssumptions.join("\n- "),
-      rationale: hyp.rationale,
+      rationale: BaseAgent.wrapContent(hyp.rationale),
     });
 
     const parsed = await this.callLLMForJSON<ReviewResult>(system, userPrompt, {
@@ -285,8 +285,8 @@ export class ReflectionAgent extends BaseAgent {
     const context = this.formatSearchContext(results);
 
     const { system, userPrompt } = this.loadPrompt("reflection", "observation_review", {
-      title: hyp.title,
-      content: hyp.content,
+      title: BaseAgent.wrapContent(hyp.title),
+      content: BaseAgent.wrapContent(hyp.content),
       observations: context,
     });
 
@@ -317,8 +317,8 @@ export class ReflectionAgent extends BaseAgent {
   // ─── Simulation Review ────────────────────────────────────────────────────
   private async _simulationReview(hyp: Hypothesis): Promise<ReviewResult> {
     const { system, userPrompt } = this.loadPrompt("reflection", "simulation_review", {
-      title: hyp.title,
-      content: hyp.content,
+      title: BaseAgent.wrapContent(hyp.title),
+      content: BaseAgent.wrapContent(hyp.content),
       experimentalPlan: hyp.experimentalPlan ?? "Not specified",
     });
 

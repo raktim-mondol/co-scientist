@@ -219,8 +219,8 @@ export class RankingAgent extends BaseAgent {
     provenanceB: string
   ): Promise<DebateResult> {
     const { system, userPrompt } = this.loadPrompt("ranking", "debate_match", {
-      hypothesisA: `Title: ${hypA.title}\n\nSummary: ${hypA.summary}\n\nRationale: ${hypA.rationale}`,
-      hypothesisB: `Title: ${hypB.title}\n\nSummary: ${hypB.summary}\n\nRationale: ${hypB.rationale}`,
+      hypothesisA: `Title: ${BaseAgent.wrapContent(hypA.title)}\n\nSummary: ${BaseAgent.wrapContent(hypA.summary)}\n\nRationale: ${BaseAgent.wrapContent(hypA.rationale)}`,
+      hypothesisB: `Title: ${BaseAgent.wrapContent(hypB.title)}\n\nSummary: ${BaseAgent.wrapContent(hypB.summary)}\n\nRationale: ${BaseAgent.wrapContent(hypB.rationale)}`,
       provenanceA,
       provenanceB,
     });
@@ -283,8 +283,8 @@ export class RankingAgent extends BaseAgent {
     provenanceB: string
   ): Promise<DebateResult> {
     const { system, userPrompt } = this.loadPrompt("ranking", "simple_comparison", {
-      hypothesisA: `Title: ${hypA.title}\n\nSummary: ${hypA.summary}`,
-      hypothesisB: `Title: ${hypB.title}\n\nSummary: ${hypB.summary}`,
+      hypothesisA: `Title: ${BaseAgent.wrapContent(hypA.title)}\n\nSummary: ${BaseAgent.wrapContent(hypA.summary)}`,
+      hypothesisB: `Title: ${BaseAgent.wrapContent(hypB.title)}\n\nSummary: ${BaseAgent.wrapContent(hypB.summary)}`,
       provenanceA,
       provenanceB,
     });

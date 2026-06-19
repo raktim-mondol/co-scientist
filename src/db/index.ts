@@ -194,6 +194,11 @@ export function closeDb() {
     _sqlite = null;
     _db = null;
     _cleanupLockFile();
+    // Reset the ContextStore singleton so it doesn't retain a stale DB handle.
+    // Import is deferred to avoid circular dependency (contextStore imports from us).
+    import("../memory/contextStore.js")
+      .then(m => m.resetContextStore())
+      .catch(() => { /* best-effort */ });
   }
 }
 

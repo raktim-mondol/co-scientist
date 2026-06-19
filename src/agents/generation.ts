@@ -174,7 +174,7 @@ export class GenerationAgent extends BaseAgent {
     try {
       const used = this.usedQueries.get(sessionId) ?? new Set<string>();
       const hypSummaries = existingHypotheses
-        .map((h, i) => `[${i + 1}] ${h.title}: ${h.summary}`)
+        .map((h, i) => `[${i + 1}] ${BaseAgent.wrapContent(h.title)}: ${BaseAgent.wrapContent(h.summary)}`)
         .join("\n");
 
       const { system: qSystem, userPrompt: qUserPrompt } = this.loadPrompt("generation", "generate_queries", {
@@ -251,7 +251,7 @@ export class GenerationAgent extends BaseAgent {
 
     // Step 3: Generate hypothesis from literature (with diversity context)
     const diversityContext = existingHypotheses.length > 0
-      ? existingHypotheses.map((h, i) => `[${i + 1}] ${h.title}: ${h.summary}`).join("\n")
+      ? existingHypotheses.map((h, i) => `[${i + 1}] ${BaseAgent.wrapContent(h.title)}: ${BaseAgent.wrapContent(h.summary)}`).join("\n")
       : "";
 
     const { system, userPrompt } = this.loadPrompt("generation", "literature_exploration", {
@@ -339,7 +339,7 @@ export class GenerationAgent extends BaseAgent {
     }
 
     const hypSummaries = existingHypotheses
-      .map((h, i) => `[${i + 1}] ${h.title}: ${h.summary}`)
+      .map((h, i) => `[${i + 1}] ${BaseAgent.wrapContent(h.title)}: ${BaseAgent.wrapContent(h.summary)}`)
       .join("\n");
 
     const unexploredConcepts = this.kg.getUnexploredConcepts(sessionId, 8);

@@ -27,8 +27,12 @@ class MCPServerClient {
   private client: Client | null = null;
   private transport: StreamableHTTPClientTransport | null = null;
   private connected = false;
-  /** Set true after an unrecoverable failure — stops all future connect attempts. */
+  /** Set true after an unrecoverable failure — auto-resets after RETRY_TTL_MS. */
   private permanentlyFailed = false;
+  /** Timestamp when permanentlyFailed was set. Used for TTL-based auto-reset. */
+  private failedAt = 0;
+  /** How long to wait before auto-resetting a permanently failed provider (ms). */
+  private static readonly RETRY_TTL_MS = 60_000;
   /**
    * Promise for an in-progress auth refresh.  Concurrent callers that hit an
    * auth error await this instead of kicking off their own refresh, so a
@@ -192,6 +196,7 @@ class MCPServerClient {
       this.transport = null;
       this.connected = false;
       this.permanentlyFailed = true;
+      this.failedAt = Date.now();
       logger.error(`Failed to connect to ${this.serverName}: ${(error as Error).message}`);
       throw error;
     }
@@ -291,12 +296,19 @@ class MCPServerClient {
   }
 
   isAvailable(): boolean {
-    return !this.permanentlyFailed;
+    if (!this.permanentlyFailed) return true;
+    // Auto-reset after TTL — allows retry after transient network errors
+    if (Date.now() - this.failedAt > MCPServerClient.RETRY_TTL_MS) {
+      this.reset();
+      return true;
+    }
+    return false;
   }
 
   /** Reset failed state so a fresh connect attempt can be made (e.g. after token refresh). */
   reset(): void {
     this.permanentlyFailed = false;
+    this.failedAt = 0;
     this.connected = false;
     this.client = null;
     this.transport = null;

@@ -36,6 +36,16 @@ export abstract class BaseAgent {
 
   abstract get agentName(): string;
 
+  /**
+   * Wrap user/LLM-generated content in delimiter tags to prevent prompt injection.
+   * Use this when injecting hypothesis titles, content, or other LLM-generated
+   * text into prompts. The delimiters make it clear to the LLM where the
+   * injected content ends and the instruction resumes.
+   */
+  protected static wrapContent(str: string): string {
+    return `<content>\n${str}\n</content>`;
+  }
+
   /** Set by SupervisorAgent before dispatching — used for DB logging. */
   static currentSessionId: string | null = null;
 

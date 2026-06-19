@@ -14,7 +14,7 @@ import { resetConfig, getConfig } from "../../config.js";
 import { seedRng } from "../../util/rng.js";
 import type { ResearchGoal } from "../../models/researchGoal.js";
 import type { SessionStats } from "../../models/session.js";
-import { renderTUI } from "../tui/index.js";
+import { startSlashCommands } from "../slashCommands.js";
 
 interface RunOptions {
   goal?: string;
@@ -143,28 +143,20 @@ export async function runCommand(options: RunOptions): Promise<void> {
   const budgetTokens = getConfig().compute.budgetTokens;
   const useTui = options.tui !== false && Boolean(process.stdout.isTTY);
 
-  let tui: { unmount: () => void; waitUntilExit: () => Promise<void> } | null = null;
+  let slash: { close: () => void } | null = null;
   let lastStats: (SessionStats & { activity: string }) | null = null;
+  let sessionCompleted = false;
 
   if (useTui) {
-    tui = renderTUI({
-      emitter,
-      memory: getContextStore(),
+    slash = startSlashCommands({
       sessionId,
-      goal: rawGoal.trim(),
+      memory: getContextStore(),
+      supervisor,
+      emitter,
       startTime,
       budgetTokens,
-      onTogglePause: () => {
-        if (supervisor.isPaused()) {
-          supervisor.resume();
-          return false;
-        }
-        supervisor.pause();
-        return true;
-      },
-      onQuit: () => {
-        supervisor.stop();
-        getContextStore().updateSessionStatus(sessionId, "paused");
+      onComplete: () => {
+        sessionCompleted = true;
       },
     });
   } else {
@@ -206,7 +198,7 @@ export async function runCommand(options: RunOptions): Promise<void> {
     if (shuttingDown) return; // Prevent double-cleanup races
     shuttingDown = true;
 
-    if (tui) tui.unmount();
+    if (slash) slash.close();
     console.log(chalk.yellow(`\n\n⏸  ${signal} received — pausing session...`));
 
     supervisor.stop();
@@ -242,13 +234,17 @@ export async function runCommand(options: RunOptions): Promise<void> {
   try {
     await supervisor.run(sessionId);
 
-    // In TUI mode, wait for the user to see the completion screen and press a key
-    if (tui) {
-      await tui.waitUntilExit();
-      tui = null; // already exited
+    // In interactive mode, wait for session completion
+    if (slash && !sessionCompleted) {
+      // Session completed naturally — close the slash interface
+      slash.close();
+      slash = null;
+    } else if (slash) {
+      slash.close();
+      slash = null;
     }
   } catch (err) {
-    if (tui) tui.unmount();
+    if (slash) slash.close();
     console.error(chalk.red(`\n❌ Session error: ${(err as Error).message}`));
     const memory = getContextStore();
     memory.updateSessionStatus(sessionId, "error");
