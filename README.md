@@ -97,8 +97,10 @@ bun link
 ### 5. Run
 
 ```bash
-# Interactive mode (prompts for research goal) — opens the live TUI on a TTY
+# Interactive mode (prompts for research goal) — activates slash commands in a terminal
 co-scientist run
+# Interactive REPL mode (no arguments — type /run <goal> to start)
+co-scientist
 
 # Or pass goal directly
 co-scientist run --goal "What are novel epigenetic mechanisms underlying ALS pathogenesis?"
@@ -106,8 +108,8 @@ co-scientist run --goal "What are novel epigenetic mechanisms underlying ALS pat
 # With custom budget
 co-scientist run --goal "..." --max-hypotheses 20 --budget 100000
 
-# Disable the TUI and use the plain progress output instead
-co-scientist run --no-tui --goal "..."
+# Disable interactive mode (plain log output only)
+co-scientist run --no-interactive --goal "..."
 ```
 
 ---
@@ -134,64 +136,80 @@ co-scientist run --no-tui --goal "..."
 | `co-scientist safety <id> --release <hyp> --reason "..."` | Release a quarantined hypothesis with justification |
 | `co-scientist export <id>` | Export to Markdown or JSON |
 | `co-scientist delete <id>` | Delete a session and all its data |
+| `co-scientist thinking <id>` | Display the thinking trace (chain-of-thought) |
+| `co-scientist activity <id>` | Display the full activity log |
+| `co-scientist login` | Sign in to Scite/Consensus via OAuth |
+| `co-scientist logout` | Sign out of Scite/Consensus |
 
 ---
 
-## Live Interactive TUI
+## Interactive Slash Commands
 
-When `co-scientist run` is launched in a real terminal (stdout is a TTY), it automatically activates a full-screen **Ink terminal UI** instead of the plain progress bar.
+When `co-scientist run` launches in a terminal, it activates a **Claude Code-style slash command interface** — a persistent input prompt where you type commands while agent output streams above it.
 
 ```
-╭─────────────────────────────────────────────────────────────╮
-│ co-scientist   sess:883876e2   running   4m 12s             │
-│ Goal: What are novel epigenetic mechanisms underlying ALS?  |
-|                                                             │
-│ Tokens ▓▓▓▓▓░░░░░ 245.3k/500k (49%)   Hyp:8   AvgElo:1284   │
-╰─────────────────────────────────────────────────────────────╯
-╭───────────────────────────────────────────────────────────── ╮
-│   #   Elo   Hypothesis                                       │
-│▶  1  1412  ✓ Aberrant R-loop accumulation at TDP-43 loci... │
-│   2  1344  ✓ Phase-separated FUS condensates impair spl...   |  
-│   3  1298  ⧖ Cryptic exon inclusion via STMN2 silencing...   │
-│   4  1201  ✓ m6A hypomethylation destabilises TARDBP mRNA    │
-╰───────────────────────────────────────────────────────────── ╯
-ticker: + hypothesis #8 added
-↑↓ select   [k]ill   [b]oost   [i]nject   [p]ause   [q]uit
+$ co-scientist run --goal "Novel epigenetic mechanisms underlying ALS" --name als-epigenetics
+▶ co-scientist> /list
+  #  Elo   Hypothesis
+  1  1412  Aberrant R-loop accumulation at TDP-43 loci...
+  2  1344  Phase-separated FUS condensates impair splicing...
+  3  1298  Cryptic exon inclusion via STMN2 silencing...
+
+▶ co-scientist> /kill 3
+  Reject hypothesis 3? [y/N] y
+  ✓ Hypothesis rejected
+
+▶ co-scientist> /boost 1 1500
+  ✓ Elo set to 1500
+
+▶ co-scientist> /status
+  Session: als-epigenetics | Running | 4m 12s
+  Tokens: 245.3k / 500k (49%) | Hypotheses: 8 | Avg Elo: 1284
+
+▶ co-scientist> /quit
+  Session saved as paused. Resume with: co-scientist resume als-epigenetics
 ```
 
-### Hotkeys
+### Slash Commands
 
-| Key | Action |
-|-----|--------|
-| `↑` / `↓` | Move selection up/down in the leaderboard |
-| `k` | **Kill** — reject the selected hypothesis (confirms with `y`/`n`) |
-| `b` | **Boost** — set the selected hypothesis's Elo to an absolute value |
-| `i` | **Inject** — type a new hypothesis (title + content) directly into the tournament |
-| `p` | **Pause / Resume** — freeze the orchestration loop without losing state |
-| `q` | **Quit** — stop the session and save state to SQLite |
+| Command | Description |
+|---------|-------------|
+| `/help` | Show all available commands |
+| `/status` | Session status (tokens, hypotheses, elapsed time) |
+| `/list` | Hypothesis leaderboard (rank, Elo, status, title) |
+| `/kill <index\|id>` | Reject a hypothesis (stops scheduling work on it) |
+| `/boost <index\|id> <elo>` | Set absolute Elo for a hypothesis |
+| `/inject <title> \| <content>` | Inject a new expert hypothesis into the tournament |
+| `/pause` | Pause the supervisor |
+| `/resume` | Resume a paused session |
+| `/quit` | Stop session, save as paused (resumable later) |
 
-### Status glyphs
+### REPL Mode
 
-| Glyph | Meaning |
-|-------|---------|
-| `✓` | Active — competing in the tournament |
-| `⧖` | Pending review or currently under review |
-| `✗` | Rejected (killed) |
-| `✨` | Evolved from a parent hypothesis |
+Running `co-scientist` with no arguments launches an interactive REPL where you can manage sessions without leaving the terminal:
 
-### Operator steering
+```
+$ co-scientist
+  Welcome to Co-Scientist
+  Multi-agent AI for scientific discovery
+  Type /run <goal> to start a research session
+  Type /help for all commands
 
-- **Kill (`k`)** — marks the hypothesis as `rejected`; the supervisor stops scheduling work on it immediately.
-- **Boost (`b`)** — sets an absolute Elo value (e.g. `1500`) via an atomic Glicko-2 write so no concurrent tournament match can clobber it.
-- **Inject (`i`)** — inserts a human-authored hypothesis at Elo 1200 with status `pending_review`; it goes through the normal reflection + provenance pipeline before competing. Use Tab to switch between the Title and Content fields.
+> /run What are novel epigenetic mechanisms underlying ALS?
+> /list
+> /resume als-epigenetics
+> /results abc123
+> /export abc123
+> /quit
+```
 
-### Disabling the TUI
+### Disabling Interactive Mode
 
 ```bash
-# Plain chalk/ora progress output (also auto-used when stdout is piped)
-co-scientist run --no-tui --goal "..."
+# Plain log output (also auto-used when stdout is piped)
+co-scientist run --no-interactive --goal "..."
 
-# Piping stdout always disables TUI automatically
+# Piping stdout always disables interactive mode automatically
 co-scientist run --goal "..." | tee output.log
 ```
 
