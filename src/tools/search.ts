@@ -677,15 +677,7 @@ export class SearchTool {
           query,
           resultCount,
           source,
-          results: results.map((r) => ({
-            title: r.title,
-            url: r.url,
-            snippet: r.snippet ?? "",
-            source: r.source,
-            year: r.year,
-            citationCount: r.citationCount,
-            journal: r.journal,
-          })),
+          topTitles: results.slice(0, 3).map((r) => r.title),
         }),
       });
     } catch {

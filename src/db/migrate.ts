@@ -126,6 +126,8 @@ export async function runMigrations() {
       created_at INTEGER NOT NULL
     )
   `);
+  // Composite index for countCompletedTasksByType queries (called every supervisor round)
+  db.run(sql`CREATE INDEX IF NOT EXISTS idx_agent_tasks_session_type_status ON agent_tasks(session_id, type, status)`);
 
   db.run(sql`
     CREATE TABLE IF NOT EXISTS embedding_cache (

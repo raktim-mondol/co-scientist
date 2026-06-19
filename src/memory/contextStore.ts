@@ -323,6 +323,23 @@ export class ContextStore {
     return this._rowsToHypotheses(rows);
   }
 
+  /** Lightweight: fetch only Elo ratings for the top N active hypotheses. */
+  getTopEloRatings(sessionId: string, n = 10): number[] {
+    const rows = this.db
+      .select({ eloRating: schema.hypotheses.eloRating })
+      .from(schema.hypotheses)
+      .where(
+        and(
+          eq(schema.hypotheses.sessionId, sessionId),
+          eq(schema.hypotheses.status, "active")
+        )
+      )
+      .orderBy(desc(schema.hypotheses.eloRating))
+      .limit(n)
+      .all();
+    return rows.map((r) => r.eloRating);
+  }
+
   getAllActiveHypotheses(sessionId: string): Hypothesis[] {
     const rows = this.db
       .select()
@@ -1030,6 +1047,25 @@ export class ContextStore {
       )
       .get();
     return Number(row?.count ?? 0);
+  }
+
+  /** Single query: count all completed tasks grouped by type. */
+  countAllCompletedTasksByType(sessionId: string): Record<string, number> {
+    const rows = this.db
+      .select({
+        type: schema.agentTasks.type,
+        count: sql<number>`count(*)`,
+      })
+      .from(schema.agentTasks)
+      .where(
+        and(
+          eq(schema.agentTasks.sessionId, sessionId),
+          eq(schema.agentTasks.status, "completed")
+        )
+      )
+      .groupBy(schema.agentTasks.type)
+      .all();
+    return Object.fromEntries(rows.map((r) => [r.type, Number(r.count ?? 0)]));
   }
 
   // ─── Experimental Feedback (RLEF) ────────────────────────────────────────

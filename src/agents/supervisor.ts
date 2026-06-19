@@ -311,11 +311,14 @@ export class SupervisorAgent extends BaseAgent {
 
   private async _computeStats(sessionId: string, round: number): Promise<SessionStats> {
     const counts = this.memory.countHypotheses(sessionId);
-    const topHyps = this.memory.getTopHypotheses(sessionId, 10);
+    // Lightweight: fetch only Elo ratings instead of full hypothesis rows
+    const topRatings = this.memory.getTopEloRatings(sessionId, 10);
     const actualMatches = this.memory.countTournamentMatches(sessionId);
+    // Single query for all task type counts instead of 2 separate queries
+    const taskCounts = this.memory.countAllCompletedTasksByType(sessionId);
     const avgTopTenElo =
-      topHyps.length > 0
-        ? topHyps.reduce((s, h) => s + h.eloRating, 0) / topHyps.length
+      topRatings.length > 0
+        ? topRatings.reduce((s, r) => s + r, 0) / topRatings.length
         : 1200;
 
     this.eloHistory.push(avgTopTenElo);
@@ -325,11 +328,11 @@ export class SupervisorAgent extends BaseAgent {
       totalHypotheses: counts.total,
       activeHypotheses: counts.active,
       rejectedHypotheses: counts.total - counts.active - counts.pending,
-      totalReviews: this.memory.countCompletedTasksByType(sessionId, "reflection"),
+      totalReviews: taskCounts["reflection"] ?? 0,
       totalMatches: actualMatches,
-      totalEvolutions: this.memory.countCompletedTasksByType(sessionId, "evolution"),
+      totalEvolutions: taskCounts["evolution"] ?? 0,
       currentRound: round,
-      topEloRating: topHyps[0]?.eloRating ?? 1200,
+      topEloRating: topRatings[0] ?? 1200,
       avgTopTenElo,
       eloPlateau: this.eloHistory.length >= 20 &&
         Math.abs(this.eloHistory[this.eloHistory.length - 1] - this.eloHistory[this.eloHistory.length - 20]) < 5,

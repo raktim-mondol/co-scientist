@@ -39,6 +39,10 @@ export abstract class BaseAgent {
   /** Set by SupervisorAgent before dispatching — used for DB logging. */
   static currentSessionId: string | null = null;
 
+  // Cache parsed YAML templates to avoid re-reading and re-parsing from disk
+  // on every LLM call (100-300+ calls per session).
+  private static _templateCache = new Map<string, PromptTemplate>();
+
   /**
    * Load and compile a Handlebars YAML prompt template.
    */
@@ -49,8 +53,14 @@ export abstract class BaseAgent {
   ): { system: string; userPrompt: string; maxTokens: number } {
     const filePath = join(this.promptsDir, category, `${name}.yaml`);
     try {
-      const raw = readFileSync(filePath, "utf-8");
-      const template = parseYaml(raw) as PromptTemplate;
+      let template: PromptTemplate;
+      if (BaseAgent._templateCache.has(filePath)) {
+        template = BaseAgent._templateCache.get(filePath)!;
+      } else {
+        const raw = readFileSync(filePath, "utf-8");
+        template = parseYaml(raw) as PromptTemplate;
+        BaseAgent._templateCache.set(filePath, template);
+      }
 
       const compileSystem = Handlebars.compile(template.system);
       const compileUser = Handlebars.compile(template.user);
@@ -104,9 +114,9 @@ export abstract class BaseAgent {
           type: "llm_call",
           message: `call: ${userPrompt.slice(0, 120)}${userPrompt.length > 120 ? "…" : ""}`,
           detailJson: JSON.stringify({
-            system: system,
-            userPrompt: userPrompt,
-            response: response.content,
+            systemLen: system.length,
+            userPromptLen: userPrompt.length,
+            responseLen: response.content.length,
             jsonMode,
           }),
           tokensIn: response.usage.promptTokens,
@@ -148,9 +158,9 @@ export abstract class BaseAgent {
           type: "llm_call",
           message: `multi-turn: ${(lastUserTurn?.content ?? "").slice(0, 120)}`,
           detailJson: JSON.stringify({
-            system: system.slice(0, 2000),
+            systemLen: system.length,
             turns: turns.length,
-            response: response.content,
+            responseLen: response.content.length,
             jsonMode,
           }),
           tokensIn: response.usage.promptTokens,
