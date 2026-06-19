@@ -98,6 +98,9 @@ export class SupervisorAgent extends BaseAgent {
 
     this.log("info", `Starting orchestration for session ${sessionId}`);
 
+    // Reset any hypotheses stuck in "reviewing" from a previous crash
+    this.memory.resetStuckReviewingHypotheses(sessionId);
+
     // Log session lifecycle
     try {
       this.memory.logActivity({

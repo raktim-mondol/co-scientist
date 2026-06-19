@@ -140,7 +140,7 @@ function computeNewVolatility(
     B = Math.log(delta * delta - phi * phi - v);
   } else {
     let k = 1;
-    while (f(a - k * TAU) < 0) k++;
+    while (f(a - k * TAU) < 0 && k < 1000) k++;
     B = a - k * TAU;
   }
 
@@ -195,7 +195,7 @@ export function computeGlicko2Update(
 
     // Step 3: Compute v — estimated variance of the player's rating based on game outcomes
     const gPhiJ = g(phiJ);
-    const eVal  = E(mu, muJ, phiJ);
+    const eVal  = Math.max(1e-10, Math.min(1 - 1e-10, E(mu, muJ, phiJ))); // clamp to avoid division by zero
     const v = 1 / (gPhiJ * gPhiJ * eVal * (1 - eVal));
 
     // Step 4: Compute delta — estimated improvement

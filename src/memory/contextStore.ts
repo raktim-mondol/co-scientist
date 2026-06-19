@@ -67,7 +67,7 @@ export class ContextStore {
       .where(eq(schema.sessions.id, sessionId))
       .get();
     if (!row) return null;
-    return JSON.parse(row.researchGoalJson) as ResearchGoal;
+    try { return JSON.parse(row.researchGoalJson) as ResearchGoal; } catch { return null; }
   }
 
   listSessions(): CoScientistSession[] {
@@ -294,6 +294,20 @@ export class ContextStore {
       .update(schema.hypotheses)
       .set({ status, updatedAt: new Date() })
       .where(eq(schema.hypotheses.id, id))
+      .run();
+  }
+
+  /** Reset hypotheses stuck in "reviewing" from a previous crash back to "pending_review". */
+  resetStuckReviewingHypotheses(sessionId: string): void {
+    this.db
+      .update(schema.hypotheses)
+      .set({ status: "pending_review", updatedAt: new Date() })
+      .where(
+        and(
+          eq(schema.hypotheses.sessionId, sessionId),
+          eq(schema.hypotheses.status, "reviewing")
+        )
+      )
       .run();
   }
 
@@ -1233,9 +1247,9 @@ export class ContextStore {
     return {
       id: row.id,
       name: row.name,
-      researchGoalId: JSON.parse(row.researchGoalJson).id,
+      researchGoalId: (() => { try { return JSON.parse(row.researchGoalJson).id; } catch { return ""; } })(),
       status: row.status as CoScientistSession["status"],
-      stats: JSON.parse(row.statsJson),
+      stats: (() => { try { return JSON.parse(row.statsJson); } catch { return {}; } })(),
       metaReviewCritique: row.metaReviewCritique ?? null,
       researchOverview: row.researchOverview ?? null,
       createdAt: row.createdAt,
@@ -1273,8 +1287,8 @@ export class ContextStore {
       rationale: row.rationale,
       experimentalPlan: row.experimentalPlan ?? undefined,
       noveltyAssessment: row.noveltyAssessment ?? undefined,
-      keyAssumptions: JSON.parse(row.keyAssumptionsJson),
-      citations: JSON.parse(row.citationsJson),
+      keyAssumptions: (() => { try { return JSON.parse(row.keyAssumptionsJson); } catch { return []; } })(),
+      citations: (() => { try { return JSON.parse(row.citationsJson); } catch { return []; } })(),
       generationStrategy: row.generationStrategy,
       eloRating: row.eloRating,
       ratingDeviation: row.ratingDeviation ?? 350,
@@ -1284,7 +1298,7 @@ export class ContextStore {
       losses: row.losses,
       draws: row.draws ?? 0,
       status: row.status as Hypothesis["status"],
-      parentIds: JSON.parse(row.parentIdsJson),
+      parentIds: (() => { try { return JSON.parse(row.parentIdsJson); } catch { return []; } })(),
       generationRound: row.generationRound,
       feedbackCount: Number(countRow?.n ?? 0),
       createdAt: row.createdAt,
@@ -1323,8 +1337,8 @@ export class ContextStore {
       rationale: row.rationale,
       experimentalPlan: row.experimentalPlan ?? undefined,
       noveltyAssessment: row.noveltyAssessment ?? undefined,
-      keyAssumptions: JSON.parse(row.keyAssumptionsJson),
-      citations: JSON.parse(row.citationsJson),
+      keyAssumptions: (() => { try { return JSON.parse(row.keyAssumptionsJson); } catch { return []; } })(),
+      citations: (() => { try { return JSON.parse(row.citationsJson); } catch { return []; } })(),
       generationStrategy: row.generationStrategy,
       eloRating: row.eloRating,
       ratingDeviation: row.ratingDeviation ?? 350,
@@ -1334,7 +1348,7 @@ export class ContextStore {
       losses: row.losses,
       draws: row.draws ?? 0,
       status: row.status as Hypothesis["status"],
-      parentIds: JSON.parse(row.parentIdsJson),
+      parentIds: (() => { try { return JSON.parse(row.parentIdsJson); } catch { return []; } })(),
       generationRound: row.generationRound,
       feedbackCount: counts.get(row.id) ?? 0,
       createdAt: row.createdAt,
