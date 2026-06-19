@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
-import { Command } from "commander";
+import { Command } from "@commander-js/extra-typings";
 import "dotenv/config";
-import chalk from "chalk";
+import type { ResearchGoal } from "../models/researchGoal.js";
+import { color } from "./design-system/color.js";
 import { withDb } from "./commands/withDb.js";
 import { runCommand } from "./commands/run.js";
 import { resumeCommand } from "./commands/resume.js";
@@ -26,7 +27,9 @@ const program = new Command();
 program
   .name("co-scientist")
   .description("Multi-agent AI system for accelerating scientific discovery")
-  .version("1.0.0");
+  .version("1.0.0")
+  .showHelpAfterError()
+  .showSuggestionAfterError();
 
 program
   .command("run")
@@ -178,12 +181,140 @@ program.action(async () => {
   // Only launch REPL when run with no arguments at all
   // (Commander fires this for unknown commands too — reject those)
   if (process.argv.length > 2) {
-    console.error(chalk.red(`Unknown command: ${process.argv[2]}`));
-    console.error(chalk.gray("Run `co-scientist --help` to see available commands."));
+    console.error(color("error")("Unknown command: " + process.argv[2]));
+    console.error(color("inactive")("Run `co-scientist --help` to see available commands."));
     process.exit(1);
   }
-  const { startInteractive } = await import("./interactive.js");
-  await startInteractive();
+
+  // ── Launch Ink TUI (Claude Code-style) ──────────────────────────────────
+  const { runMigrations } = await import("../db/migrate.js");
+  const { closeDb } = await import("../db/index.js");
+  const { getContextStore } = await import("../memory/contextStore.js");
+  const { getConfig } = await import("../config.js");
+  const { getMCPManager } = await import("../tools/mcpClient.js");
+  const { SupervisorAgent } = await import("../agents/supervisor.js");
+  const { EventEmitter } = await import("events");
+  const { v4: uuidv4 } = await import("uuid");
+  const { renderTUI } = await import("./tui/index.js");
+
+  // Initialize database and MCP silently — output would be wiped by the
+  // screen clear below anyway.
+  await runMigrations();
+  await getMCPManager().initialize().catch(() => {});
+
+  const memory = getContextStore();
+  const budgetTokens = getConfig().compute.budgetTokens;
+
+  // Clear terminal before Ink takes over — ora spinners and [INFO] logs
+  // pollute the display otherwise.
+  process.stdout.write("\x1B[2J\x1B[H"); // clear screen + cursor home
+
+  // Closure variables set by onStartSession, read by other callbacks
+  let currentSupervisor: SupervisorAgent | null = null;
+  let currentSessionId: string | null = null;
+
+  const tui = renderTUI({
+    memory,
+    sessionId: null,
+    goal: null,
+    supervisor: null,
+    emitter: null,
+    startTime: null,
+    budgetTokens,
+    onStartSession: async (goalText, opts) => {
+      const goal: ResearchGoal = {
+        id: uuidv4(),
+        rawGoal: goalText.trim(),
+        constraints: {
+          noveltyRequired: true,
+          allowedMethodologies: [],
+          excludedMethodologies: [],
+          targetOrganisms: [],
+        },
+        evaluationCriteria: {
+          noveltyWeight: 0.35,
+          correctnessWeight: 0.35,
+          testabilityWeight: 0.20,
+          impactWeight: 0.10,
+          customCriteria: [],
+        },
+        outputFormat: "standard",
+        attachedDocuments: [],
+        expertHypotheses: [],
+        createdAt: new Date(),
+      };
+
+      const supervisor = new SupervisorAgent();
+      const emitter = new EventEmitter();
+      supervisor.setEmitter(emitter);
+
+      const name = opts?.name || `session-${new Date().toISOString().slice(0, 10)}`;
+      const sessionId = await supervisor.initSession(goal, name);
+
+      currentSupervisor = supervisor;
+      currentSessionId = sessionId;
+
+      // Start the supervisor loop in the background
+      supervisor.run(sessionId).catch((err) => {
+        if (!(err instanceof Error) || !err.message.includes("Session stopped")) {
+          // Error surfaced via emitter 'error' event
+        }
+      });
+
+      return { sessionId, supervisor, emitter };
+    },
+    onStop: () => {
+      currentSupervisor?.stop();
+    },
+    onTogglePause: () => {
+      if (!currentSupervisor) return false;
+      if (currentSupervisor.isPaused()) {
+        currentSupervisor.resume();
+        return false;
+      }
+      currentSupervisor.pause();
+      return true;
+    },
+    onQuit: () => {
+      currentSupervisor?.stop();
+      if (currentSessionId) {
+        memory.updateSessionStatus(currentSessionId, "paused");
+      }
+      closeDb();
+    },
+  });
+
+  // ── Graceful shutdown ──────────────────────────────────────────────────
+  let shuttingDown = false;
+  const gracefulShutdown = (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    tui.unmount();
+    currentSupervisor?.stop();
+    if (currentSessionId) {
+      try { memory.updateSessionStatus(currentSessionId, "paused"); } catch { /* ignore */ }
+    }
+    try { closeDb(); } catch { /* ignore */ }
+    process.exit(0);
+  };
+
+  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+  process.on("SIGHUP", () => gracefulShutdown("SIGHUP"));
+
+  try {
+    await tui.waitUntilExit();
+  } catch (err) {
+    console.error(color("error")("TUI crashed: " + (err as Error).message));
+    console.error((err as Error).stack || "");
+  }
+
+  // Clean up signal handlers after normal exit
+  process.removeAllListeners("SIGINT");
+  process.removeAllListeners("SIGTERM");
+  process.removeAllListeners("SIGHUP");
+
+  await getMCPManager().cleanup();
 });
 
 program.parse(process.argv);
