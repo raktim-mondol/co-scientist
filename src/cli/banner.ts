@@ -1,4 +1,16 @@
-import chalk from "chalk";
+import { color } from "./design-system/color.js";
+
+// The five ASCII-art content lines, stripped of the box frame.
+// Used by EmptyState to render the welcome screen inside the TUI.
+export function getBannerLines(): string[] {
+  return [
+    "    .     .   +    ████   ████          ████   ████  ██ █████ ███  ██ ██████ ██  ████  ██████",
+    "      . .         ██     ██  ██        ██     ██     ██ ██    ████ ██   ██   ██ ██       ██",
+    "      | |         ██     ██  ██  ████   ████  ██     ██ ████  ██ ████   ██   ██  ████    ██",
+    "     / _ \\        ██     ██  ██            ██ ██     ██ ██    ██  ███   ██   ██     ██   ██",
+    "    / . . \\        ████   ████          ████   ████  ██ █████ ██   ██   ██   ██  ████    ██",
+  ];
+}
 
 export function printBanner(): void {
   const banner = [
@@ -14,5 +26,5 @@ export function printBanner(): void {
     "|   \\_______/                            AI-Powered Scientific Discovery                           |",
     "+==================================================================================================+",
   ].join("\n");
-  console.log(chalk.bold.greenBright("\n" + banner + "\n"));
+  console.log(color("success").bold("\n" + banner + "\n"));
 }
