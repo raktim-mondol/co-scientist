@@ -1,42 +1,31 @@
 import React from "react";
-import { Box, Text } from "ink";
+import { Box, Text } from "../../ink.js";
+import { getBannerLines } from "../../banner.js";
+
+const ART = getBannerLines();
 
 export function EmptyState() {
   return (
-    <Box flexDirection="column" alignItems="center" paddingY={2}>
-      <Text color="cyan" bold>
-        co-scientist
+    <Box flexDirection="column" paddingX={1} paddingY={1}>
+      {ART.map((line, i) => (
+        <Text key={i} color="success" bold>
+          {line}
+        </Text>
+      ))}
+      <Box marginTop={1} />
+      <Text dimColor>AI-Powered Scientific Discovery</Text>
+      <Box marginTop={1} />
+      <Text dimColor>
+        Type a research topic and press Enter to begin
       </Text>
-      <Text color="gray">Multi-Agent Research Hypothesis Generation</Text>
-      <Box marginTop={1} />
-      <Text color="white">Type a research topic to begin, or use /commands</Text>
-      <Box marginTop={1} />
-      <Box flexDirection="column" paddingX={2}>
-        <Text color="gray">Getting started:</Text>
-        <Text color="gray">
-          {"  "}* Type any research topic and press Enter
-        </Text>
-        <Text color="gray">
-          {"  "}* Use{" "}
-          <Text color="white">/run</Text> to open the session launcher
-        </Text>
-        <Text color="gray">
-          {"  "}* Use{" "}
-          <Text color="white">/sessions</Text> to browse past sessions
-        </Text>
-        <Text color="gray">
-          {"  "}* Use{" "}
-          <Text color="white">/login</Text> to authenticate search providers
-        </Text>
-        <Text color="gray">
-          {"  "}* Use{" "}
-          <Text color="white">/help</Text> for all commands
-        </Text>
-        <Text color="gray">
-          {"  "}* Use{" "}
-          <Text color="white">/quit</Text> to exit
-        </Text>
-      </Box>
+      <Text dimColor>
+        <Text color="text">/help</Text>
+        <Text dimColor> for commands · </Text>
+        <Text color="text">/sessions</Text>
+        <Text dimColor> to resume · </Text>
+        <Text color="text">/quit</Text>
+        <Text dimColor> to exit</Text>
+      </Text>
     </Box>
   );
 }
