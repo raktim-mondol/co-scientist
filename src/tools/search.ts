@@ -174,6 +174,10 @@ export class SearchTool {
   // if no provider can return results.
   private _consecutiveEmptySearches = 0;
   private _fatalErrors: string[] = [];
+  // Circuit breaker: once a provider hits a permanent error (rate limit,
+  // credits exhausted), skip it for the rest of the session to avoid
+  // spamming 4 log lines per unique query.
+  private _consensusCircuitBroken = false;
 
   /** Call after every top-level search that returns results (or lack thereof). */
   private _recordSearchOutcome(resultCount: number, fatalError?: string): void {
@@ -229,6 +233,12 @@ export class SearchTool {
   ): Promise<SearchResult[]> {
     const maxResults = options.maxResults ?? 10;
     const silent = options.silent ?? false;
+
+    // Circuit breaker: skip Consensus entirely if it hit a permanent error
+    if (this._consensusCircuitBroken) {
+      return this.searchWeb(`academic research ${query}`, { maxResults, silent });
+    }
+
     return _cachedSearch(_cacheKey("academic", query), async () => {
       const label = this._academicProviderLabel();
       if (!silent) logger.info(`[Search:${label}]\n  • "${query}"`);
@@ -238,12 +248,21 @@ export class SearchTool {
         this._recordSearchOutcome(results.length); // success → reset dead counter
         return results;
       } catch (error) {
-        logger.warn(`[Search:${label}] ✗ ${(error as Error).message}`);
+        const msg = (error as Error).message;
+        // Trip circuit breaker on permanent errors (rate limit, credits, auth)
+        if (msg.includes("used all") || msg.includes("rate limit") ||
+            msg.includes("credits") || msg.includes("unauthorized") ||
+            msg.includes("API key")) {
+          this._consensusCircuitBroken = true;
+          logger.warn(`[Search:${label}] ✗ ${msg} — skipping for rest of session`);
+        } else {
+          logger.warn(`[Search:${label}] ✗ ${msg}`);
+        }
         logger.warn(`[Search:${label}] ↳ falling back to Parallel AI web search`);
         // Record MCP provider error for the death-reason message. Don't
         // increment the empty-search counter here — searchWeb() (the fallback
         // below) handles that, so a single logical search attempt counts once.
-        this._recordFatalError(`${label}: ${(error as Error).message}`);
+        this._recordFatalError(`${label}: ${msg}`);
         return this.searchWeb(`academic research ${query}`, { maxResults, silent, _skipHealthTracking: true });
       }
     });

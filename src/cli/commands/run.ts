@@ -241,9 +241,6 @@ export async function runCommand(options: RunOptions): Promise<void> {
   // Run the main orchestration loop
   try {
     await supervisor.run(sessionId);
-    // Checkpoint WAL + close DB + remove PID lock file after normal completion.
-    // (Graceful shutdown via SIGINT/SIGTERM also calls closeDb in the handler above.)
-    closeDb();
 
     // In TUI mode, wait for the user to see the completion screen and press a key
     if (tui) {
@@ -259,7 +256,7 @@ export async function runCommand(options: RunOptions): Promise<void> {
     process.exit(1);
   }
 
-  // Show final results
+  // Show final results (DB still open — closeDb() is called after this block)
   const memory = getContextStore();
   const topHyps = memory.getTopHypotheses(sessionId, 5);
 
@@ -285,6 +282,8 @@ export async function runCommand(options: RunOptions): Promise<void> {
     chalk.white(`co-scientist export ${sessionId}`)
   );
 
+  // Checkpoint WAL + close DB + remove PID lock file
+  closeDb();
   await getMCPManager().cleanup();
 }
 
