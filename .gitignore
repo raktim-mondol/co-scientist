@@ -8,3 +8,9 @@ dist/
 # IDE / tool artifacts
 .commandcode/
 .qoder/
+
+# Local reference snapshot of Claude Code source (not part of this project)
+claude_code/
+
+# SDD scratch (subagent-driven-development progress ledger & briefs)
+.superpowers/
