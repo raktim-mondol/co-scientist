@@ -10,7 +10,7 @@ import { getContextStore } from "../../memory/contextStore.js";
 import { getMCPManager } from "../../tools/mcpClient.js";
 import { runMigrations } from "../../db/migrate.js";
 import { closeDb } from "../../db/index.js";
-import { resetConfig, getConfig } from "../../config.js";
+import { resetConfig, getConfig, setLoggerSilenced } from "../../config.js";
 import { seedRng } from "../../util/rng.js";
 import type { ResearchGoal } from "../../models/researchGoal.js";
 import type { SessionStats } from "../../models/session.js";
@@ -29,7 +29,8 @@ interface RunOptions {
 }
 
 export async function runCommand(options: RunOptions): Promise<void> {
-  printBanner();
+  // NOTE: the banner is rendered inside the Ink TUI (see Banner.tsx) and is
+  // only printed to the console on the non-TUI plain-log path below.
 
   // Override config from CLI flags, then reset singleton so changes take effect
   if (options.maxHypotheses) process.env.MAX_HYPOTHESES = options.maxHypotheses;
@@ -81,7 +82,10 @@ export async function runCommand(options: RunOptions): Promise<void> {
     let currentSupervisor: SupervisorAgent | null = null;
     let currentSessionId: string | null = null;
 
-    console.log(color("claude")("\n🧬 Launching interactive TUI — type a research topic to begin.\n"));
+    // The TUI now owns the screen: silence the logger and clear any init
+    // output (spinners, MCP logs) so only the TUI renders.
+    setLoggerSilenced(true);
+    process.stdout.write("\x1B[2J\x1B[H"); // clear screen + cursor home
 
     const tui = renderTUI({
       memory,
@@ -125,15 +129,10 @@ export async function runCommand(options: RunOptions): Promise<void> {
         currentSupervisor = supervisor;
         currentSessionId = sessionId;
 
-        console.log(color("warning")("\n📋 Research Goal:\n") + color("text")(goalText.trim()));
-        console.log(color("warning")("\n🚀 Starting Co-Scientist...\n"));
-
-        // Start the supervisor loop in the background (don't await)
-        supervisor.run(sessionId).catch((err) => {
-          // Error is surfaced via emitter 'error' event
-          if (!(err instanceof Error) || !err.message.includes("Session stopped")) {
-            console.error(color("error")(`\n❌ Supervisor error: ${(err as Error).message}`));
-          }
+        // Don't write to the console here — the TUI owns the screen. The goal
+        // and progress are shown in the TUI; errors surface via emitter 'error'.
+        supervisor.run(sessionId).catch(() => {
+          // Error is surfaced via the emitter 'error' event (handled in App).
         });
 
         return { sessionId, supervisor, emitter };
@@ -165,6 +164,7 @@ export async function runCommand(options: RunOptions): Promise<void> {
       if (shuttingDown) return;
       shuttingDown = true;
       tui.unmount();
+      setLoggerSilenced(false); // TUI is gone — restore console logging
       console.log(color("warning")(`\n\n⏸  ${signal} received — shutting down...`));
       currentSupervisor?.stop();
       if (currentSessionId) {
@@ -184,6 +184,7 @@ export async function runCommand(options: RunOptions): Promise<void> {
     process.on("SIGHUP", () => gracefulShutdown("SIGHUP"));
 
     await tui.waitUntilExit();
+    setLoggerSilenced(false); // TUI exited normally — restore console logging
 
     // Clean up signal handlers after normal exit
     process.removeAllListeners("SIGINT");
@@ -280,9 +281,6 @@ export async function runCommand(options: RunOptions): Promise<void> {
     process.exit(1);
   }
 
-  console.log(color("warning")("\n📋 Research Goal:\n") + color("text")(rawGoal.trim()));
-  console.log(color("warning")("\n🚀 Starting Co-Scientist...\n"));
-
   // Set up progress display
   const startTime = Date.now();
   const budgetTokens = getConfig().compute.budgetTokens;
@@ -292,6 +290,11 @@ export async function runCommand(options: RunOptions): Promise<void> {
   let lastStats: (SessionStats & { activity: string }) | null = null;
 
   if (useTui) {
+    // The TUI owns the screen: silence the logger and clear init output
+    // (spinners, MCP logs) so only the TUI renders. The goal/banner are
+    // shown inside the TUI itself.
+    setLoggerSilenced(true);
+    process.stdout.write("\x1B[2J\x1B[H"); // clear screen + cursor home
     tui = renderTUI({
       emitter,
       memory: getContextStore(),
@@ -322,6 +325,12 @@ export async function runCommand(options: RunOptions): Promise<void> {
       },
     });
   } else {
+    // Plain-log path (no TTY / --no-interactive): print the banner and goal
+    // to the console since there is no TUI to host them.
+    printBanner();
+    console.log(color("warning")("\n📋 Research Goal:\n") + color("text")(rawGoal.trim()));
+    console.log(color("warning")("\n🚀 Starting Co-Scientist...\n"));
+
     emitter.on("progress", (stats: SessionStats & { activity: string }) => {
       lastStats = stats;
       printProgress(stats, startTime);
@@ -361,6 +370,7 @@ export async function runCommand(options: RunOptions): Promise<void> {
     shuttingDown = true;
 
     if (tui) tui.unmount();
+    setLoggerSilenced(false); // TUI is gone — restore console logging
     console.log(color("warning")(`\n\n⏸  ${signal} received — pausing session...`));
 
     supervisor.stop();
@@ -399,8 +409,10 @@ export async function runCommand(options: RunOptions): Promise<void> {
     // (Graceful shutdown via SIGINT/SIGTERM also calls closeDb in the handler above.)
     closeDb();
     if (tui) tui.unmount();
+    setLoggerSilenced(false); // TUI is gone — restore console logging for results
   } catch (err) {
     if (tui) tui.unmount();
+    setLoggerSilenced(false); // TUI is gone — restore console logging
     console.error(color("error")(`\n❌ Session error: ${(err as Error).message}`));
     const memory = getContextStore();
     memory.updateSessionStatus(sessionId, "error");

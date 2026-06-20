@@ -223,23 +223,36 @@ function colorizeTag(msg: string): string {
   });
 }
 
+// When the Ink TUI owns the screen, any console.* write corrupts the live
+// frame (and with patchConsole would be reprinted on every re-render). The TUI
+// surfaces progress via its own Activity panel, so the logger is fully muted
+// for the TUI's lifetime. Toggled by the CLI around renderTUI()/waitUntilExit().
+let loggerSilenced = false;
+export function setLoggerSilenced(silenced: boolean): void {
+  loggerSilenced = silenced;
+}
+
 export const logger = {
   debug: (msg: string, ...args: unknown[]) => {
+    if (loggerSilenced) return;
     if (LOG_LEVELS[getConfig().logLevel] <= LOG_LEVELS.debug) {
       console.debug(`[DEBUG] ${colorizeTag(msg)}`, ...args);
     }
   },
   info: (msg: string, ...args: unknown[]) => {
+    if (loggerSilenced) return;
     if (LOG_LEVELS[getConfig().logLevel] <= LOG_LEVELS.info) {
       console.info(`[INFO]  ${colorizeTag(msg)}`, ...args);
     }
   },
   warn: (msg: string, ...args: unknown[]) => {
+    if (loggerSilenced) return;
     if (LOG_LEVELS[getConfig().logLevel] <= LOG_LEVELS.warn) {
       console.warn(chalk.yellow(`[WARN]  ${colorizeTag(msg)}`), ...args);
     }
   },
   error: (msg: string, ...args: unknown[]) => {
+    if (loggerSilenced) return;
     if (LOG_LEVELS[getConfig().logLevel] <= LOG_LEVELS.error) {
       console.error(chalk.red(`[ERROR] ${colorizeTag(msg)}`), ...args);
     }

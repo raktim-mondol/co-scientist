@@ -218,8 +218,10 @@ program.action(async () => {
   const memory = getContextStore();
   const budgetTokens = getConfig().compute.budgetTokens;
 
-  // Clear terminal before Ink takes over — ora spinners and [INFO] logs
-  // pollute the display otherwise.
+  // The TUI owns the screen: silence the logger so agent output doesn't
+  // corrupt the live frame, and clear init output (spinners, MCP logs).
+  const { setLoggerSilenced } = await import("../config.js");
+  setLoggerSilenced(true);
   process.stdout.write("\x1B[2J\x1B[H"); // clear screen + cursor home
 
   // Closure variables set by onStartSession, read by other callbacks
@@ -303,6 +305,7 @@ program.action(async () => {
     if (shuttingDown) return;
     shuttingDown = true;
     tui.unmount();
+    setLoggerSilenced(false); // TUI is gone — restore console logging
     currentSupervisor?.stop();
     if (currentSessionId) {
       try { memory.updateSessionStatus(currentSessionId, "paused"); } catch { /* ignore */ }
@@ -318,9 +321,11 @@ program.action(async () => {
   try {
     await tui.waitUntilExit();
   } catch (err) {
+    setLoggerSilenced(false);
     console.error(color("error")("TUI crashed: " + (err as Error).message));
     console.error((err as Error).stack || "");
   }
+  setLoggerSilenced(false); // TUI exited — restore console logging
 
   // Clean up signal handlers after normal exit
   process.removeAllListeners("SIGINT");
