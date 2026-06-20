@@ -6,7 +6,6 @@ import { Dashboard } from "./views/Dashboard.js";
 import { Results } from "./views/Results.js";
 import { Graph } from "./views/Graph.js";
 import { Overview } from "./views/Overview.js";
-import { Thinking } from "./views/Thinking.js";
 import { Activity } from "./views/Activity.js";
 
 interface MainViewProps {
@@ -59,13 +58,6 @@ export function MainView({
     case "overview":
       return (
         <Overview
-          appContext={appContext}
-          focus={focus === "dashboard"}
-        />
-      );
-    case "thinking":
-      return (
-        <Thinking
           appContext={appContext}
           focus={focus === "dashboard"}
         />

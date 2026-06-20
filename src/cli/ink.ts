@@ -70,5 +70,20 @@ export function render(
   node: ReactNode,
   options?: NodeJS.WriteStream | Parameters<typeof inkRender>[1],
 ): InkInstance {
-  return inkRender(withTheme(node), options as Parameters<typeof inkRender>[1]);
+  // patchConsole defaults to true in Ink, which captures every console.* write
+  // and reprints it above the live frame on each re-render — causing stray logs
+  // to "roll" over the TUI. The TUI owns the screen (and the logger is silenced
+  // while it's mounted), so disable it. Callers can still override via options.
+  const isWriteStream =
+    options != null && typeof (options as NodeJS.WriteStream).write === "function";
+  const baseOptions = isWriteStream
+    ? undefined
+    : (options as Parameters<typeof inkRender>[1]);
+  const merged: Parameters<typeof inkRender>[1] = {
+    patchConsole: false,
+    ...(baseOptions ?? {}),
+  };
+  // Legacy signature: a raw WriteStream was passed as stdout.
+  if (isWriteStream) merged.stdout = options as NodeJS.WriteStream;
+  return inkRender(withTheme(node), merged);
 }

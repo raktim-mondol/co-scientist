@@ -3,7 +3,7 @@ import { Box, Text } from "../ink.js";
 import { Spinner } from "./Spinner.js";
 import type { ProgressStats } from "./useSessionData.js";
 
-export type SessionState = "running" | "paused" | null;
+export type SessionState = "running" | "paused" | "completed" | null;
 
 interface HeaderProps {
   sessionState: SessionState;
@@ -50,13 +50,17 @@ export function Header({ sessionState, sessionId, goal, stats, startTime, now, b
   const hyp = stats?.totalHypotheses ?? 0;
   const avgElo = Math.round(stats?.avgTopTenElo ?? 1200);
   const isPaused = sessionState === "paused";
+  const isCompleted = sessionState === "completed";
 
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
       <Box justifyContent="space-between">
         <Text color="claude" bold>🧬 co-scientist</Text>
         {sessionId && <Text dimColor>sess:{sessionId.slice(0, 8)}</Text>}
-        {isPaused ? (
+        {isCompleted ? (
+          // No Spinner here — a completed session must stop re-rendering.
+          <Text color="success">✓ complete</Text>
+        ) : isPaused ? (
           <Text color="warning">⏸ PAUSED</Text>
         ) : (
           <Box>

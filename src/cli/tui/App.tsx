@@ -4,6 +4,7 @@ import EventEmitter from "events";
 import type { ContextStore } from "../../memory/contextStore.js";
 import type { SupervisorAgent } from "../../agents/supervisor.js";
 import { useSessionData } from "./useSessionData.js";
+import { Banner } from "./Banner.js";
 import { Header } from "./Header.js";
 import type { SessionState } from "./Header.js";
 import { MainView } from "./MainView.js";
@@ -41,7 +42,6 @@ import "./commands/compare.js";
 import "./commands/diff.js";
 import "./commands/graph.js";
 import "./commands/overview.js";
-import "./commands/thinking.js";
 import "./commands/activity.js";
 // Task 11 — Action commands
 import "./commands/exportCmd.js";
@@ -105,6 +105,7 @@ export function App(props: AppProps) {
   );
   const [activeModal, setActiveModal] = useState<ModalName>(null);
   const [paused, setPaused] = useState(false);
+  const [completed, setCompleted] = useState(false);
   const [selected, setSelected] = useState(0);
   const [toastMsg, setToastMsg] = useState("");
   const [toastType, setToastType] = useState<"success" | "error" | "info">("info");
@@ -117,9 +118,12 @@ export function App(props: AppProps) {
   // ── Session completion / error event handling ──────────────────────────
   useEffect(() => {
     if (!emitter || !sessionId) return;
-    const onCompleted = (overview: string) => {
-      setActiveView("overview");
-      setToastMsg("Session completed! Research overview available.");
+    const onCompleted = (_overview: string) => {
+      // Show the ranked hypotheses (title + Key Claim), not the full research
+      // overview text. The overview is still available via /overview.
+      setCompleted(true);
+      setActiveView("results");
+      setToastMsg("Session completed! Showing ranked hypotheses.");
       setToastType("success");
       setToastVisible(true);
     };
@@ -136,8 +140,15 @@ export function App(props: AppProps) {
     };
   }, [emitter, sessionId]);
 
-  // Derived session state for Header
-  const sessionState: SessionState = !hasSession ? null : paused ? "paused" : "running";
+  // Derived session state for Header. "completed" stops the running spinner
+  // (its 80ms interval) so the finished session no longer re-renders/flickers.
+  const sessionState: SessionState = !hasSession
+    ? null
+    : completed
+      ? "completed"
+      : paused
+        ? "paused"
+        : "running";
 
   // ── Build AppContext ──────────────────────────────────────────────────────
   const appContext: AppContext = {
@@ -162,6 +173,7 @@ export function App(props: AppProps) {
       setEmitter(result.emitter);
       setStartTime(Date.now());
       setPaused(false);
+      setCompleted(false);
       setActiveView("dashboard");
     },
     stopSession: () => {
@@ -172,6 +184,7 @@ export function App(props: AppProps) {
       setEmitter(null);
       setStartTime(null);
       setPaused(false);
+      setCompleted(false);
       setActiveView("empty");
     },
     togglePause: () => {
@@ -224,22 +237,18 @@ export function App(props: AppProps) {
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
-  // FullscreenLayout pattern: scrollable content area + fixed bottom + modal overlay.
-  // Matches claude_code's REPL.tsx layout structure.
+  // Fullscreen layout, top → bottom:
+  //   1. Banner          — pinned at the top, never scrolls off
+  //   2. MainView        — scrollable content / activity grows here
+  //   3. Header          — status box, just above the input
+  //   4. Toast + InputBar — fixed at the bottom
   return (
     <Box flexDirection="column" height="100%">
-      {/* Scrollable content area: Header + MainView */}
-      <Box flexGrow={1} flexDirection="column">
-        <Header
-          sessionState={sessionState}
-          sessionId={sessionId}
-          goal={goal}
-          stats={stats}
-          startTime={startTime}
-          now={now}
-          budgetTokens={budgetTokens}
-        />
+      {/* Pinned banner */}
+      <Banner />
 
+      {/* Scrollable content area: MainView (activity, dashboard, …) */}
+      <Box flexGrow={1} flexDirection="column">
         <MainView
           activeView={activeView}
           appContext={appContext}
@@ -386,8 +395,18 @@ export function App(props: AppProps) {
         />
       )}
 
-      {/* Fixed bottom section */}
+      {/* Fixed bottom section: status header + toast + input */}
       <Box flexShrink={0} flexDirection="column">
+        <Header
+          sessionState={sessionState}
+          sessionId={sessionId}
+          goal={goal}
+          stats={stats}
+          startTime={startTime}
+          now={now}
+          budgetTokens={budgetTokens}
+        />
+
         {/* App-level toast (for command handlers) */}
         {toastVisible && (
           <Toast

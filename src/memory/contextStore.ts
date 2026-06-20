@@ -156,7 +156,6 @@ export class ContextStore {
 
       this.db.delete(schema.experimentalFeedback).where(eq(schema.experimentalFeedback.sessionId, id)).run();
       this.sqlite.query(`DELETE FROM reward_memory WHERE session_id = ?`).run(id);
-      this.sqlite.query(`DELETE FROM thinking_traces WHERE session_id = ?`).run(id);
       this.db.delete(schema.sessionActivity).where(eq(schema.sessionActivity.sessionId, id)).run();
       this.db.delete(schema.kgEdges).where(eq(schema.kgEdges.sessionId, id)).run();
       this.db.delete(schema.kgNodes).where(eq(schema.kgNodes.sessionId, id)).run();

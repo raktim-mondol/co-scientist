@@ -1,20 +1,11 @@
 import React from "react";
 import { Box, Text } from "../../ink.js";
-import { getBannerLines } from "../../banner.js";
 
-const ART = getBannerLines();
-
+// The ASCII banner is rendered app-wide by <Banner> (pinned at the top), so the
+// empty state only shows the getting-started hints below it.
 export function EmptyState() {
   return (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
-      {ART.map((line, i) => (
-        <Text key={i} color="success" bold>
-          {line}
-        </Text>
-      ))}
-      <Box marginTop={1} />
-      <Text dimColor>AI-Powered Scientific Discovery</Text>
-      <Box marginTop={1} />
       <Text dimColor>
         Type a research topic and press Enter to begin
       </Text>

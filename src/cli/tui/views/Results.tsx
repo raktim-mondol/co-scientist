@@ -67,10 +67,15 @@ export function Results({ appContext, focus }: ResultsProps) {
           const rank = String(i + 1).padStart(2);
           const elo = String(Math.round(h.eloRating)).padStart(4);
           const glyph = statusGlyph(h.status);
+          // The 1-3 sentence summary is the hypothesis's key claim.
+          const keyClaim = (h.summary || h.title).replace(/\s+/g, " ").trim();
           return (
             <Box key={h.id} flexDirection="column">
               <Text color={fg} backgroundColor={bg}>
                 {cursor} {rank}  {elo}  {glyph} {h.title}
+              </Text>
+              <Text dimColor>
+                {"        Key Claim: "}{keyClaim.length > 96 ? keyClaim.slice(0, 93) + "..." : keyClaim}
               </Text>
             </Box>
           );

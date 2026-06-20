@@ -327,24 +327,7 @@ export async function runMigrations() {
       // Column already exists — safe to ignore
     }
   }
-  // Add thinking_traces and session_activity tables for session logging
-  db.run(sql`
-    CREATE TABLE IF NOT EXISTS thinking_traces (
-      id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL REFERENCES sessions(id),
-      agent TEXT NOT NULL,
-      reasoning TEXT NOT NULL,
-      prompt_tokens INTEGER NOT NULL DEFAULT 0,
-      completion_tokens INTEGER NOT NULL DEFAULT 0,
-      total_tokens INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL
-    )
-  `);
-  db.run(sql`
-    CREATE INDEX IF NOT EXISTS idx_thinking_traces_session
-    ON thinking_traces(session_id)
-  `);
-
+  // Add session_activity table for session logging
   db.run(sql`
     CREATE TABLE IF NOT EXISTS session_activity (
       id TEXT PRIMARY KEY,
