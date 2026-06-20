@@ -1,14 +1,15 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Box, Text, useApp, useInput, Static } from "../ink.js";
 import EventEmitter from "events";
 import type { ContextStore } from "../../memory/contextStore.js";
 import type { SupervisorAgent } from "../../agents/supervisor.js";
 import { useSessionData } from "./useSessionData.js";
-import { Banner } from "./Banner.js";
-import { Header } from "./Header.js";
-import type { SessionState } from "./Header.js";
-import { MainView } from "./MainView.js";
+import { WelcomeBox } from "./WelcomeBox.js";
+import { TranscriptItem } from "./Transcript.js";
+import { LiveStatus } from "./LiveStatus.js";
+import type { SessionState } from "./LiveStatus.js";
 import { InputBar } from "./InputBar.js";
+import { Footer } from "./Footer.js";
 import { Toast } from "./Toast.js";
 import { KillModal } from "./modals/KillModal.js";
 import { BoostModal } from "./modals/BoostModal.js";
@@ -24,9 +25,12 @@ import { killHypothesis, boostHypothesis, injectHypothesis } from "./actions.js"
 import { extractRewardFromFeedback } from "../../rlef/reward-signal.js";
 import { exportCommand } from "../commands/export.js";
 import { v4 as uuidv4 } from "uuid";
-import type { MainViewName, ModalName, AppContext, RouteResult } from "./CommandRouter.js";
+import type { TranscriptEntry } from "./transcript.js";
+import { formatUserGoal, formatSystemNotice, formatResults } from "./formatters.js";
+import type { ModalName, AppContext, RouteResult } from "./CommandRouter.js";
 import type { SessionStartResult } from "./index.js";
-// Command registrations (side-effect imports)
+
+// Command registrations (side-effect imports — keep exactly as-is)
 import "./commands/run.js";
 import "./commands/pause.js";
 import "./commands/resume.js";
@@ -72,8 +76,6 @@ export interface AppProps {
   onQuit: () => void;
 }
 
-type Focus = "input" | "dashboard";
-
 export function App(props: AppProps) {
   const {
     memory, budgetTokens, onQuit,
@@ -84,8 +86,6 @@ export function App(props: AppProps) {
   const { exit } = useApp();
 
   // ── Internal session state ─────────────────────────────────────────────
-  // Initialized from props (non-interactive path: session already exists).
-  // Updated via onStartSession → SessionStartResult (interactive path).
   const [sessionId, setSessionId] = useState<string | null>(props.sessionId);
   const [goal, setGoal] = useState<string | null>(props.goal);
   const [supervisor, setSupervisor] = useState<SupervisorAgent | null>(props.supervisor);
@@ -93,16 +93,21 @@ export function App(props: AppProps) {
   const [startTime, setStartTime] = useState<number | null>(props.startTime);
   const hasSession = sessionId !== null;
 
-  const { stats, leaderboard, ticker, now } = useSessionData(
+  // ── Transcript (<Static> scrollback) ───────────────────────────────────
+  const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
+  const pushEntry = useCallback((entry: TranscriptEntry) => {
+    setTranscript((prev) => [...prev, entry]);
+  }, []);
+
+  // Pass memory + pushEntry into useSessionData so progress events push
+  // activity lines into the transcript and refresh the leaderboard.
+  const { stats, leaderboard, now } = useSessionData(
     emitter ?? NOOP_EMITTER,
     memory,
     sessionId ?? "",
+    pushEntry,
   );
 
-  const [focus, setFocus] = useState<Focus>("input");
-  const [activeView, setActiveView] = useState<MainViewName>(
-    hasSession ? "dashboard" : "empty",
-  );
   const [activeModal, setActiveModal] = useState<ModalName>(null);
   const [paused, setPaused] = useState(false);
   const [completed, setCompleted] = useState(false);
@@ -112,25 +117,19 @@ export function App(props: AppProps) {
   const [toastVisible, setToastVisible] = useState(false);
 
   const selectedHyp = leaderboard[selected];
-  const currentRound = stats?.currentRound ?? 0;
-  const activeHypCount = stats?.activeHypotheses ?? 0;
 
   // ── Session completion / error event handling ──────────────────────────
   useEffect(() => {
     if (!emitter || !sessionId) return;
     const onCompleted = (_overview: string) => {
-      // Show the ranked hypotheses (title + Key Claim), not the full research
-      // overview text. The overview is still available via /overview.
       setCompleted(true);
-      setActiveView("results");
-      setToastMsg("Session completed! Showing ranked hypotheses.");
-      setToastType("success");
-      setToastVisible(true);
+      // Push a results block into the transcript so the user sees the
+      // final rankings printed in scrollback.
+      pushEntry(formatResults(memory, sessionId));
+      pushEntry(formatSystemNotice("Session completed.", "success"));
     };
     const onError = (err: Error) => {
-      setToastMsg(`Session error: ${err.message}`);
-      setToastType("error");
-      setToastVisible(true);
+      pushEntry(formatSystemNotice(`Session error: ${err.message}`, "error"));
     };
     emitter.on("completed", onCompleted);
     emitter.on("error", onError);
@@ -138,10 +137,9 @@ export function App(props: AppProps) {
       emitter.off("completed", onCompleted);
       emitter.off("error", onError);
     };
-  }, [emitter, sessionId]);
+  }, [emitter, sessionId, memory, pushEntry]);
 
-  // Derived session state for Header. "completed" stops the running spinner
-  // (its 80ms interval) so the finished session no longer re-renders/flickers.
+  // Derived session state for LiveStatus.
   const sessionState: SessionState = !hasSession
     ? null
     : completed
@@ -150,14 +148,13 @@ export function App(props: AppProps) {
         ? "paused"
         : "running";
 
-  // ── Build AppContext ──────────────────────────────────────────────────────
+  // ── Build AppContext ───────────────────────────────────────────────────
   const appContext: AppContext = {
     memory,
     sessionId,
     goal,
     supervisor,
     emitter,
-    setMainView: setActiveView,
     openModal: (modal) => setActiveModal(modal),
     closeModal: () => setActiveModal(null),
     showToast: (message, type = "info") => {
@@ -166,6 +163,9 @@ export function App(props: AppProps) {
       setToastVisible(true);
     },
     startSession: async (goalText, opts) => {
+      // Echo the goal into the transcript
+      pushEntry(formatUserGoal(goalText));
+
       const result = await externalOnStartSession(goalText, opts);
       setSessionId(result.sessionId);
       setGoal(goalText);
@@ -174,7 +174,8 @@ export function App(props: AppProps) {
       setStartTime(Date.now());
       setPaused(false);
       setCompleted(false);
-      setActiveView("dashboard");
+
+      pushEntry(formatSystemNotice("Session started.", "success"));
     },
     stopSession: () => {
       externalOnStop();
@@ -185,20 +186,21 @@ export function App(props: AppProps) {
       setStartTime(null);
       setPaused(false);
       setCompleted(false);
-      setActiveView("empty");
     },
     togglePause: () => {
       const np = externalOnTogglePause();
       setPaused(np);
+      pushEntry(formatSystemNotice(np ? "Session paused." : "Session resumed.", "info"));
       return np;
     },
     paused,
+    pushEntry,
   };
 
-  // ── Memoized lists for modals ─────────────────────────────────────────────
+  // ── Memoized lists for modals ──────────────────────────────────────────
   const allHypotheses = useMemo(
     () => (sessionId ? memory.getAllActiveHypotheses(sessionId) : []),
-    [sessionId, memory, stats], // stats changes trigger refresh
+    [sessionId, memory, stats],
   );
 
   const allSessions = useMemo(
@@ -206,24 +208,35 @@ export function App(props: AppProps) {
     [memory],
   );
 
-  // ── Global Esc: dismiss modal first, then toggle focus ────────────────────
+  // ── Global Esc: dismiss modal ──────────────────────────────────────────
   useInput((_input, key) => {
     if (!key.escape) return;
     if (activeModal) {
       setActiveModal(null);
-      return;
     }
-    setFocus((f) => (f === "input" ? "dashboard" : "input"));
   });
 
-  // ── Route handler (view switches, modals, session start, exit) ────────────
+  // ── Route handler ──────────────────────────────────────────────────────
   const handleRoute = (result: RouteResult | { type: "session_start"; goal: string }) => {
     switch (result.type) {
-      case "view_switch":
-        setActiveView(result.view);
+      case "transcript":
+        // Push the formatted block(s) into scrollback
+        for (const entry of result.entries) {
+          pushEntry(entry);
+        }
+        if (result.message) {
+          setToastMsg(result.message);
+          setToastType("success");
+          setToastVisible(true);
+        }
         break;
       case "modal":
         setActiveModal(result.modal);
+        if (result.message) {
+          setToastMsg(result.message);
+          setToastType("info");
+          setToastVisible(true);
+        }
         break;
       case "session_start":
         appContext.startSession(result.goal);
@@ -236,36 +249,48 @@ export function App(props: AppProps) {
     }
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────
-  // Fullscreen layout, top → bottom:
-  //   1. Banner          — pinned at the top, never scrolls off
-  //   2. MainView        — scrollable content / activity grows here
-  //   3. Header          — status box, just above the input
-  //   4. Toast + InputBar — fixed at the bottom
+  // ── Render: REPL layout ────────────────────────────────────────────────
+  // Top → bottom:
+  //   1. <Static> WelcomeBox + transcript (scrollback, never re-renders)
+  //   2. LiveStatus (re-renders on progress, shows spinner + token gauge + leaderboard)
+  //   3. Modal overlay (renders above the live region, below it logically)
+  //   4. Toast + InputBar + Footer (fixed at bottom)
   return (
     <Box flexDirection="column" height="100%">
-      {/* Pinned banner */}
-      <Banner />
+      {/* ── Scrollback (Static: print-and-forget, no flicker) ────────── */}
+      <Static items={[
+        <Box key="welcome_static" flexDirection="column">
+          <WelcomeBox />
+        </Box>,
+        ...transcript.map((entry) => (
+          <Box key={entry.id} flexDirection="column">
+            <TranscriptItem entry={entry} />
+          </Box>
+        )),
+      ]}>
+        {(_items) => null}
+      </Static>
 
-      {/* Scrollable content area: MainView (activity, dashboard, …) */}
-      <Box flexGrow={1} flexDirection="column">
-        <MainView
-          activeView={activeView}
-          appContext={appContext}
-          focus={focus}
-          leaderboard={leaderboard}
-          ticker={ticker}
-          selected={selected}
-          setSelected={setSelected}
-        />
-      </Box>
+      {/* ── Live region (re-renders on every progress tick) ──────────── */}
+      <LiveStatus
+        sessionState={sessionState}
+        sessionId={sessionId}
+        goal={goal}
+        stats={stats}
+        startTime={startTime}
+        now={now}
+        budgetTokens={budgetTokens}
+        leaderboard={leaderboard}
+        selected={selected}
+      />
 
-      {/* Modal overlay — renders above the fixed bottom section */}
+      {/* ── Modal overlay ────────────────────────────────────────────── */}
       {activeModal === "kill" && selectedHyp && (
         <KillModal
           title={selectedHyp.title}
           onConfirm={() => {
             killHypothesis(memory, selectedHyp.id);
+            pushEntry(formatSystemNotice(`Killed: ${selectedHyp.title.slice(0, 40)}`));
             setActiveModal(null);
           }}
           onCancel={() => setActiveModal(null)}
@@ -277,6 +302,7 @@ export function App(props: AppProps) {
           currentElo={selectedHyp.eloRating}
           onConfirm={(newElo) => {
             boostHypothesis(memory, selectedHyp.id, newElo);
+            pushEntry(formatSystemNotice(`Boosted ${selectedHyp.title.slice(0, 40)} to Elo ${newElo}`));
             setActiveModal(null);
           }}
           onCancel={() => setActiveModal(null)}
@@ -290,8 +316,9 @@ export function App(props: AppProps) {
               title,
               summary: "",
               content,
-              generationRound: currentRound,
+              generationRound: stats?.currentRound ?? 0,
             });
+            pushEntry(formatSystemNotice(`Injected: ${title.slice(0, 40)}`));
             setActiveModal(null);
           }}
           onCancel={() => setActiveModal(null)}
@@ -299,9 +326,9 @@ export function App(props: AppProps) {
       )}
       {activeModal === "run" && (
         <RunModal
-          onConfirm={async (goal, name) => {
+          onConfirm={async (goalText, name) => {
             setActiveModal(null);
-            await appContext.startSession(goal, name ? { name } : undefined);
+            await appContext.startSession(goalText, name ? { name } : undefined);
           }}
           onCancel={() => setActiveModal(null)}
         />
@@ -312,7 +339,10 @@ export function App(props: AppProps) {
           onConfirm={(newBudget) => {
             process.env.COMPUTE_BUDGET_TOKENS = String(newBudget);
             setActiveModal(null);
-            appContext.showToast(`Budget set to ${newBudget.toLocaleString()} tokens.`, "success");
+            pushEntry(formatSystemNotice(
+              `Budget set to ${newBudget.toLocaleString()} tokens.`,
+              "success",
+            ));
           }}
           onCancel={() => setActiveModal(null)}
         />
@@ -320,9 +350,9 @@ export function App(props: AppProps) {
       {activeModal === "strategy" && (
         <StrategyModal
           weights={{
-            generation: activeHypCount < 3 ? 0.60 : 0.30,
+            generation: (stats?.activeHypotheses ?? 0) < 3 ? 0.60 : 0.30,
             reflection: 0.20,
-            ranking: activeHypCount >= 2 ? 0.30 : 0.03,
+            ranking: (stats?.activeHypotheses ?? 0) >= 2 ? 0.30 : 0.03,
             evolution: 0.10,
             proximity: 0.07,
             meta_review: 0.03,
@@ -337,9 +367,9 @@ export function App(props: AppProps) {
           onConfirm={(format, outputPath) => {
             setActiveModal(null);
             exportCommand(sessionId!, { format, output: outputPath }).then(() => {
-              appContext.showToast(`Session exported as ${format}.`, "success");
+              pushEntry(formatSystemNotice(`Session exported as ${format}.`, "success"));
             }).catch((err) => {
-              appContext.showToast(`Export failed: ${(err as Error).message}`, "error");
+              pushEntry(formatSystemNotice(`Export failed: ${(err as Error).message}`, "error"));
             });
           }}
           onCancel={() => setActiveModal(null)}
@@ -369,7 +399,7 @@ export function App(props: AppProps) {
               createdAt: new Date(),
             });
             setActiveModal(null);
-            appContext.showToast("Feedback saved.", "success");
+            pushEntry(formatSystemNotice("Feedback saved.", "success"));
           }}
           onCancel={() => setActiveModal(null)}
         />
@@ -389,25 +419,15 @@ export function App(props: AppProps) {
               memory.deleteSession(id);
             }
             setActiveModal(null);
-            appContext.showToast(`Deleted ${ids.length} session(s).`, "success");
+            pushEntry(formatSystemNotice(`Deleted ${ids.length} session(s).`, "success"));
           }}
           onCancel={() => setActiveModal(null)}
         />
       )}
 
-      {/* Fixed bottom section: status header + toast + input */}
+      {/* ── Fixed bottom: toast + bordered input + footer ─────────────── */}
       <Box flexShrink={0} flexDirection="column">
-        <Header
-          sessionState={sessionState}
-          sessionId={sessionId}
-          goal={goal}
-          stats={stats}
-          startTime={startTime}
-          now={now}
-          budgetTokens={budgetTokens}
-        />
-
-        {/* App-level toast (for command handlers) */}
+        {/* App-level toast */}
         {toastVisible && (
           <Toast
             message={toastMsg}
@@ -417,8 +437,17 @@ export function App(props: AppProps) {
           />
         )}
 
-        {/* Input bar at the bottom — clears on view switch */}
-        <InputBar focus={focus === "input"} appContext={appContext} onRoute={handleRoute} clearKey={activeView} />
+        <InputBar
+          active={activeModal === null}
+          appContext={appContext}
+          onRoute={handleRoute}
+        />
+
+        <Footer
+          hasSession={hasSession}
+          paused={paused}
+          completed={completed}
+        />
       </Box>
     </Box>
   );

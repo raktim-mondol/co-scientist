@@ -21,7 +21,6 @@ function createMockContext(overrides?: Partial<AppContext>): AppContext {
     goal: null,
     supervisor: null,
     emitter: null,
-    setMainView: () => {},
     openModal: () => {},
     closeModal: () => {},
     showToast: () => {},
@@ -29,6 +28,7 @@ function createMockContext(overrides?: Partial<AppContext>): AppContext {
     stopSession: () => {},
     togglePause: () => false,
     paused: false,
+    pushEntry: () => {},
     ...overrides,
   };
 }

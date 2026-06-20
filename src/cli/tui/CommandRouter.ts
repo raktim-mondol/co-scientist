@@ -1,16 +1,9 @@
 import type { ContextStore } from "../../memory/contextStore.js";
 import type { SupervisorAgent } from "../../agents/supervisor.js";
 import type { EventEmitter } from "events";
+import type { TranscriptEntry } from "./transcript.js";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
-
-export type MainViewName =
-  | "dashboard"
-  | "results"
-  | "graph"
-  | "overview"
-  | "activity"
-  | "empty";
 
 export type ModalName =
   | "run"
@@ -31,7 +24,6 @@ export interface AppContext {
   goal: string | null;
   supervisor: SupervisorAgent | null;
   emitter: EventEmitter | null;
-  setMainView: (view: MainViewName) => void;
   openModal: (modal: ModalName, data?: unknown) => void;
   closeModal: () => void;
   showToast: (message: string, type?: "success" | "error" | "info") => void;
@@ -39,6 +31,8 @@ export interface AppContext {
   stopSession: () => void;
   togglePause: () => boolean;
   paused: boolean;
+  /** Push an entry into the transcript (<Static> scrollback). App.tsx wires this. */
+  pushEntry: (entry: TranscriptEntry) => void;
 }
 
 export interface CommandSuggestion {
@@ -50,7 +44,7 @@ export interface CommandSuggestion {
 
 export type RouteResult =
   | { type: "immediate"; message?: string }
-  | { type: "view_switch"; view: MainViewName; message?: string }
+  | { type: "transcript"; entries: TranscriptEntry[]; message?: string }
   | { type: "modal"; modal: ModalName; message?: string }
   | { type: "error"; message: string }
   | { type: "exit" };

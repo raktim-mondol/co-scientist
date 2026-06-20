@@ -6,19 +6,18 @@ import type { AppContext, RouteResult } from "./CommandRouter.js";
 import { getSuggestions, route } from "./CommandRouter.js";
 
 interface InputBarProps {
-  focus: boolean;
+  active: boolean;
   appContext: AppContext;
   onRoute: (result: RouteResult | { type: "session_start"; goal: string }) => void;
-  clearKey?: string;
 }
 
-export function InputBar({ focus, appContext, onRoute, clearKey }: InputBarProps) {
+export function InputBar({ active, appContext, onRoute }: InputBarProps) {
   const [text, setText] = useState("");
   const [cursor, setCursor] = useState(0);
   const [toastMessage, setToastMessage] = useState("");
   const [toastType, setToastType] = useState<"success" | "error" | "info">("info");
   const [toastVisible, setToastVisible] = useState(false);
-  const [toastKey, setToastKey] = useState(0); // forces Toast remount for stacking
+  const [toastKey, setToastKey] = useState(0);
   const [paletteDismissed, setPaletteDismissed] = useState(false);
   const [paletteIndex, setPaletteIndex] = useState(0);
 
@@ -26,30 +25,22 @@ export function InputBar({ focus, appContext, onRoute, clearKey }: InputBarProps
   const suggestions = text.startsWith("/") ? getSuggestions(text, appContext) : [];
   const paletteVisible = text.startsWith("/") && suggestions.length > 0 && !paletteDismissed;
 
-  // Reset palette dismissal and index when text changes
+  // Reset palette dismissal when text changes
   useEffect(() => {
     setPaletteDismissed(false);
     setPaletteIndex(0);
   }, [text]);
 
-  // Clear input when clearKey changes (e.g., after view switch via /results, /dashboard)
-  useEffect(() => {
-    setText("");
-    setCursor(0);
-  }, [clearKey]);
-
-  // Clamp cursor to text length after text mutations
+  // Clamp cursor to text length
   useEffect(() => {
     if (cursor > text.length) setCursor(text.length);
   }, [text, cursor]);
 
-  // Local toast helper — dismisses any existing toast before showing a new one
+  // Local toast helper
   const showToast = (message: string, type: "success" | "error" | "info" = "info") => {
     if (toastVisible) {
-      // Dismiss the old toast first by forcing a remount via key
       setToastVisible(false);
     }
-    // Microtask to allow state flush, then show new toast
     setTimeout(() => {
       setToastMessage(message);
       setToastType(type);
@@ -62,7 +53,7 @@ export function InputBar({ focus, appContext, onRoute, clearKey }: InputBarProps
 
   useInput(
     (input, key) => {
-      // Escape: close palette first, then dismiss toast, otherwise let parent handle focus
+      // Escape: close palette first, then dismiss toast, otherwise close modal
       if (key.escape) {
         if (paletteVisible) {
           setPaletteDismissed(true);
@@ -106,10 +97,9 @@ export function InputBar({ focus, appContext, onRoute, clearKey }: InputBarProps
           paletteVisible && suggestions[paletteIndex]
             ? suggestions[paletteIndex].name
             : text;
-        if (!cmd.trim()) return; // ignore empty input
+        if (!cmd.trim()) return;
         setText("");
         setCursor(0);
-        // route is async — fire-and-forget the side effects via .then()
         route(cmd, appContext).then((result) => {
           if ((result.type === "immediate" || result.type === "error") && result.message) {
             showToast(result.message, result.type === "error" ? "error" : "success");
@@ -119,12 +109,7 @@ export function InputBar({ focus, appContext, onRoute, clearKey }: InputBarProps
         return;
       }
 
-      // Backspace: remove character before cursor.
-      // Ink maps the physical Backspace key (\x7f) to key.delete, NOT key.backspace
-      // (only \b / ctrl+h sets key.backspace). The forward-Delete key (\x1b[3~) also
-      // maps to key.delete, so the two are indistinguishable — and since Backspace is
-      // by far the common key, we treat key.delete as backspace (delete char before
-      // cursor), matching ink-text-input's behaviour.
+      // Backspace: remove character before cursor
       if (key.backspace || key.delete) {
         if (cursor > 0) {
           setText((v) => v.slice(0, cursor - 1) + v.slice(cursor));
@@ -133,19 +118,17 @@ export function InputBar({ focus, appContext, onRoute, clearKey }: InputBarProps
         return;
       }
 
-      // Left arrow: move cursor back
+      // Left / Right arrows
       if (key.leftArrow) {
         setCursor((c) => Math.max(0, c - 1));
         return;
       }
-
-      // Right arrow: move cursor forward
       if (key.rightArrow) {
         setCursor((c) => Math.min(text.length, c + 1));
         return;
       }
 
-      // Ctrl+A / Ctrl+E: jump to start / end (standard Readline shortcuts)
+      // Ctrl+A / Ctrl+E: jump to start / end
       if (key.ctrl && input === "a") {
         setCursor(0);
         return;
@@ -161,7 +144,7 @@ export function InputBar({ focus, appContext, onRoute, clearKey }: InputBarProps
         setCursor((c) => c + 1);
       }
     },
-    { isActive: focus }
+    { isActive: active },
   );
 
   return (
@@ -176,8 +159,9 @@ export function InputBar({ focus, appContext, onRoute, clearKey }: InputBarProps
         />
       )}
 
-      <Box paddingX={1}>
-        <Text color="text">&gt; </Text>
+      {/* Rounded bordered prompt — x_code style */}
+      <Box borderStyle="round" borderColor="claude" paddingX={1}>
+        <Text color="claude" bold>&gt; </Text>
         <Text color="text">{text.slice(0, cursor)}</Text>
         {cursor < text.length ? (
           <Text color="inverseText" backgroundColor="text">{text[cursor]}</Text>

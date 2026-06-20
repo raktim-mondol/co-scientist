@@ -1,0 +1,87 @@
+import React from "react";
+import { Box, Text } from "../ink.js";
+import type { TranscriptEntry } from "./transcript.js";
+
+// Colour hints for activity/system entries. The welcome block uses the
+// "claude" border applied by the caller (App.tsx) rather than anything here.
+const TONE_COLORS: Record<string, string> = {
+  success: "success",
+  error: "error",
+  info: "claude",
+};
+
+const AGENT_COLORS: Record<string, string> = {
+  GenerationAgent: "claude",
+  ReflectionAgent: "warning",
+  RankingAgent: "warning",
+  EvolutionAgent: "suggestion",
+  ProximityAgent: "permission",
+  MetaReviewAgent: "text",
+  KnowledgeGraphAgent: "claude",
+  LiteratureResearchAgent: "success",
+  ExperimentDesignAgent: "success",
+};
+
+function agentColor(agent?: string): string | undefined {
+  if (!agent) return undefined;
+  // Try exact match first, then substring
+  if (AGENT_COLORS[agent]) return AGENT_COLORS[agent];
+  for (const [key, c] of Object.entries(AGENT_COLORS)) {
+    if (agent.includes(key)) return c;
+  }
+  return undefined;
+}
+
+// Each entry is rendered inside Ink's <Static>. It is printed exactly once
+// and never re-rendered — that's what keeps the REPL flicker-free.
+export function TranscriptItem({ entry }: { entry: TranscriptEntry }) {
+  switch (entry.kind) {
+    case "welcome":
+      // Rendered as its own <Static> item — handled by App.tsx which renders
+      // WelcomeBox inside a <Box> wrapper.
+      return null;
+
+    case "activity": {
+      const ac = agentColor(entry.agent);
+      return (
+        <Box paddingX={1}>
+          <Text dimColor>⏺ </Text>
+          {entry.agent && <Text color={ac}>{entry.agent.padEnd(24)}</Text>}
+          <Text color="text">{entry.text}</Text>
+        </Box>
+      );
+    }
+
+    case "user":
+      return (
+        <Box paddingX={1}>
+          <Text color="success" bold>▸ </Text>
+          <Text color="text">{entry.text}</Text>
+        </Box>
+      );
+
+    case "system": {
+      const color = entry.tone ? TONE_COLORS[entry.tone] ?? "text" : "text";
+      const glyph = entry.tone === "success" ? "✓" : entry.tone === "error" ? "✗" : "·";
+      return (
+        <Box paddingX={1}>
+          <Text color={color}>{glyph} </Text>
+          <Text dimColor>{entry.text}</Text>
+        </Box>
+      );
+    }
+
+    case "block":
+      return (
+        <Box flexDirection="column" borderStyle="round" borderColor={entry.color ?? "promptBorder"} paddingX={1} marginTop={1}>
+          <Text color={entry.color ?? "claude"} bold>{entry.title}</Text>
+          {entry.lines.map((line, i) => (
+            <Text key={i} color="text">{line}</Text>
+          ))}
+        </Box>
+      );
+
+    default:
+      return null;
+  }
+}

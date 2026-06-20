@@ -1,5 +1,6 @@
 import { registerCommand } from "../CommandRouter.js";
 import type { CommandHandler } from "../CommandRouter.js";
+import { formatOverview } from "../formatters.js";
 
 const overviewCommand: CommandHandler = {
   name: "overview",
@@ -8,11 +9,11 @@ const overviewCommand: CommandHandler = {
   activeWhen: (ctx) => {
     if (!ctx.sessionId) return false;
     const session = ctx.memory.getSession(ctx.sessionId);
-    // Active when session exists AND has an overview or is completed
     return session !== null && (session.status === "completed" || session.researchOverview !== null);
   },
-  async execute(_args, _ctx) {
-    return { type: "view_switch", view: "overview" };
+  async execute(_args, ctx) {
+    const entries = formatOverview(ctx.memory, ctx.sessionId!);
+    return { type: "transcript", entries };
   },
 };
 
