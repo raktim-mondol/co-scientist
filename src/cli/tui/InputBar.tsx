@@ -119,19 +119,16 @@ export function InputBar({ focus, appContext, onRoute, clearKey }: InputBarProps
         return;
       }
 
-      // Backspace: remove character before cursor
-      if (key.backspace) {
+      // Backspace: remove character before cursor.
+      // Ink maps the physical Backspace key (\x7f) to key.delete, NOT key.backspace
+      // (only \b / ctrl+h sets key.backspace). The forward-Delete key (\x1b[3~) also
+      // maps to key.delete, so the two are indistinguishable — and since Backspace is
+      // by far the common key, we treat key.delete as backspace (delete char before
+      // cursor), matching ink-text-input's behaviour.
+      if (key.backspace || key.delete) {
         if (cursor > 0) {
           setText((v) => v.slice(0, cursor - 1) + v.slice(cursor));
           setCursor((c) => c - 1);
-        }
-        return;
-      }
-
-      // Delete: remove character at cursor
-      if (key.delete) {
-        if (cursor < text.length) {
-          setText((v) => v.slice(0, cursor) + v.slice(cursor + 1));
         }
         return;
       }
