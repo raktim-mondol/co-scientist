@@ -231,9 +231,7 @@ export const logger = {
   },
   info: (msg: string, ...args: unknown[]) => {
     if (LOG_LEVELS[getConfig().logLevel] <= LOG_LEVELS.info) {
-      const isThinking = msg.includes("] Thinking:");
-      const body = `[INFO]  ${colorizeTag(msg)}`;
-      console.info(isThinking ? chalk.dim(body) : body, ...args);
+      console.info(`[INFO]  ${colorizeTag(msg)}`, ...args);
     }
   },
   warn: (msg: string, ...args: unknown[]) => {

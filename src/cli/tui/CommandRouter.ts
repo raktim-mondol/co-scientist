@@ -9,7 +9,6 @@ export type MainViewName =
   | "results"
   | "graph"
   | "overview"
-  | "thinking"
   | "activity"
   | "empty";
 

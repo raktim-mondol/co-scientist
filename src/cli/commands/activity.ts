@@ -160,20 +160,7 @@ function buildMarkdown(
 
         if (e.type === "llm_call") {
           if (detail.mode) lines.push(`- **Mode:** ${detail.mode}`);
-          if (detail.reasoningLen) lines.push(`- **Thinking:** ${detail.reasoningLen.toLocaleString()} chars`);
           if (detail.jsonMode) lines.push(`- **JSON mode:** yes`);
-
-          if (detail.reasoning) {
-            lines.push("");
-            lines.push("<details><summary>Reasoning (chain-of-thought)</summary>");
-            lines.push("");
-            lines.push("```");
-            lines.push(detail.reasoning);
-            lines.push("```");
-            lines.push("");
-            lines.push("</details>");
-            lines.push("");
-          }
 
           if (detail.system) {
             lines.push("");

@@ -93,7 +93,7 @@ export class SupervisorAgent extends BaseAgent {
     const maxRounds = this.config.compute.maxTournamentRounds;
     const metaReviewInterval = 25; // every N completed tasks
 
-    // Set session context for DB logging (thinking traces + activity log)
+    // Set session context for DB logging (activity log)
     BaseAgent.currentSessionId = sessionId;
 
     this.log("info", `Starting orchestration for session ${sessionId}`);

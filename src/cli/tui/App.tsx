@@ -41,7 +41,6 @@ import "./commands/compare.js";
 import "./commands/diff.js";
 import "./commands/graph.js";
 import "./commands/overview.js";
-import "./commands/thinking.js";
 import "./commands/activity.js";
 // Task 11 — Action commands
 import "./commands/exportCmd.js";
