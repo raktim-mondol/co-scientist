@@ -45,6 +45,7 @@
     "@types/node": "^20.19.43",
     "@types/uuid": "^10.0.0",
     "drizzle-kit": "^0.31.10",
+    "ink-testing-library": "^4.0.0",
     "typescript": "^6.0.3"
   }
 }
