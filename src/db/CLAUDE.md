@@ -8,4 +8,12 @@
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
 | #2460 | 3:01 AM | 🔵 | Identified database layer with PID lock and sqlite-vec | ~175 |
+
+### Jun 22, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #3123 | 12:22 AM | 🟣 | Added forceReleaseLock() to db/index.ts for manual stale PID lock recovery | ~185 |
+| #3122 | 12:21 AM | 🔵 | Developer examining SQLite WAL checkpoint and busy_timeout for stale lock handling | ~185 |
+| #3121 | " | 🔵 | DB lock file mechanism in src/db/index.ts — PID-based exclusive instance guard | ~191 |
 </claude-mem-context>

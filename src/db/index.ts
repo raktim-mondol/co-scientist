@@ -151,6 +151,31 @@ export function getSqlite(): Database {
   return _sqlite!;
 }
 
+/**
+ * Force-release the PID lock file.  Kills the stale process (if alive) and
+ * removes the lock, allowing a new instance to start.  Call BEFORE `getDb()`.
+ */
+export function forceReleaseLock(): void {
+  const config = getConfig();
+  const lockPath = config.db.path + ".lock";
+  try {
+    if (existsSync(lockPath)) {
+      const pid = parseInt(readFileSync(lockPath, "utf-8").trim(), 10);
+      if (!Number.isNaN(pid)) {
+        try {
+          process.kill(pid, "SIGKILL");
+          console.warn(`Killed previous instance (PID ${pid}).`);
+        } catch {
+          // Process already dead — ok
+        }
+      }
+      unlinkSync(lockPath);
+    }
+  } catch {
+    // Best-effort — getDb() will still fail if lock truly can't be released
+  }
+}
+
 // ── Retry helper for transient SQLITE_LOCKED errors ──────────────────────────
 
 /**

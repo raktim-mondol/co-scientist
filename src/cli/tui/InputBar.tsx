@@ -9,9 +9,12 @@ interface InputBarProps {
   active: boolean;
   appContext: AppContext;
   onRoute: (result: RouteResult | { type: "session_start"; goal: string }) => void;
+  /** Notifies the parent when the command palette opens/closes, so it can
+   *  collapse the live status region and keep the frame within the viewport. */
+  onPaletteChange?: (open: boolean) => void;
 }
 
-export function InputBar({ active, appContext, onRoute }: InputBarProps) {
+export function InputBar({ active, appContext, onRoute, onPaletteChange }: InputBarProps) {
   const [text, setText] = useState("");
   const [cursor, setCursor] = useState(0);
   const [toastMessage, setToastMessage] = useState("");
@@ -25,11 +28,20 @@ export function InputBar({ active, appContext, onRoute }: InputBarProps) {
   const suggestions = text.startsWith("/") ? getSuggestions(text, appContext) : [];
   const paletteVisible = text.startsWith("/") && suggestions.length > 0 && !paletteDismissed;
 
+  // Keep the highlighted index within the (possibly narrowed) suggestion list.
+  const safeIndex = suggestions.length > 0 ? Math.min(paletteIndex, suggestions.length - 1) : 0;
+
   // Reset palette dismissal when text changes
   useEffect(() => {
     setPaletteDismissed(false);
     setPaletteIndex(0);
   }, [text]);
+
+  // Tell the parent whether the palette is showing (active gates it too, so a
+  // modal opening hides it). Lets App collapse the leaderboard while choosing.
+  useEffect(() => {
+    onPaletteChange?.(paletteVisible && active);
+  }, [paletteVisible, active, onPaletteChange]);
 
   // Clamp cursor to text length
   useEffect(() => {
@@ -68,8 +80,8 @@ export function InputBar({ active, appContext, onRoute }: InputBarProps) {
 
       // Tab: auto-complete the highlighted palette suggestion
       if (key.tab) {
-        if (paletteVisible && suggestions[paletteIndex]) {
-          const completed = suggestions[paletteIndex].name;
+        if (paletteVisible && suggestions[safeIndex]) {
+          const completed = suggestions[safeIndex].name;
           setText(completed);
           setCursor(completed.length);
           setPaletteDismissed(true);
@@ -77,16 +89,16 @@ export function InputBar({ active, appContext, onRoute }: InputBarProps) {
         return;
       }
 
-      // Up/Down arrows: navigate palette when open
+      // Up/Down arrows: navigate palette when open (wraps at both ends)
       if (key.upArrow) {
         if (paletteVisible) {
-          setPaletteIndex((i) => (i > 0 ? i - 1 : suggestions.length - 1));
+          setPaletteIndex(safeIndex > 0 ? safeIndex - 1 : suggestions.length - 1);
         }
         return;
       }
       if (key.downArrow) {
         if (paletteVisible) {
-          setPaletteIndex((i) => (i < suggestions.length - 1 ? i + 1 : 0));
+          setPaletteIndex(safeIndex < suggestions.length - 1 ? safeIndex + 1 : 0);
         }
         return;
       }
@@ -94,8 +106,8 @@ export function InputBar({ active, appContext, onRoute }: InputBarProps) {
       // Enter: submit the highlighted palette suggestion or raw text
       if (key.return) {
         const cmd =
-          paletteVisible && suggestions[paletteIndex]
-            ? suggestions[paletteIndex].name
+          paletteVisible && suggestions[safeIndex]
+            ? suggestions[safeIndex].name
             : text;
         if (!cmd.trim()) return;
         setText("");
@@ -174,7 +186,7 @@ export function InputBar({ active, appContext, onRoute }: InputBarProps) {
       {paletteVisible && (
         <CommandPalette
           suggestions={suggestions}
-          selectedIndex={paletteIndex}
+          selectedIndex={safeIndex}
           visible={paletteVisible}
         />
       )}

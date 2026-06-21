@@ -8,4 +8,39 @@
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
 | #2464 | 3:02 AM | 🔵 | Read CLI entry point, vector utility, and remaining agent files | ~334 |
+
+### Jun 21, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #3102 | 11:59 PM | ✅ | Read banner.ts source — two separate banner paths found causing duplicate output | ~42 |
+| #3096 | 11:53 PM | 🔵 | Ink build-layout.js filters static children from live frame layout calculation | ~45 |
+| #3092 | 11:51 PM | 🔵 | Ink Static component source reveals position:absolute rendering outside live frame | ~215 |
+| #3091 | 11:49 PM | 🔵 | Ink wrapper configured with patchConsole:false to prevent log corruption of TUI frame | ~251 |
+| #3086 | 11:48 PM | 🔵 | Root cause identified: Ink Static scrollback + bottom-anchored input bar causes viewport jump | ~183 |
+| #3083 | " | 🔵 | TUI startup sequence in index.ts — banner prints before screen clear | ~158 |
+
+### Jun 22, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #3135 | 12:38 AM | 🔄 | Banner rebuilt as procedural letter-matrix composition — cleaner and exactly 51 chars wide | ~203 |
+| #3132 | 12:35 AM | ✅ | Rewrote banner.ts to embed decorative art with dynamic prefix stripping | ~445 |
+| #3131 | " | 🔄 | Banner.ts rewritten with programmatic block-letter construction | ~414 |
+| #3130 | 12:30 AM | 🔄 | Bottle art stripping in banner.ts refactored from hardcoded slice to dynamic indexOf | ~424 |
+| #3128 | " | ✅ | Banner redesign applied — box-drawing border replaces old ASCII frame, bottle art sliced out | ~209 |
+| #3127 | 12:29 AM | ✅ | ASCII banner redesigned: bottle removed, clean co-scientist block letters, x_code theme | ~386 |
+| #3126 | 12:25 AM | 🟣 | Index.ts enhanced with --force lock release, stdin end detection, and forced shutdown timer | ~409 |
+| #3125 | " | 🟣 | Index.ts adds --force flag to release stale DB lock and stdin-end shutdown handler | ~348 |
+| #3120 | 12:21 AM | 🟣 | Added --force flag to co-scientist for stale DB lock release | ~192 |
+| #3119 | " | 🔵 | Developer verifying index.ts startup code after edits before running co-scientist | ~121 |
+| #3117 | 12:20 AM | ✅ | Banner.ts fully rewritten with new block-letter ASCII art and hardcoded box frame | ~448 |
+| #3114 | 12:18 AM | ✅ | Banner completely redesigned — block-letter wordmark replaces old bird art | ~189 |
+| #3113 | 12:17 AM | 🔄 | Finalized CO-SCIENTIST banner with improved block-letter design | ~168 |
+| #3111 | 12:13 AM | ✅ | ASCII banner art redesigned — clearer "CO-SCIENTIST" block lettering | ~182 |
+| #3110 | 12:10 AM | ✅ | Full test suite confirms 272/272 pass after all TUI banner fixes applied | ~207 |
+| #3108 | 12:09 AM | 🔄 | Redesign ASCII banner — removed bottle/flower art, switched to clean rounded box | ~401 |
+| #3106 | 12:02 AM | 🔴 | Fixed TUI scroll-jump and duplicate banner — two root causes in App.tsx and index.ts | ~280 |
+| #3105 | " | 🔴 | Change dotenv loading from cwd-relative to project-root-absolute path | ~338 |
+| #3104 | " | ✅ | CLI index.ts reduced from 345 to 340 lines after removing dead printBanner code | ~43 |
 </claude-mem-context>

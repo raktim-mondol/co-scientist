@@ -327,6 +327,15 @@ export async function runMigrations() {
       // Column already exists — safe to ignore
     }
   }
+  // ── Legacy cleanup: thinking_traces was removed in commit 20b62a3 ──────────
+  // The table persists in older databases and causes FK constraint failures during
+  // session deletion. Drop it unconditionally on every startup.
+  try {
+    getSqlite().query(`DROP TABLE IF EXISTS thinking_traces`).run();
+  } catch {
+    // Table does not exist or is already dropped — safe to ignore
+  }
+
   // Add session_activity table for session logging
   db.run(sql`
     CREATE TABLE IF NOT EXISTS session_activity (

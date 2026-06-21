@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import type EventEmitter from "events";
 import type { ContextStore } from "../../memory/contextStore.js";
-import type { TranscriptEntry } from "./transcript.js";
+import type { TranscriptEntry } from "./Transcript.js";
 import { formatActivityEntry } from "./formatters.js";
 
 export interface ProgressStats {

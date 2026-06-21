@@ -4,6 +4,8 @@ import { render } from "ink-testing-library";
 import { ThemeProvider } from "../cli/design-system/ThemeProvider.js";
 import { WelcomeBox } from "../cli/tui/WelcomeBox.js";
 import { LiveStatus } from "../cli/tui/LiveStatus.js";
+import { CommandPalette } from "../cli/tui/CommandPalette.js";
+import type { CommandSuggestion } from "../cli/tui/CommandRouter.js";
 
 // Headless render checks for the TUI. Ink can't run in CI without a TTY, but
 // ink-testing-library renders components to a string so we can assert layout
@@ -78,5 +80,63 @@ describe("TUI headless render", () => {
     const f = wrap(liveStatus("paused")).lastFrame() ?? "";
     expect(f).toContain("⏸ PAUSED");
     expect(SPINNER.some((c) => f.includes(c))).toBe(false);
+  });
+
+  it("compact LiveStatus hides the leaderboard (palette open)", () => {
+    const node = React.cloneElement(liveStatus("running"), { compact: true });
+    const f = wrap(node).lastFrame() ?? "";
+    // Status line survives, leaderboard does not — keeps the region short.
+    expect(f).toContain("Ranking");
+    expect(f).not.toContain("Top Hypotheses");
+    expect(f).not.toContain("Tumor-stroma bias");
+  });
+});
+
+// A palette with more commands than can fit must NOT render every row, or the
+// live region overflows the viewport and Ink full-frame-redraws on every
+// spinner tick (the flicker bug).
+describe("CommandPalette windowing (flicker guard)", () => {
+  function makeSuggestions(n: number): CommandSuggestion[] {
+    return Array.from({ length: n }, (_, i) => ({
+      name: `/cmd${i}`,
+      description: `description for command number ${i}`,
+      category: "System",
+      active: true,
+    }));
+  }
+
+  const palette = (suggestions: CommandSuggestion[], selectedIndex: number) =>
+    React.createElement(CommandPalette, { suggestions, selectedIndex, visible: true });
+
+  it("caps the number of visible rows far below the full list", () => {
+    const f = wrap(palette(makeSuggestions(26), 0)).lastFrame() ?? "";
+    const shown = makeSuggestions(26).filter((s) => f.includes(s.name)).length;
+    // Windowed to at most MAX_ITEMS (8), nowhere near all 26.
+    expect(shown).toBeLessThanOrEqual(8);
+    expect(shown).toBeGreaterThan(0);
+    // Count indicator tells the user there are more.
+    expect(f).toContain("/26");
+  });
+
+  it("keeps the selected item visible when it is far down the list", () => {
+    const f = wrap(palette(makeSuggestions(26), 25)).lastFrame() ?? "";
+    expect(f).toContain("/cmd25");
+    expect(f).toContain("26/26");
+  });
+
+  it("renders nothing when not visible or empty", () => {
+    expect((wrap(palette([], 0)).lastFrame() ?? "")).toBe("");
+    const hidden = React.createElement(CommandPalette, {
+      suggestions: makeSuggestions(5),
+      selectedIndex: 0,
+      visible: false,
+    });
+    expect((wrap(hidden).lastFrame() ?? "")).toBe("");
+  });
+
+  it("tolerates an out-of-range selectedIndex without crashing", () => {
+    const f = wrap(palette(makeSuggestions(3), 99)).lastFrame() ?? "";
+    expect(f).toContain("/cmd2"); // clamped to last
+    expect(f).toContain("3/3");
   });
 });

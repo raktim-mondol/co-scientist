@@ -25,6 +25,10 @@ interface LiveStatusProps {
   budgetTokens: number;
   leaderboard: LeaderboardEntry[];
   selected: number;
+  /** When true, render only the one-line status (no gauge/leaderboard). Used
+   *  while the command palette is open so the live region stays within the
+   *  viewport and Ink doesn't full-frame redraw (flicker) on each spinner tick. */
+  compact?: boolean;
 }
 
 function formatTokens(n: number): string {
@@ -51,6 +55,7 @@ export function LiveStatus({
   budgetTokens,
   leaderboard,
   selected,
+  compact,
 }: LiveStatusProps) {
   if (!sessionState) return null;
 
@@ -93,6 +98,12 @@ export function LiveStatus({
     </Box>
   );
 
+  // Compact mode: just the spinner/status line, nothing tall. Keeps the live
+  // region small while the command palette is open.
+  if (compact) {
+    return <Box flexDirection="column">{statusLine}</Box>;
+  }
+
   // ── Leaderboard pane ───────────────────────────────────────────────────
   const topN = leaderboard.slice(0, 10);
 
@@ -128,8 +139,8 @@ export function LiveStatus({
             const elo = Math.round(h.eloRating ?? 1200);
             return (
               <Box key={h.id ?? i} paddingX={1}>
-                <Text color={isSel ? "success" : undefined}>
-                  {isSel ? "▶" : " "} #{i + 1} {h.title.slice(0, 48)}
+                <Text color={isSel ? "success" : undefined} wrap="truncate">
+                  {isSel ? "▶" : " "} #{i + 1} {h.title}
                   {"  "}
                   <Text dimColor>Elo: {elo}</Text>
                 </Text>

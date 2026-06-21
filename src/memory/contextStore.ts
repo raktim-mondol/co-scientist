@@ -134,36 +134,52 @@ export class ContextStore {
   }
 
   deleteSession(id: string): void {
-    // Wrap entire deletion in a transaction to prevent orphaned rows on failure.
-    // Deleting ~15 tables without a transaction could leave partial state if any
-    // individual DELETE fails (e.g., SQLITE_BUSY).
+    // All child tables are deleted by sessionId in dependency order:
+    // FKs to hypotheses first, then FKs to sessions, then hypotheses, then sessions.
+    // This is both simpler and more robust than per-hypothesis iteration — it can't
+    // miss orphan rows or hypotheses added between the SELECT and the DELETE.
     this.sqlite.transaction(() => {
-      // Delete in dependency order (child tables first, then session)
-      const hyps = this.db
-        .select({ id: schema.hypotheses.id })
-        .from(schema.hypotheses)
-        .where(eq(schema.hypotheses.sessionId, id))
-        .all();
-
-      for (const h of hyps) {
-        this.db.delete(schema.embeddingCache).where(eq(schema.embeddingCache.hypothesisId, h.id)).run();
-        this.db.delete(schema.reviews).where(eq(schema.reviews.hypothesisId, h.id)).run();
-        this.db.delete(schema.claimCitations).where(eq(schema.claimCitations.hypothesisId, h.id)).run();
-        this.sqlite.query(`DELETE FROM citation_verifications WHERE hypothesis_id = ?`).run(h.id);
-        this.sqlite.query(`DELETE FROM safety_assessments WHERE hypothesis_id = ?`).run(h.id);
-        this.sqlite.query(`DELETE FROM vec_embeddings WHERE hypothesis_id = ?`).run(h.id);
-      }
-
+      // ── Tables with FK to hypotheses (must be deleted before hypotheses) ──────
+      // Also have sessionId FK — delete by sessionId so we hit every row for this
+      // session regardless of hypothesis state.
+      this.db.delete(schema.reviews).where(eq(schema.reviews.sessionId, id)).run();
+      this.db.delete(schema.claimCitations).where(eq(schema.claimCitations.sessionId, id)).run();
       this.db.delete(schema.experimentalFeedback).where(eq(schema.experimentalFeedback.sessionId, id)).run();
-      this.sqlite.query(`DELETE FROM reward_memory WHERE session_id = ?`).run(id);
+      this.db.delete(schema.safetyAssessments).where(eq(schema.safetyAssessments.sessionId, id)).run();
+      this.db.delete(schema.citationVerifications).where(eq(schema.citationVerifications.sessionId, id)).run();
+      this.db.delete(schema.rewardMemory).where(eq(schema.rewardMemory.sessionId, id)).run();
+
+      // tournament_matches and proximity_edges have hypothesis_a_id / hypothesis_b_id
+      // FKs to hypotheses. Rows from OTHER sessions can reference hypotheses in THIS
+      // session, so a plain DELETE BY sessionId is insufficient — we must also purge
+      // cross-session references via hypothesis_id JOINs.
+      this.db.delete(schema.tournamentMatches).where(eq(schema.tournamentMatches.sessionId, id)).run();
+      this.sqlite.query(
+        `DELETE FROM tournament_matches WHERE hypothesis_a_id IN (SELECT id FROM hypotheses WHERE session_id = ?) OR hypothesis_b_id IN (SELECT id FROM hypotheses WHERE session_id = ?)`,
+      ).run(id, id);
+      this.db.delete(schema.proximityEdges).where(eq(schema.proximityEdges.sessionId, id)).run();
+      this.sqlite.query(
+        `DELETE FROM proximity_edges WHERE hypothesis_a_id IN (SELECT id FROM hypotheses WHERE session_id = ?) OR hypothesis_b_id IN (SELECT id FROM hypotheses WHERE session_id = ?)`,
+      ).run(id, id);
+
+      // Tables that have an FK to hypotheses but NO sessionId column — delete by
+      // hypothesis_id via a JOIN so we don't need to select individual IDs.
+      this.sqlite.query(
+        `DELETE FROM vec_embeddings WHERE hypothesis_id IN (SELECT id FROM hypotheses WHERE session_id = ?)`,
+      ).run(id);
+      this.sqlite.query(
+        `DELETE FROM embedding_cache WHERE hypothesis_id IN (SELECT id FROM hypotheses WHERE session_id = ?)`,
+      ).run(id);
+
+      // ── Tables with FK to sessions only (no hypothesis FK) ────────────────────
       this.db.delete(schema.sessionActivity).where(eq(schema.sessionActivity.sessionId, id)).run();
       this.db.delete(schema.kgEdges).where(eq(schema.kgEdges.sessionId, id)).run();
       this.db.delete(schema.kgNodes).where(eq(schema.kgNodes.sessionId, id)).run();
-      this.db.delete(schema.proximityEdges).where(eq(schema.proximityEdges.sessionId, id)).run();
       this.db.delete(schema.evidenceSources).where(eq(schema.evidenceSources.sessionId, id)).run();
-      this.db.delete(schema.tournamentMatches).where(eq(schema.tournamentMatches.sessionId, id)).run();
-      this.db.delete(schema.hypotheses).where(eq(schema.hypotheses.sessionId, id)).run();
       this.db.delete(schema.agentTasks).where(eq(schema.agentTasks.sessionId, id)).run();
+
+      // ── Parent tables ─────────────────────────────────────────────────────────
+      this.db.delete(schema.hypotheses).where(eq(schema.hypotheses.sessionId, id)).run();
       this.db.delete(schema.sessions).where(eq(schema.sessions.id, id)).run();
     })();
   }
