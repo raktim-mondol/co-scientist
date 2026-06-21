@@ -33,6 +33,7 @@ export interface RenderTUIOptions {
   startTime: number | null;
   budgetTokens: number;
   onStartSession: (goal: string, opts?: { name?: string; budget?: number; maxHypotheses?: number }) => Promise<SessionStartResult>;
+  onResumeSession: (sessionId: string) => Promise<SessionStartResult & { goal: string }>;
   onStop: () => void;
   onTogglePause: () => boolean;
   onQuit: () => void;
@@ -49,6 +50,7 @@ export function renderTUI(opts: RenderTUIOptions): { unmount: () => void; waitUn
       startTime={opts.startTime}
       budgetTokens={opts.budgetTokens}
       onStartSession={opts.onStartSession}
+      onResumeSession={opts.onResumeSession}
       onStop={opts.onStop}
       onTogglePause={opts.onTogglePause}
       onQuit={opts.onQuit}

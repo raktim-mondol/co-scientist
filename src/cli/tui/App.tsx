@@ -21,11 +21,12 @@ import { ExportModal } from "./modals/ExportModal.js";
 import { FeedbackModal } from "./modals/FeedbackModal.js";
 import { DesignModal } from "./modals/DesignModal.js";
 import { DeleteModal } from "./modals/DeleteModal.js";
+import { LoginModal } from "./modals/LoginModal.js";
 import { killHypothesis, boostHypothesis, injectHypothesis } from "./actions.js";
 import { extractRewardFromFeedback } from "../../rlef/reward-signal.js";
 import { exportCommand } from "../commands/export.js";
 import { v4 as uuidv4 } from "uuid";
-import type { TranscriptEntry } from "./transcript.js";
+import type { TranscriptEntry } from "./Transcript.js";
 import { formatUserGoal, formatSystemNotice, formatResults } from "./formatters.js";
 import type { ModalName, AppContext, RouteResult } from "./CommandRouter.js";
 import type { SessionStartResult } from "./index.js";
@@ -71,6 +72,7 @@ export interface AppProps {
   startTime: number | null;
   budgetTokens: number;
   onStartSession: (goal: string, opts?: { name?: string; budget?: number; maxHypotheses?: number }) => Promise<SessionStartResult>;
+  onResumeSession: (sessionId: string) => Promise<SessionStartResult & { goal: string }>;
   onStop: () => void;
   onTogglePause: () => boolean;
   onQuit: () => void;
@@ -80,6 +82,7 @@ export function App(props: AppProps) {
   const {
     memory, budgetTokens, onQuit,
     onStartSession: externalOnStartSession,
+    onResumeSession: externalOnResumeSession,
     onStop: externalOnStop,
     onTogglePause: externalOnTogglePause,
   } = props;
@@ -109,6 +112,8 @@ export function App(props: AppProps) {
   );
 
   const [activeModal, setActiveModal] = useState<ModalName>(null);
+  const [modalData, setModalData] = useState<unknown>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [paused, setPaused] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [selected, setSelected] = useState(0);
@@ -177,6 +182,17 @@ export function App(props: AppProps) {
 
       pushEntry(formatSystemNotice("Session started.", "success"));
     },
+    resumeSession: async (id) => {
+      const result = await externalOnResumeSession(id);
+      setSessionId(result.sessionId);
+      setGoal(result.goal);
+      setSupervisor(result.supervisor);
+      setEmitter(result.emitter);
+      setStartTime(Date.now());
+      setPaused(false);
+      setCompleted(false);
+      pushEntry(formatSystemNotice(`Resuming session ${result.sessionId.slice(0, 8)}…`, "info"));
+    },
     stopSession: () => {
       externalOnStop();
       setSessionId(null);
@@ -231,6 +247,7 @@ export function App(props: AppProps) {
         }
         break;
       case "modal":
+        setModalData(result.data ?? null);
         setActiveModal(result.modal);
         if (result.message) {
           setToastMsg(result.message);
@@ -256,7 +273,7 @@ export function App(props: AppProps) {
   //   3. Modal overlay (renders above the live region, below it logically)
   //   4. Toast + InputBar + Footer (fixed at bottom)
   return (
-    <Box flexDirection="column" height="100%">
+    <Box flexDirection="column">
       {/* ── Scrollback (Static: print-and-forget, no flicker) ────────── */}
       <Static items={[
         <Box key="welcome_static" flexDirection="column">
@@ -268,7 +285,7 @@ export function App(props: AppProps) {
           </Box>
         )),
       ]}>
-        {(_items) => null}
+        {(item) => item}
       </Static>
 
       {/* ── Live region (re-renders on every progress tick) ──────────── */}
@@ -282,6 +299,7 @@ export function App(props: AppProps) {
         budgetTokens={budgetTokens}
         leaderboard={leaderboard}
         selected={selected}
+        compact={paletteOpen}
       />
 
       {/* ── Modal overlay ────────────────────────────────────────────── */}
@@ -338,11 +356,11 @@ export function App(props: AppProps) {
           currentBudget={budgetTokens}
           onConfirm={(newBudget) => {
             process.env.COMPUTE_BUDGET_TOKENS = String(newBudget);
-            setActiveModal(null);
             pushEntry(formatSystemNotice(
               `Budget set to ${newBudget.toLocaleString()} tokens.`,
               "success",
             ));
+            setActiveModal(null);
           }}
           onCancel={() => setActiveModal(null)}
         />
@@ -398,8 +416,8 @@ export function App(props: AppProps) {
               recordedBy: "human",
               createdAt: new Date(),
             });
-            setActiveModal(null);
             pushEntry(formatSystemNotice("Feedback saved.", "success"));
+            setActiveModal(null);
           }}
           onCancel={() => setActiveModal(null)}
         />
@@ -408,6 +426,19 @@ export function App(props: AppProps) {
         <DesignModal
           sessionId={sessionId!}
           hypotheses={allHypotheses}
+          onDone={(entry) => {
+            pushEntry({
+              id: uuidv4(),
+              kind: "block",
+              title: entry.title,
+              lines: [
+                entry.hypothesisTitle.slice(0, 80),
+                "",
+                ...entry.steps.slice(0, 20),
+              ],
+              color: "permission",
+            });
+          }}
           onCancel={() => setActiveModal(null)}
         />
       )}
@@ -415,13 +446,41 @@ export function App(props: AppProps) {
         <DeleteModal
           sessions={allSessions}
           onConfirm={(ids) => {
+            // Capture names before deletion for the confirmation block.
+            const names = ids.map((id) => memory.getSession(id)?.name ?? id.slice(0, 8));
             for (const id of ids) {
               memory.deleteSession(id);
             }
+            // Push a bordered confirmation block into the transcript — this persists
+            // in the scrollback permanently (same as /results, /overview, etc.).
+            pushEntry({
+              id: uuidv4(),
+              kind: "block",
+              title: `Deleted ${ids.length} session(s)`,
+              lines: names.map((n) => `  ⨯ ${n}`),
+              color: "error",
+            });
             setActiveModal(null);
-            pushEntry(formatSystemNotice(`Deleted ${ids.length} session(s).`, "success"));
           }}
           onCancel={() => setActiveModal(null)}
+        />
+      )}
+      {activeModal === "login" && (
+        <LoginModal
+          provider={
+            ((modalData as { provider?: "consensus" | "scite" | "all" } | null)?.provider) ?? "all"
+          }
+          onDone={(lines, success) => {
+            setActiveModal(null);
+            setModalData(null);
+            pushEntry({
+              id: uuidv4(),
+              kind: "block",
+              title: "Authentication",
+              lines,
+              color: success ? "success" : "error",
+            });
+          }}
         />
       )}
 
@@ -441,6 +500,7 @@ export function App(props: AppProps) {
           active={activeModal === null}
           appContext={appContext}
           onRoute={handleRoute}
+          onPaletteChange={setPaletteOpen}
         />
 
         <Footer

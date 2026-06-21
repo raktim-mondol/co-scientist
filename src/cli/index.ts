@@ -1,6 +1,12 @@
 #!/usr/bin/env bun
 import { Command } from "@commander-js/extra-typings";
-import "dotenv/config";
+import dotenv from "dotenv";
+import { join } from "node:path";
+
+// Load .env from the project root (two levels up from src/cli/), not from cwd.
+// This matters when `co-scientist` is run globally (via `bun link`) from a
+// different working directory.
+dotenv.config({ path: join(import.meta.dir, "..", "..", ".env") });
 import type { ResearchGoal } from "../models/researchGoal.js";
 import { color } from "./design-system/color.js";
 import { withDb } from "./commands/withDb.js";
@@ -178,17 +184,20 @@ program
   .action((opts) => withDb(() => logoutCommand(opts)));
 
 program.action(async () => {
-  // Only launch REPL when run with no arguments at all
+  // Only launch REPL when run with no arguments at all (except --force)
   // (Commander fires this for unknown commands too — reject those)
-  if (process.argv.length > 2) {
-    console.error(color("error")("Unknown command: " + process.argv[2]));
+  const args = process.argv.slice(2).filter((a) => a !== "--force" && a !== "-f");
+  if (args.length > 0) {
+    console.error(color("error")("Unknown command: " + args[0]));
     console.error(color("inactive")("Run `co-scientist --help` to see available commands."));
     process.exit(1);
   }
 
+  const force = process.argv.includes("--force") || process.argv.includes("-f");
+
   // ── Launch Ink TUI (Claude Code-style) ──────────────────────────────────
   const { runMigrations } = await import("../db/migrate.js");
-  const { closeDb } = await import("../db/index.js");
+  const { closeDb, forceReleaseLock } = await import("../db/index.js");
   const { getContextStore } = await import("../memory/contextStore.js");
   const { getConfig } = await import("../config.js");
   const { getMCPManager } = await import("../tools/mcpClient.js");
@@ -196,6 +205,11 @@ program.action(async () => {
   const { EventEmitter } = await import("events");
   const { v4: uuidv4 } = await import("uuid");
   const { renderTUI } = await import("./tui/index.js");
+
+  // ── Handle stale lock ───────────────────────────────────────────────────
+  if (force) {
+    forceReleaseLock();
+  }
 
   // Suppress [INFO] log output during init — screen clear below wipes it
   // anyway, and MCP logs pollute the terminal before the TUI takes over.
@@ -222,7 +236,8 @@ program.action(async () => {
   // corrupt the live frame, and clear init output (spinners, MCP logs).
   const { setLoggerSilenced } = await import("../config.js");
   setLoggerSilenced(true);
-  process.stdout.write("\x1B[2J\x1B[H"); // clear screen + cursor home
+  // The TUI's WelcomeBox renders the ASCII banner via <Static> scrollback.
+  // No need to print it here — it would duplicate the TUI's own banner.
 
   // Closure variables set by onStartSession, read by other callbacks
   let currentSupervisor: SupervisorAgent | null = null;
@@ -278,6 +293,30 @@ program.action(async () => {
 
       return { sessionId, supervisor, emitter };
     },
+    onResumeSession: async (sessionId: string) => {
+      const session = memory.resolveSession(sessionId) ?? memory.getSession(sessionId);
+      if (!session) throw new Error(`Session not found: ${sessionId}`);
+
+      // Best-effort academic search init, mirroring the CLI resume path.
+      await getMCPManager().initialize().catch(() => {});
+
+      const supervisor = new SupervisorAgent();
+      const emitter = new EventEmitter();
+      supervisor.setEmitter(emitter);
+
+      currentSupervisor = supervisor;
+      currentSessionId = session.id;
+
+      memory.updateSessionStatus(session.id, "running");
+      supervisor.run(session.id).catch((err) => {
+        if (!(err instanceof Error) || !err.message.includes("Session stopped")) {
+          // Errors surface via the emitter 'error' event.
+        }
+      });
+
+      const goalText = memory.getResearchGoal(session.id)?.rawGoal ?? session.name;
+      return { sessionId: session.id, goal: goalText, supervisor, emitter };
+    },
     onStop: () => {
       currentSupervisor?.stop();
     },
@@ -301,9 +340,11 @@ program.action(async () => {
 
   // ── Graceful shutdown ──────────────────────────────────────────────────
   let shuttingDown = false;
-  const gracefulShutdown = (signal: string) => {
+  const gracefulShutdown = (reason: string) => {
     if (shuttingDown) return;
     shuttingDown = true;
+    // Force-exit after 3 s in case unmount/waitUntilExit hangs on a dead tty
+    const forceTimer = setTimeout(() => { process.exit(0); }, 3000);
     tui.unmount();
     setLoggerSilenced(false); // TUI is gone — restore console logging
     currentSupervisor?.stop();
@@ -311,12 +352,20 @@ program.action(async () => {
       try { memory.updateSessionStatus(currentSessionId, "paused"); } catch { /* ignore */ }
     }
     try { closeDb(); } catch { /* ignore */ }
+    clearTimeout(forceTimer);
     process.exit(0);
   };
 
   process.on("SIGINT", () => gracefulShutdown("SIGINT"));
   process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
   process.on("SIGHUP", () => gracefulShutdown("SIGHUP"));
+
+  // When the terminal closes, the pty is destroyed and stdin fires 'end'.
+  // SIGHUP is supposed to cover this, but WSL2 / some terminals don't
+  // deliver it reliably.  Watching stdin catches the remaining cases.
+  const onStdinEnd = () => gracefulShutdown("stdin-end");
+  process.stdin.on("end", onStdinEnd);
+  process.stdin.on("close", onStdinEnd);
 
   try {
     await tui.waitUntilExit();
@@ -327,10 +376,12 @@ program.action(async () => {
   }
   setLoggerSilenced(false); // TUI exited — restore console logging
 
-  // Clean up signal handlers after normal exit
+  // Clean up signal handlers and stdin watchers after normal exit
   process.removeAllListeners("SIGINT");
   process.removeAllListeners("SIGTERM");
   process.removeAllListeners("SIGHUP");
+  process.stdin.off("end", onStdinEnd);
+  process.stdin.off("close", onStdinEnd);
 
   await getMCPManager().cleanup();
 });

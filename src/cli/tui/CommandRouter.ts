@@ -29,6 +29,7 @@ export interface AppContext {
   closeModal: () => void;
   showToast: (message: string, type?: "success" | "error" | "info") => void;
   startSession: (goal: string, opts?: { name?: string; budget?: number; maxHypotheses?: number }) => Promise<void>;
+  resumeSession: (sessionId: string) => Promise<void>;
   stopSession: () => void;
   togglePause: () => boolean;
   paused: boolean;

@@ -25,6 +25,7 @@ function createMockContext(overrides?: Partial<AppContext>): AppContext {
     closeModal: () => {},
     showToast: () => {},
     startSession: async () => {},
+    resumeSession: async () => {},
     stopSession: () => {},
     togglePause: () => false,
     paused: false,
