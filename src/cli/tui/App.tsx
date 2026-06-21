@@ -20,14 +20,14 @@ import { StrategyModal } from "./modals/StrategyModal.js";
 import { ExportModal } from "./modals/ExportModal.js";
 import { FeedbackModal } from "./modals/FeedbackModal.js";
 import { DesignModal } from "./modals/DesignModal.js";
-import { DeleteModal } from "./modals/DeleteModal.js";
+import { SessionsModal } from "./modals/SessionsModal.js";
 import { LoginModal } from "./modals/LoginModal.js";
 import { killHypothesis, boostHypothesis, injectHypothesis } from "./actions.js";
 import { extractRewardFromFeedback } from "../../rlef/reward-signal.js";
 import { exportCommand } from "../commands/export.js";
 import { v4 as uuidv4 } from "uuid";
 import type { TranscriptEntry } from "./Transcript.js";
-import { formatUserGoal, formatSystemNotice, formatResults } from "./formatters.js";
+import { formatUserGoal, formatSystemNotice, formatResults, formatSessionResults, formatOverview } from "./formatters.js";
 import type { ModalName, AppContext, RouteResult } from "./CommandRouter.js";
 import type { SessionStartResult } from "./index.js";
 
@@ -383,8 +383,10 @@ export function App(props: AppProps) {
       {activeModal === "export" && (
         <ExportModal
           onConfirm={(format, outputPath) => {
+            const targetId = (modalData as { sessionId?: string } | null)?.sessionId ?? sessionId!;
             setActiveModal(null);
-            exportCommand(sessionId!, { format, output: outputPath }).then(() => {
+            setModalData(null);
+            exportCommand(targetId, { format, output: outputPath }).then(() => {
               pushEntry(formatSystemNotice(`Session exported as ${format}.`, "success"));
             }).catch((err) => {
               pushEntry(formatSystemNotice(`Export failed: ${(err as Error).message}`, "error"));
@@ -442,17 +444,48 @@ export function App(props: AppProps) {
           onCancel={() => setActiveModal(null)}
         />
       )}
-      {activeModal === "delete" && (
-        <DeleteModal
+      {activeModal === "sessions" && (
+        <SessionsModal
           sessions={allSessions}
-          onConfirm={(ids) => {
-            // Capture names before deletion for the confirmation block.
-            const names = ids.map((id) => memory.getSession(id)?.name ?? id.slice(0, 8));
-            for (const id of ids) {
-              memory.deleteSession(id);
+          activeSessionId={sessionId}
+          onView={(id) => {
+            pushEntry(formatSessionResults(memory, id));
+            setActiveModal(null);
+          }}
+          onOverview={(id) => {
+            for (const entry of formatOverview(memory, id)) pushEntry(entry);
+            setActiveModal(null);
+          }}
+          onExport={(id) => {
+            setModalData({ sessionId: id });
+            setActiveModal("export");
+          }}
+          onResume={(id) => {
+            const target = memory.getSession(id);
+            if (!target) { setActiveModal(null); return; }
+            if (id === sessionId) {
+              appContext.showToast("Already on this session.", "info");
+              setActiveModal(null);
+              return;
             }
-            // Push a bordered confirmation block into the transcript — this persists
-            // in the scrollback permanently (same as /results, /overview, etc.).
+            if (target.status === "completed") {
+              appContext.showToast("Session completed — press enter to view results.", "info");
+              setActiveModal(null);
+              return;
+            }
+            if (supervisor && !paused && !completed) {
+              appContext.showToast("Stop the current session first (/stop).", "error");
+              setActiveModal(null);
+              return;
+            }
+            setActiveModal(null);
+            appContext.resumeSession(id).catch((err) => {
+              pushEntry(formatSystemNotice(`Resume failed: ${(err as Error).message}`, "error"));
+            });
+          }}
+          onDelete={(ids) => {
+            const names = ids.map((id) => memory.getSession(id)?.name ?? id.slice(0, 8));
+            for (const id of ids) memory.deleteSession(id);
             pushEntry({
               id: uuidv4(),
               kind: "block",
