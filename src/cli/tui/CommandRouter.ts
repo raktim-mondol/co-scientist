@@ -1,7 +1,7 @@
 import type { ContextStore } from "../../memory/contextStore.js";
 import type { SupervisorAgent } from "../../agents/supervisor.js";
 import type { EventEmitter } from "events";
-import type { TranscriptEntry } from "./transcript.js";
+import type { TranscriptEntry } from "./Transcript.js";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -13,9 +13,10 @@ export type ModalName =
   | "boost"
   | "export"
   | "design"
-  | "delete"
+  | "sessions"
   | "budget"
   | "strategy"
+  | "login"
   | null;
 
 export interface AppContext {
@@ -45,7 +46,7 @@ export interface CommandSuggestion {
 export type RouteResult =
   | { type: "immediate"; message?: string }
   | { type: "transcript"; entries: TranscriptEntry[]; message?: string }
-  | { type: "modal"; modal: ModalName; message?: string }
+  | { type: "modal"; modal: ModalName; message?: string; data?: unknown }
   | { type: "error"; message: string }
   | { type: "exit" };
 

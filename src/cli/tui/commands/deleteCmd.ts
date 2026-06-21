@@ -7,7 +7,7 @@ const deleteCmdHandler: CommandHandler = {
   category: "Actions",
   // Always active — you can delete past sessions even when no session is running
   async execute(_args, _ctx) {
-    return { type: "modal", modal: "delete" };
+    return { type: "modal", modal: "sessions" };
   },
 };
 

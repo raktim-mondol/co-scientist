@@ -1,6 +1,8 @@
 import { registerCommand } from "../CommandRouter.js";
 import type { CommandHandler } from "../CommandRouter.js";
 
+let _switchSeq = 0;
+
 /**
  * Switch to a different session. If an ID prefix is provided, tries to load it.
  * Without args, shows a picker via a view switch (reuses the existing session list).
@@ -32,11 +34,20 @@ const switchCommand: CommandHandler = {
           message: `Session "${match.name}" is currently running. Use /stop first, or connect via CLI.`,
         };
       }
-      // Load the session into App state — we need a callback for this
-      // For now, report the session info and ask the user to use CLI
       return {
-        type: "immediate",
-        message: `Session found: "${match.name}" (${match.id.slice(0, 8)}).\nUse co-scientist resume ${match.id.slice(0, 8)} from CLI to load this session in the TUI.`,
+        type: "transcript",
+        entries: [{
+          id: `switch_${++_switchSeq}`,
+          kind: "block",
+          title: `Session: ${match.name}`,
+          lines: [
+            match.id,
+            `${match.status}  ·  ${match.stats?.totalHypotheses ?? 0} hypotheses`,
+            "",
+            "Resume in the TUI: open /sessions, highlight it, press r.",
+            `Or from the CLI: co-scientist resume ${match.id.slice(0, 8)}`,
+          ],
+        }],
       };
     }
 
@@ -47,7 +58,7 @@ const switchCommand: CommandHandler = {
 
     const lines: string[] = ["", "Available sessions (use /switch <id-or-name>):"];
     for (const s of sessions) {
-      if (s.id === ctx.sessionId) continue; // skip current
+      if (s.id === ctx.sessionId) continue;
       const hyps = s.stats?.totalHypotheses ?? 0;
       const name = s.name.length > 45 ? s.name.slice(0, 42) + "..." : s.name;
       lines.push(`  ${s.id.slice(0, 8)} | ${s.status} | ${hyps}h | ${name}`);
