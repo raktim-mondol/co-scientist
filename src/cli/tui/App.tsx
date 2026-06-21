@@ -392,7 +392,7 @@ export function App(props: AppProps) {
               pushEntry(formatSystemNotice(`Export failed: ${(err as Error).message}`, "error"));
             });
           }}
-          onCancel={() => setActiveModal(null)}
+          onCancel={() => { setActiveModal(null); setModalData(null); }}
         />
       )}
       {activeModal === "feedback" && (
