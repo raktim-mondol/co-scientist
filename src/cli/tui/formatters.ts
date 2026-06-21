@@ -4,7 +4,7 @@
 // pushed to the Static scrollback — no React, just plain string arrays.
 
 import type { ContextStore } from "../../memory/contextStore.js";
-import type { TranscriptEntry, ToastTone } from "./transcript.js";
+import type { TranscriptEntry, ToastTone } from "./Transcript.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -105,6 +105,33 @@ export function formatResults(
     kind: "block",
     title: `Ranked Hypotheses (${hyps.length})`,
     lines,
+  };
+}
+
+/**
+ * Like {@link formatResults} but for an arbitrary (possibly non-active) session:
+ * prepends a metadata header (full id, status, date, hypothesis count) and a
+ * divider, and titles the block with the session name. Used by the sessions picker.
+ */
+export function formatSessionResults(
+  memory: ContextStore,
+  sessionId: string,
+): TranscriptEntry {
+  const base = formatResults(memory, sessionId);
+  const session = memory.getSession(sessionId);
+  if (!session) {
+    return { ...base, title: `Results · ${sessionId.slice(0, 8)}` };
+  }
+  const count = session.stats?.totalHypotheses ?? 0;
+  const date = session.createdAt.toISOString().slice(0, 10);
+  const header = [
+    `${session.id}  ·  ${session.status}  ·  ${date}  ·  ${count} hypotheses`,
+    "─".repeat(72),
+  ];
+  return {
+    ...base,
+    title: session.name,
+    lines: [...header, ...(base.lines ?? [])],
   };
 }
 
