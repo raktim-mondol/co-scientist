@@ -34,9 +34,7 @@ import type { SessionStartResult } from "./index.js";
 // Command registrations (side-effect imports — keep exactly as-is)
 import "./commands/run.js";
 import "./commands/pause.js";
-import "./commands/resume.js";
 import "./commands/stop.js";
-import "./commands/dashboard.js";
 import "./commands/boost.js";
 import "./commands/kill.js";
 import "./commands/inject.js";
@@ -52,10 +50,8 @@ import "./commands/activity.js";
 import "./commands/exportCmd.js";
 import "./commands/feedbackCmd.js";
 import "./commands/designCmd.js";
-import "./commands/deleteCmd.js";
 // Task 12 — Navigation & system commands
 import "./commands/sessions.js";
-import "./commands/switch.js";
 import "./commands/login.js";
 import "./commands/logout.js";
 import "./commands/help.js";
