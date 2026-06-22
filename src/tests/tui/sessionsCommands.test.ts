@@ -8,7 +8,7 @@ function ctx(sessions: unknown[] = []): AppContext {
   return {
     memory: { listSessions: () => sessions } as unknown as AppContext["memory"],
     sessionId: null, goal: null, supervisor: null, emitter: null,
-    openModal: () => {}, closeModal: () => {}, showToast: () => {},
+    openModal: () => {}, showToast: () => {},
     startSession: async () => {}, resumeSession: async () => {},
     stopSession: () => {}, togglePause: () => false, paused: false, pushEntry: () => {},
   };

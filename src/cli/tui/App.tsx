@@ -156,8 +156,7 @@ export function App(props: AppProps) {
     goal,
     supervisor,
     emitter,
-    openModal: (modal) => setActiveModal(modal),
-    closeModal: () => setActiveModal(null),
+    openModal: (modal, data) => { setModalData(data ?? null); setActiveModal(modal); },
     showToast: (message, type = "info") => {
       setToastMsg(message);
       setToastType(type);

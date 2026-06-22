@@ -26,7 +26,6 @@ export interface AppContext {
   supervisor: SupervisorAgent | null;
   emitter: EventEmitter | null;
   openModal: (modal: ModalName, data?: unknown) => void;
-  closeModal: () => void;
   showToast: (message: string, type?: "success" | "error" | "info") => void;
   startSession: (goal: string, opts?: { name?: string; budget?: number; maxHypotheses?: number }) => Promise<void>;
   resumeSession: (sessionId: string) => Promise<void>;

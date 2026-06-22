@@ -14,7 +14,6 @@ function ctx(): AppContext {
     supervisor: null,
     emitter: null,
     openModal: () => {},
-    closeModal: () => {},
     showToast: () => {},
     startSession: async () => {},
     resumeSession: async () => {},
