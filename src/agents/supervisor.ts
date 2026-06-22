@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { BaseAgent } from "./base.js";
 import { AgentTaskQueue, TaskScheduler } from "../taskQueue/queue.js";
+import type { AgentWeights } from "../taskQueue/queue.js";
 import type { TaskType } from "../models/agentTask.js";
 import { GenerationAgent } from "./generation.js";
 import { ReflectionAgent } from "./reflection.js";
@@ -28,6 +29,7 @@ export class SupervisorAgent extends BaseAgent {
 
   private queue = new AgentTaskQueue();
   private scheduler = new TaskScheduler();
+  private lastWeights: AgentWeights | null = null;
   private generation = new GenerationAgent();
   private reflection = new ReflectionAgent();
   private ranking = new RankingAgent();
@@ -171,6 +173,7 @@ export class SupervisorAgent extends BaseAgent {
         budgetTokens: this.config.compute.budgetTokens,
         maxHypotheses: this.config.compute.maxHypotheses,
       });
+      this.lastWeights = weights;
 
       const taskType = this.scheduler.sampleNextTaskType(weights);
 
@@ -247,6 +250,23 @@ export class SupervisorAgent extends BaseAgent {
 
   isPaused(): boolean {
     return this.paused;
+  }
+
+  /** Live task-sampling weights for the /strategy view. Returns the last
+   *  weights computed by the loop, or generation-heavy defaults for a
+   *  session that has not yet iterated. */
+  getCurrentWeights(): AgentWeights {
+    if (this.lastWeights) return this.lastWeights;
+    return this.scheduler.computeWeights({
+      totalHypotheses: 0,
+      activeHypotheses: 0,
+      pendingReview: 0,
+      totalMatches: 0,
+      currentRound: 0,
+      tokensUsed: 0,
+      budgetTokens: this.config.compute.budgetTokens,
+      maxHypotheses: this.config.compute.maxHypotheses,
+    });
   }
 
   // ─── Private Methods ──────────────────────────────────────────────────────

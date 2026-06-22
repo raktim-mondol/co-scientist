@@ -1,8 +1,9 @@
 import React from "react";
 import { Box, Text, useInput } from "../../ink.js";
+import type { AgentWeights } from "../../../taskQueue/queue.js";
 
 interface StrategyModalProps {
-  weights: Record<string, number>;
+  weights: AgentWeights;
   onCancel: () => void;
 }
 

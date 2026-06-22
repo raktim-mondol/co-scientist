@@ -363,13 +363,9 @@ export function App(props: AppProps) {
       )}
       {activeModal === "strategy" && (
         <StrategyModal
-          weights={{
-            generation: (stats?.activeHypotheses ?? 0) < 3 ? 0.60 : 0.30,
-            reflection: 0.20,
-            ranking: (stats?.activeHypotheses ?? 0) >= 2 ? 0.30 : 0.03,
-            evolution: 0.10,
-            proximity: 0.07,
-            meta_review: 0.03,
+          weights={supervisor?.getCurrentWeights() ?? {
+            generation: 1, reflection: 0, ranking: 0,
+            evolution: 0, proximity: 0, meta_review: 0,
           }}
           onCancel={() => setActiveModal(null)}
         />
