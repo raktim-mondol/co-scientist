@@ -17,6 +17,7 @@ interface InputBarProps {
 export function InputBar({ active, appContext, onRoute, onPaletteChange }: InputBarProps) {
   const [text, setText] = useState("");
   const [cursor, setCursor] = useState(0);
+  const [cursorVisible, setCursorVisible] = useState(true);
   const [toastMessage, setToastMessage] = useState("");
   const [toastType, setToastType] = useState<"success" | "error" | "info">("info");
   const [toastVisible, setToastVisible] = useState(false);
@@ -47,6 +48,13 @@ export function InputBar({ active, appContext, onRoute, onPaletteChange }: Input
   useEffect(() => {
     if (cursor > text.length) setCursor(text.length);
   }, [text, cursor]);
+
+  // Blink the caret on a ~530ms cadence. InputBar lives outside <Static>,
+  // so this re-render is contained to the input region.
+  useEffect(() => {
+    const id = setInterval(() => setCursorVisible((v) => !v), 530);
+    return () => clearInterval(id);
+  }, []);
 
   // Local toast helper
   const showToast = (message: string, type: "success" | "error" | "info" = "info") => {
@@ -176,9 +184,13 @@ export function InputBar({ active, appContext, onRoute, onPaletteChange }: Input
         <Text color="claude" bold>&gt; </Text>
         <Text color="text">{text.slice(0, cursor)}</Text>
         {cursor < text.length ? (
-          <Text color="inverseText" backgroundColor="text">{text[cursor]}</Text>
+          cursorVisible ? (
+            <Text color="inverseText" backgroundColor="text">{text[cursor]}</Text>
+          ) : (
+            <Text color="text">{text[cursor]}</Text>
+          )
         ) : (
-          <Text color="text">▌</Text>
+          <Text color="text">{cursorVisible ? "▌" : " "}</Text>
         )}
         <Text color="text">{text.slice(cursor + 1)}</Text>
       </Box>
