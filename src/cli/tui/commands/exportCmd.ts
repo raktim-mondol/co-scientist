@@ -1,6 +1,7 @@
 import { registerCommand } from "../CommandRouter.js";
 import type { CommandHandler } from "../CommandRouter.js";
 import { exportCommand } from "../../commands/export.js";
+import { formatSystemNotice } from "../formatters.js";
 
 const exportCmdHandler: CommandHandler = {
   name: "export",
@@ -16,7 +17,7 @@ const exportCmdHandler: CommandHandler = {
       }
       try {
         await exportCommand(ctx.sessionId!, { format });
-        return { type: "immediate", message: `Exported session as ${format}.` };
+        return { type: "transcript", entries: [formatSystemNotice(`Exported session as ${format}.`, "success")] };
       } catch (err) {
         return { type: "error", message: `Export failed: ${(err as Error).message}` };
       }

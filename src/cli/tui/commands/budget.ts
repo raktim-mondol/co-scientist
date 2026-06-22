@@ -1,5 +1,6 @@
 import { registerCommand } from "../CommandRouter.js";
 import type { CommandHandler } from "../CommandRouter.js";
+import { formatSystemNotice } from "../formatters.js";
 
 const budgetCommand: CommandHandler = {
   name: "budget",
@@ -18,8 +19,11 @@ const budgetCommand: CommandHandler = {
       resetConfig();
       const cfg = getConfig();
       return {
-        type: "immediate",
-        message: `Token budget set to ${cfg.compute.budgetTokens.toLocaleString()}.`,
+        type: "transcript",
+        entries: [formatSystemNotice(
+          `Token budget set to ${cfg.compute.budgetTokens.toLocaleString()}.`,
+          "success",
+        )],
       };
     }
     // No args — open BudgetModal

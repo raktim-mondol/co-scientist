@@ -1,5 +1,6 @@
 import { registerCommand } from "../CommandRouter.js";
 import type { CommandHandler } from "../CommandRouter.js";
+import { formatSystemNotice } from "../formatters.js";
 
 const boostCommand: CommandHandler = {
   name: "boost",
@@ -17,7 +18,7 @@ const boostCommand: CommandHandler = {
       }
       const newElo = Math.round(hyp.eloRating) + 100;
       ctx.memory.atomicGlicko2Update(hyp.id, (c) => ({ ...c, rating: newElo }));
-      return { type: "immediate", message: `Boosted "${hyp.title.slice(0, 40)}" to ${newElo} Elo.` };
+      return { type: "transcript", entries: [formatSystemNotice(`Boosted "${hyp.title.slice(0, 40)}" to ${newElo} Elo.`, "success")] };
     }
     // No args — open BoostModal
     return { type: "modal", modal: "boost" };

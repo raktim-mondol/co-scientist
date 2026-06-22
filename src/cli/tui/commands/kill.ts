@@ -1,5 +1,6 @@
 import { registerCommand } from "../CommandRouter.js";
 import type { CommandHandler } from "../CommandRouter.js";
+import { formatSystemNotice } from "../formatters.js";
 
 const killCommand: CommandHandler = {
   name: "kill",
@@ -15,7 +16,7 @@ const killCommand: CommandHandler = {
         return { type: "error", message: `Hypothesis not found: ${args[0]}` };
       }
       ctx.memory.updateHypothesisStatus(hyp.id, "rejected");
-      return { type: "immediate", message: `Killed "${hyp.title.slice(0, 40)}".` };
+      return { type: "transcript", entries: [formatSystemNotice(`Killed "${hyp.title.slice(0, 40)}".`, "success")] };
     }
     // No args — open KillModal
     return { type: "modal", modal: "kill" };

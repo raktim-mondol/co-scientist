@@ -3,6 +3,7 @@ import type { CommandHandler } from "../CommandRouter.js";
 import { clearConsensusTokens, hasValidConsensusTokens } from "../../../tools/consensusAuth.js";
 import { clearSciteTokens, hasValidSciteTokens } from "../../../tools/sciteAuth.js";
 import { resetMCPManager } from "../../../tools/mcpClient.js";
+import { formatSystemNotice } from "../formatters.js";
 
 const logoutCmdHandler: CommandHandler = {
   name: "logout",
@@ -30,7 +31,7 @@ const logoutCmdHandler: CommandHandler = {
 
     resetMCPManager();
 
-    return { type: "immediate", message: results.join(" | ") };
+    return { type: "transcript", entries: [formatSystemNotice(results.join(" | "), "success")] };
   },
 };
 
