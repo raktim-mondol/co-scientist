@@ -8,7 +8,7 @@ function ctx(): AppContext {
   return {
     memory: {} as AppContext["memory"],
     sessionId: "s1", goal: null, supervisor: null, emitter: null,
-    openModal: () => {}, showToast: () => {},
+    openModal: () => {}, closeModal: () => {}, showToast: () => {},
     startSession: async () => {}, resumeSession: async () => {},
     stopSession: () => {}, togglePause: () => false, paused: false, pushEntry: () => {},
   } as AppContext;
