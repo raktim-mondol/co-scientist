@@ -9,7 +9,7 @@ function ctx(over: Partial<AppContext> = {}): AppContext {
   return {
     memory: {} as AppContext["memory"],
     sessionId: "s1", goal: "g", supervisor: {} as AppContext["supervisor"], emitter: null,
-    openModal: () => {}, showToast: () => {},
+    openModal: () => {}, closeModal: () => {}, showToast: () => {},
     startSession: async () => {}, resumeSession: async () => {},
     stopSession: () => {},
     togglePause: () => { toggled = true; return true; },
