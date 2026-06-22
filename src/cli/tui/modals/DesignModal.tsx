@@ -126,7 +126,7 @@ export function DesignModal({
   // Render: loading state
   if (stage === "loading") {
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor="permission" paddingX={1}>
+      <Box flexDirection="column" paddingX={1}>
         <Text color="permission" bold>EXPERIMENTAL DESIGN</Text>
         <Box marginTop={1} />
         <Text color="warning">⏳ Generating experimental protocol for:</Text>
@@ -144,7 +144,7 @@ export function DesignModal({
     const spacerCount = protocolMaxVisible - visible.length;
 
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor="permission" paddingX={1}>
+      <Box flexDirection="column" paddingX={1}>
         <Text color="permission" bold>EXPERIMENTAL PROTOCOL</Text>
         <Text color="claude">{protocol.hypothesisTitle.slice(0, 60)}</Text>
         <Box marginTop={1} />
@@ -174,7 +174,7 @@ export function DesignModal({
   // Render: picker (windowed, x_code FuzzyPicker style)
   if (hypotheses.length === 0) {
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor="permission" paddingX={1}>
+      <Box flexDirection="column" paddingX={1}>
         <Text color="permission" bold>DESIGN EXPERIMENT</Text>
         <Box marginTop={1} />
         <Text dimColor>No hypotheses available.</Text>
@@ -196,7 +196,7 @@ export function DesignModal({
   const pickerSpacerCount = pickerVisibleCount - pickerVisible.length;
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="permission" paddingX={1}>
+    <Box flexDirection="column" paddingX={1}>
       <Text color="permission" bold>DESIGN EXPERIMENT</Text>
       <Text dimColor>Select a hypothesis to generate experimental protocol:</Text>
       <Box marginTop={1} />

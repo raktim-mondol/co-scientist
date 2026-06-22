@@ -50,7 +50,7 @@ export function RunModal({ onConfirm, onCancel }: RunModalProps) {
   });
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
+    <Box flexDirection="column" paddingX={1}>
       <Text color="claude" bold>START NEW SESSION</Text>
       <Text dimColor={field !== "goal"}>
         {field === "goal" ? "▶" : " "} Goal:     {goal || "_"}

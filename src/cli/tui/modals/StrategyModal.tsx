@@ -26,7 +26,7 @@ export function StrategyModal({ weights, onCancel }: StrategyModalProps) {
   });
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="permission" paddingX={1}>
+    <Box flexDirection="column" paddingX={1}>
       <Text color="permission" bold>TASK SAMPLING WEIGHTS</Text>
       {Object.entries(TASK_LABELS).map(([key, label]) => {
         const pct = ((weights[key] ?? 0) * 100).toFixed(0);

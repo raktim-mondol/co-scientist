@@ -41,7 +41,7 @@ export function InjectModal({ onConfirm, onCancel }: InjectModalProps) {
   });
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="suggestion" paddingX={1} marginTop={1}>
+    <Box flexDirection="column" paddingX={1} marginTop={1}>
       <Text color="suggestion" bold>💉 Inject Hypothesis</Text>
       {step === "title" && (
         <Box flexDirection="column">

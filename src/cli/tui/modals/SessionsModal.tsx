@@ -112,7 +112,7 @@ export function SessionsModal({
   // ── Confirm stage ──────────────────────────────────────────────────────
   if (stage === "confirm") {
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor="error" paddingX={1}>
+      <Box flexDirection="column" paddingX={1}>
         <Text color="error" bold>CONFIRM DELETE</Text>
         <Box marginTop={1} />
         <Text color="error">
@@ -135,7 +135,7 @@ export function SessionsModal({
   // ── Empty state ────────────────────────────────────────────────────────
   if (sessions.length === 0) {
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
+      <Box flexDirection="column" paddingX={1}>
         <Text color="claude" bold>SESSIONS</Text>
         <Box marginTop={1} />
         <Text dimColor>No sessions yet — type a research topic to begin.</Text>
@@ -147,7 +147,7 @@ export function SessionsModal({
 
   // ── Browse stage ───────────────────────────────────────────────────────
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
+    <Box flexDirection="column" paddingX={1}>
       <Text color="claude" bold>SESSIONS</Text>
       {mode === "filter"
         ? <Text dimColor>Filter: <Text color="text">{filter}</Text>▌</Text>

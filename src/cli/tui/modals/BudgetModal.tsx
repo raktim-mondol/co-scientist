@@ -28,7 +28,7 @@ export function BudgetModal({ currentBudget, onConfirm, onCancel }: BudgetModalP
   });
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="suggestion" paddingX={1}>
+    <Box flexDirection="column" paddingX={1}>
       <Text color="suggestion" bold>SET TOKEN BUDGET</Text>
       <Text dimColor>
         Current: <Text color="text">{currentBudget.toLocaleString()}</Text> tokens

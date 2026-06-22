@@ -57,7 +57,7 @@ export function ExportModal({ onConfirm, onCancel }: ExportModalProps) {
   });
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="success" paddingX={1}>
+    <Box flexDirection="column" paddingX={1}>
       <Text color="success" bold>EXPORT SESSION</Text>
       <Box marginTop={1} />
       <Text dimColor={field !== "format"}>

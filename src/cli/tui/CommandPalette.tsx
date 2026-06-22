@@ -57,7 +57,7 @@ export function CommandPalette({ suggestions, selectedIndex, visible }: CommandP
   const spacerCount = maxVisible - rows_;
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
+    <Box flexDirection="column" paddingX={1}>
       {/* Locked-height list container — x_code's `Box height={visibleCount}
           flexShrink={0}` pattern. Prevents the palette from resizing when the
           filter narrows (e.g. 26→3 items), eliminating layout jitter. */}

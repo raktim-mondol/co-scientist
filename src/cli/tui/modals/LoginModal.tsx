@@ -95,7 +95,7 @@ export function LoginModal({ provider, onDone }: LoginModalProps) {
   });
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
+    <Box flexDirection="column" paddingX={1}>
       <Text color="claude" bold>PROVIDER LOGIN</Text>
       {lines.map((line, i) => (
         <Text key={i} color="text">{line}</Text>

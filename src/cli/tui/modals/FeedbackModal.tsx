@@ -134,7 +134,7 @@ export function FeedbackModal({ hypothesisId: preSelectedId, hypotheses, onConfi
   });
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="suggestion" paddingX={1}>
+    <Box flexDirection="column" paddingX={1}>
       <Text color="suggestion" bold>SUBMIT FEEDBACK</Text>
       <Box marginTop={1} />
       {FIELDS.map((f) => {

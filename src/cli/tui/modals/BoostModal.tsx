@@ -38,7 +38,7 @@ export function BoostModal({
   });
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="warning" paddingX={1} marginTop={1}>
+    <Box flexDirection="column" paddingX={1} marginTop={1}>
       <Text color="warning" bold>⚡ Boost Hypothesis</Text>
       <Text>Adjust Elo for: {title}</Text>
       <Text dimColor>Current: {currentElo} | New: {value || "_"}</Text>

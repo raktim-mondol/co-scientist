@@ -92,7 +92,7 @@ export function TranscriptItem({ entry }: { entry: TranscriptEntry }) {
 
     case "block":
       return (
-        <Box flexDirection="column" borderStyle="round" borderColor={entry.color ?? "promptBorder"} paddingX={1} marginTop={1}>
+        <Box flexDirection="column" paddingX={1} marginTop={1}>
           <Text color={entry.color ?? "claude"} bold>{entry.title}</Text>
           {entry.lines.map((line, i) => (
             <Text key={i} color="text">{line}</Text>
