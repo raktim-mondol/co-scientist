@@ -14,7 +14,7 @@ export function Footer({ hasSession, paused, completed }: FooterProps) {
   if (completed) {
     hints = ["/results", "/overview", "/graph", "/activity", "/run", "/quit"];
   } else if (paused) {
-    hints = ["/resume", "/results", "/graph", "/activity", "/stop"];
+    hints = ["/sessions", "/results", "/graph", "/activity", "/stop"];
   } else if (hasSession) {
     hints = ["/pause", "/results", "/overview", "/graph", "/compare", "/diff"];
   } else {

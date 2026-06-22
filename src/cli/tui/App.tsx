@@ -460,7 +460,12 @@ export function App(props: AppProps) {
             const target = memory.getSession(id);
             if (!target) { setActiveModal(null); return; }
             if (id === sessionId) {
-              appContext.showToast("Already on this session.", "info");
+              if (paused) {
+                // Unpause the current in-memory session in place.
+                appContext.togglePause();
+              } else {
+                appContext.showToast("Already on this session.", "info");
+              }
               setActiveModal(null);
               return;
             }
