@@ -46,13 +46,13 @@ export function InjectModal({ onConfirm, onCancel }: InjectModalProps) {
       {step === "title" && (
         <Box flexDirection="column">
           <Text dimColor>Enter hypothesis title (Esc to cancel):</Text>
-          <Text>{title || "_"}</Text>
+          <Text color="text">{title || "_"}</Text>
         </Box>
       )}
       {step === "content" && (
         <Box flexDirection="column">
           <Text dimColor>Enter hypothesis content (Esc to cancel):</Text>
-          <Text>{content || "_"}</Text>
+          <Text color="text">{content || "_"}</Text>
         </Box>
       )}
       <Text dimColor>[enter] next/confirm   [esc] cancel</Text>

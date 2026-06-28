@@ -52,10 +52,10 @@ export function RunModal({ onConfirm, onCancel }: RunModalProps) {
   return (
     <Box flexDirection="column" paddingX={1}>
       <Text color="claude" bold>START NEW SESSION</Text>
-      <Text dimColor={field !== "goal"}>
+      <Text color="text" dimColor={field !== "goal"} backgroundColor="bg">
         {field === "goal" ? "▶" : " "} Goal:     {goal || "_"}
       </Text>
-      <Text dimColor={field !== "name"}>
+      <Text color="text" dimColor={field !== "name"} backgroundColor="bg">
         {field === "name" ? "▶" : " "} Name:     {name || "(optional)"}
       </Text>
       <Text dimColor>[tab] switch field   [enter] next/confirm   [esc] cancel</Text>

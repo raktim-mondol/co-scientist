@@ -1,6 +1,6 @@
 import chalk from "chalk";
-import { getTheme } from "./theme.js";
-import type { Theme, ThemeName } from "./theme.js";
+import { theme } from "./theme.js";
+import type { Theme } from "./theme.js";
 
 /**
  * Returns a chalk instance pre-configured with the theme color.
@@ -8,14 +8,10 @@ import type { Theme, ThemeName } from "./theme.js";
  *
  * Usage:
  *   import { color } from "../design-system/color.js";
- *   console.log(color("claude", "dark")("Hello world"));
- *   console.log(color("error", "dark")("Something went wrong"));
+ *   console.log(color("claude")("Hello world"));
+ *   console.log(color("error")("Something went wrong"));
  */
-export function color(
-  themeKey: keyof Theme,
-  themeName: ThemeName = "dark",
-): chalk.Chalk {
-  const theme = getTheme(themeName);
+export function color(themeKey: keyof Theme): chalk.Chalk {
   const raw = theme[themeKey];
 
   // RGB format: rgb(R,G,B)

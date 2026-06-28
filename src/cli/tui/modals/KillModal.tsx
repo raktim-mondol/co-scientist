@@ -36,9 +36,9 @@ export function KillModal({ title, onConfirm, onCancel }: KillModalProps) {
   return (
     <Box flexDirection="column" paddingX={1} marginTop={1}>
       <Text color="error" bold>⚠ Kill Hypothesis</Text>
-      <Text>This will permanently delete: {title}</Text>
+      <Text color="text">This will permanently delete: {title}</Text>
       <Text dimColor>Type "yes" to confirm or Esc to cancel:</Text>
-      <Text>{confirm || "_"}</Text>
+      <Text color="text">{confirm || "_"}</Text>
     </Box>
   );
 }

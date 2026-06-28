@@ -293,16 +293,15 @@ async function runBrowserAuthFlow(): Promise<string> {
   const port = await getFreePort();
   const redirectUri = `http://127.0.0.1:${port}/callback`;
 
-  // Load or register the OAuth client
+  // Always re-register the OAuth client because the redirect_uri changes
+  // on every flow (a new random localhost port is picked each time).
+  // Reusing a previously registered client_id with a different redirect_uri
+  // causes "redirect_uri not registered for this client" from Consensus.
   const storage = loadStorage();
-  let client = storage.client;
-
-  if (!client) {
-    logger.info("Registering co-scientist as an OAuth client with Consensus...");
-    client = await registerClient(redirectUri);
-    storage.client = client;
-    saveStorage(storage);
-  }
+  logger.info("Registering co-scientist as an OAuth client with Consensus...");
+  const client = await registerClient(redirectUri);
+  storage.client = client;
+  saveStorage(storage);
 
   // Generate PKCE codes
   const codeVerifier = generateCodeVerifier();
@@ -359,12 +358,18 @@ async function runBrowserAuthFlow(): Promise<string> {
  * This is the only function you need to call. Use the returned token as:
  *   Authorization: Bearer <token>
  */
-export async function getConsensusAccessToken(): Promise<string> {
+export async function getConsensusAccessToken(
+  options: { allowInteractive?: boolean } = {}
+): Promise<string> {
+  const allowInteractive = options.allowInteractive ?? true;
   const storage = loadStorage();
   const tokens = storage.tokens;
 
-  // Case 1: No tokens at all — run browser flow
+  // Case 1: No tokens at all — run browser flow only if interactive
   if (!tokens?.access_token) {
+    if (!allowInteractive) {
+      throw new Error("Not signed in to Consensus — use `co-scientist login` to authenticate.");
+    }
     return runBrowserAuthFlow();
   }
 
@@ -384,14 +389,23 @@ export async function getConsensusAccessToken(): Promise<string> {
       logger.info("Consensus: token refreshed successfully.");
       return refreshed.access_token;
     } catch (err) {
-      logger.warn(`Consensus: token refresh failed (${(err as Error).message}). Re-authenticating...`);
-      // Clear stale tokens and re-run browser flow
+      logger.warn(`Consensus: token refresh failed (${(err as Error).message}).`);
+      // Clear stale tokens
       storage.tokens = undefined;
       saveStorage(storage);
+      if (!allowInteractive) {
+        throw new Error(
+          "Consensus token refresh failed — use `co-scientist login` to re-authenticate."
+        );
+      }
+      // Interactive: fall through to browser re-auth
     }
   }
 
-  // Case 4: Refresh failed or no refresh token — re-run browser flow
+  // Case 4: Refresh failed or no refresh token
+  if (!allowInteractive) {
+    throw new Error("Consensus session expired — use `co-scientist login` to re-authenticate.");
+  }
   return runBrowserAuthFlow();
 }
 

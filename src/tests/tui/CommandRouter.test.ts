@@ -23,7 +23,7 @@ function createMockContext(overrides?: Partial<AppContext>): AppContext {
     supervisor: null,
     emitter: null,
     openModal: () => {},
-    showToast: () => {}, cycleTheme: () => {},
+    showToast: () => {},
     startSession: async () => {},
     resumeSession: async () => {},
     stopSession: () => {},
@@ -246,21 +246,15 @@ describe("fuzzySubsequenceMatch", () => {
   });
 });
 
-describe("/theme command", () => {
-  it("is registered and calls cycleTheme", async () => {
-    // Side-effect import registers the command
-    await import("../../cli/tui/commands/theme.js");
-    const themeHandler = getSuggestions; // Not needed — check registration
+describe("/quit command", () => {
+  it("is registered and returns exit type", async () => {
+    await import("../../cli/tui/commands/quit.js");
     const { getCommand } = await import("../../cli/tui/CommandRouter.js");
-    const cmd = getCommand("theme");
+    const cmd = getCommand("quit");
     expect(cmd).toBeDefined();
-    expect(cmd!.name).toBe("theme");
+    expect(cmd!.name).toBe("quit");
     expect(cmd!.category).toBe("System");
-    let cycled = false;
-    const result = await cmd!.execute([], createMockContext({
-      cycleTheme: () => { cycled = true; },
-    }));
-    expect(cycled).toBe(true);
-    expect(result.type).toBe("immediate");
+    const result = await cmd!.execute([], createMockContext());
+    expect(result.type).toBe("exit");
   });
 });

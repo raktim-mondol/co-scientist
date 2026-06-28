@@ -23,7 +23,6 @@ import { getTranscriptStore } from "../store/transcriptStore.js";
 import { getNotificationStore } from "../store/notificationStore.js";
 import { formatResults, formatSystemNotice } from "../formatters.js";
 import type { SessionStartResult } from "../index.js";
-import { useCycleTheme } from "../../ink.js";
 
 // ─── Value type ────────────────────────────────────────────────────────────────
 
@@ -46,9 +45,6 @@ export interface AppContext {
   resumeSession: (sessionId: string) => Promise<void>;
   stopSession: () => void;
   togglePause: () => boolean;
-
-  /** Cycle the theme (dark → light → dark). */
-  cycleTheme: () => void;
 
   paused: boolean;
   /** Push an entry into the transcript scrollback. */
@@ -123,9 +119,6 @@ export function AppProvider(props: AppProviderProps) {
   // ── Stores (singletons) ────────────────────────────────────────────────
   const transcriptStore = getTranscriptStore();
   const notificationStore = getNotificationStore();
-
-  // ── Theme cycle — delegates to the auto-injected ThemeProvider ──────────
-  const cycleTheme = useCycleTheme();
 
   // ── pushEntry → transcript store ───────────────────────────────────────
   const pushEntry = useCallback(
@@ -239,7 +232,6 @@ export function AppProvider(props: AppProviderProps) {
       resumeSession,
       stopSession,
       togglePause,
-      cycleTheme,
       paused,
       completed,
       startTime,
@@ -250,7 +242,7 @@ export function AppProvider(props: AppProviderProps) {
       memory, sessionId, goal, supervisor, emitter,
       openModal, closeModal, setModalData, activeModal, modalData,
       showToast, startSession, resumeSession, stopSession, togglePause,
-      cycleTheme, paused, completed, startTime, budgetTokens, pushEntry,
+      paused, completed, startTime, budgetTokens, pushEntry,
     ],
   );
 

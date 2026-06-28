@@ -60,12 +60,12 @@ export function ExportModal({ onConfirm, onCancel }: ExportModalProps) {
     <Box flexDirection="column" paddingX={1}>
       <Text color="success" bold>EXPORT SESSION</Text>
       <Box marginTop={1} />
-      <Text dimColor={field !== "format"}>
+      <Text color="text" dimColor={field !== "format"} backgroundColor="bg">
         {field === "format" ? "▶" : " "} Format:   <Text color="claude">{format === "md" ? "markdown" : "json"}</Text>
         {"  "}
         <Text dimColor>[space/←→] toggle</Text>
       </Text>
-      <Text dimColor={field !== "path"}>
+      <Text color="text" dimColor={field !== "path"} backgroundColor="bg">
         {field === "path" ? "▶" : " "} Path:     {path || "(default)"}
       </Text>
       <Box marginTop={1} />

@@ -29,9 +29,10 @@ export type { Props as BoxProps } from "./design-system/ThemedBox.js";
 export { default as Text } from "./design-system/ThemedText.js";
 export type { Props as TextProps } from "./design-system/ThemedText.js";
 
-// Re-export theme hooks and types
-export { ThemeProvider, useTheme, useThemeSetting, useCycleTheme } from "./design-system/ThemeProvider.js";
-export type { Theme, ThemeName, ThemeSetting } from "./design-system/theme.js";
+// Re-export theme hook and types
+export { ThemeProvider, useTheme } from "./design-system/ThemeProvider.js";
+export type { Theme } from "./design-system/theme.js";
+export { theme } from "./design-system/theme.js";
 
 // Re-export color utility
 export { color } from "./design-system/color.js";
@@ -70,10 +71,6 @@ export function render(
   node: ReactNode,
   options?: NodeJS.WriteStream | Parameters<typeof inkRender>[1],
 ): InkInstance {
-  // patchConsole defaults to true in Ink, which captures every console.* write
-  // and reprints it above the live frame on each re-render — causing stray logs
-  // to "roll" over the TUI. The TUI owns the screen (and the logger is silenced
-  // while it's mounted), so disable it. Callers can still override via options.
   const isWriteStream =
     options != null && typeof (options as NodeJS.WriteStream).write === "function";
   const baseOptions = isWriteStream
@@ -83,7 +80,6 @@ export function render(
     patchConsole: false,
     ...(baseOptions ?? {}),
   };
-  // Legacy signature: a raw WriteStream was passed as stdout.
   if (isWriteStream) merged.stdout = options as NodeJS.WriteStream;
   return inkRender(withTheme(node), merged);
 }

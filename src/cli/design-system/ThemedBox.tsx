@@ -1,9 +1,8 @@
 import type { ReactNode } from "react";
 import React from "react";
 import { Box as InkBox } from "ink";
+import { theme } from "./theme.js";
 import type { Theme } from "./theme.js";
-import { getTheme } from "./theme.js";
-import { useTheme } from "./ThemeProvider.js";
 
 type ThemeColor = keyof Theme;
 type RawColor = string;
@@ -18,7 +17,7 @@ function isRawColor(color: string): boolean {
   );
 }
 
-function resolveColor(color: AnyColor | undefined, theme: Theme): string | undefined {
+function resolveColor(color: AnyColor | undefined): string | undefined {
   if (!color) return undefined;
   if (isRawColor(color)) return color;
   return (theme as Record<string, string>)[color];
@@ -30,7 +29,8 @@ export type Props = {
   readonly borderBottomColor?: AnyColor;
   readonly borderLeftColor?: AnyColor;
   readonly borderRightColor?: AnyColor;
-  readonly backgroundColor?: AnyColor;
+  // NOTE: Ink's Box does NOT support backgroundColor. Use it on <Text> instead.
+  // The prop is accepted for API documentation but not forwarded.
   // Layout
   readonly flexDirection?: "row" | "column" | "row-reverse" | "column-reverse";
   readonly flexGrow?: number;
@@ -68,7 +68,6 @@ export default function ThemedBox({
   borderBottomColor,
   borderLeftColor,
   borderRightColor,
-  backgroundColor,
   children,
   flexDirection,
   flexGrow,
@@ -98,19 +97,15 @@ export default function ThemedBox({
   overflow,
   display,
 }: Props): ReactNode {
-  const [themeName] = useTheme();
-  const theme = getTheme(themeName);
-
   // Only forward props that are actually set. Passing `undefined` for layout
   // props (notably `display`) overrides Ink's own defaults and can collapse
   // the box to nothing rendered — so we omit undefined values entirely.
   const boxProps: Record<string, unknown> = {
-    borderColor: resolveColor(borderColor, theme),
-    borderTopColor: resolveColor(borderTopColor, theme),
-    borderBottomColor: resolveColor(borderBottomColor, theme),
-    borderLeftColor: resolveColor(borderLeftColor, theme),
-    borderRightColor: resolveColor(borderRightColor, theme),
-    backgroundColor: resolveColor(backgroundColor, theme),
+    borderColor: resolveColor(borderColor),
+    borderTopColor: resolveColor(borderTopColor),
+    borderBottomColor: resolveColor(borderBottomColor),
+    borderLeftColor: resolveColor(borderLeftColor),
+    borderRightColor: resolveColor(borderRightColor),
     flexDirection,
     flexGrow,
     flexShrink,

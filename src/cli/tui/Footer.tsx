@@ -34,7 +34,7 @@ export function Footer({ hasSession, paused, completed }: FooterProps) {
   } else if (hasSession) {
     cmdHints = ["/pause", "/results", "/overview", "/graph", "/compare", "/diff"];
   } else {
-    cmdHints = ["/run", "/help", "/sessions", "/theme", "/quit"];
+    cmdHints = ["/run", "/help", "/sessions", "/quit"];
   }
 
   // ── Keybinding hints (derived from keyboard engine schema) ─────────────

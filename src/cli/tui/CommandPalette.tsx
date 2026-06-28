@@ -84,7 +84,7 @@ export function CommandPalette({ suggestions, selectedIndex, visible }: CommandP
                   {glyph} {item.name}{"  "}{item.description}
                 </Text>
               ) : (
-                <Text dimColor={!item.active}>
+                <Text color="text" dimColor={!item.active}>
                   {glyph} {item.name}{"  "}
                   <Text dimColor>{item.description}</Text>
                 </Text>

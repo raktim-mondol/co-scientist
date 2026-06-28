@@ -23,16 +23,16 @@ interface FullscreenLayoutProps {
 
 export function FullscreenLayout({ status, scrollable, modal, bottom }: FullscreenLayoutProps) {
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" backgroundColor="bg">
       {status}
       {/* Scrollable zone — transcript window. */}
-      <Box flexDirection="column" flexGrow={1} overflow="hidden">
+      <Box flexDirection="column" flexGrow={1} overflow="hidden" backgroundColor="bg">
         {scrollable}
       </Box>
       {/* Modal overlay — above the bottom bar so the input stays below it. */}
       {modal}
       {/* Bottom zone — pinned. */}
-      <Box flexShrink={0} flexDirection="column">
+      <Box flexShrink={0} flexDirection="column" backgroundColor="bg">
         {bottom}
       </Box>
     </Box>
