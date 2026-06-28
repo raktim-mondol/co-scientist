@@ -1,20 +1,13 @@
 import React from "react";
 import { Box, Text } from "../ink.js";
 import type { CommandSuggestion } from "./CommandRouter.js";
-import { useTerminalSize } from "./useTerminalSize.js";
+import { useLayout } from "./hooks/useLayout.js";
 
 interface CommandPaletteProps {
   suggestions: CommandSuggestion[];
   selectedIndex: number;
   visible: boolean;
 }
-
-// Hard ceiling on visible rows regardless of terminal height — keeps the
-// palette compact even on very tall terminals.
-const MAX_ITEMS = 8;
-// Rows reserved for the prompt box, footer, indicator line, and palette border
-// so the whole live region stays within the viewport.
-const RESERVED_ROWS = 9;
 
 // A flat, windowed command list. Only a bounded slice is rendered at any time
 // and each row is a single truncated line, so the palette's height is capped no
@@ -27,13 +20,16 @@ const RESERVED_ROWS = 9;
 //    that more items exist above/below without scanning the footer.
 // 3. Empty-row padding — when fewer items than maxVisible, the remaining
 //    rows are dim spacer lines so the box height never changes.
+//
+// Height is now computed from terminal size via useLayout() instead of
+// hardcoded MAX_ITEMS / RESERVED_ROWS (Phase 5c — adaptive layout).
 export function CommandPalette({ suggestions, selectedIndex, visible }: CommandPaletteProps) {
-  const { rows } = useTerminalSize();
+  const { paletteMaxVisible } = useLayout();
 
   if (!visible || suggestions.length === 0) return null;
 
   const total = suggestions.length;
-  const maxVisible = Math.max(1, Math.min(MAX_ITEMS, rows - RESERVED_ROWS));
+  const maxVisible = Math.max(1, Math.min(paletteMaxVisible, total));
 
   // Clamp the selection into range, then window around it so the highlighted
   // row is always on-screen.

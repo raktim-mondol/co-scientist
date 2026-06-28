@@ -1,16 +1,20 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
-import { Box, Text, useApp, useInput, Static } from "../ink.js";
-import EventEmitter from "events";
-import type { ContextStore } from "../../memory/contextStore.js";
-import type { SupervisorAgent } from "../../agents/supervisor.js";
-import { useSessionData } from "./useSessionData.js";
+import React, { useState, useMemo, useCallback, useRef } from "react";
+import { Box, useApp, Static } from "../ink.js";
+import { AppProvider, useAppContext } from "./contexts/AppContext.js";
+import { NotificationProvider } from "./contexts/NotificationContext.js";
+import { useEventDrivenSessionData } from "./hooks/useEventDrivenSessionData.js";
+import { useTranscript } from "./hooks/useTranscript.js";
+import { useLayout } from "./hooks/useLayout.js";
+import { useKeyboardEngine } from "./hooks/useKeyboardEngine.js";
 import { WelcomeBox } from "./WelcomeBox.js";
-import { TranscriptItem } from "./Transcript.js";
+import { FullscreenLayout } from "./FullscreenLayout.js";
+import { VirtualMessageList } from "./VirtualMessageList.js";
+import type { VirtualMessageListHandle } from "./VirtualMessageList.js";
 import { LiveStatus } from "./LiveStatus.js";
 import type { SessionState } from "./LiveStatus.js";
 import { InputBar } from "./InputBar.js";
 import { Footer } from "./Footer.js";
-import { Toast } from "./Toast.js";
+import { NotificationBar } from "./NotificationBar.js";
 import { KillModal } from "./modals/KillModal.js";
 import { BoostModal } from "./modals/BoostModal.js";
 import { InjectModal } from "./modals/InjectModal.js";
@@ -26,10 +30,9 @@ import { killHypothesis, boostHypothesis, injectHypothesis } from "./actions.js"
 import { extractRewardFromFeedback } from "../../rlef/reward-signal.js";
 import { exportCommand } from "../commands/export.js";
 import { v4 as uuidv4 } from "uuid";
-import type { TranscriptEntry } from "./Transcript.js";
 import { formatUserGoal, formatSystemNotice, formatResults, formatSessionResults, formatOverview } from "./formatters.js";
-import type { ModalName, AppContext, RouteResult } from "./CommandRouter.js";
-import type { SessionStartResult } from "./index.js";
+import type { RouteResult } from "./CommandRouter.js";
+import type { AppProviderProps } from "./contexts/AppContext.js";
 
 // Command registrations (side-effect imports — keep exactly as-is)
 import "./commands/run.js";
@@ -56,89 +59,67 @@ import "./commands/login.js";
 import "./commands/logout.js";
 import "./commands/help.js";
 import "./commands/quit.js";
+import "./commands/theme.js";
 
-const NOOP_EMITTER = new EventEmitter();
-
-export interface AppProps {
-  memory: ContextStore;
-  sessionId: string | null;
-  goal: string | null;
-  supervisor: SupervisorAgent | null;
-  emitter: EventEmitter | null;
-  startTime: number | null;
-  budgetTokens: number;
-  onStartSession: (goal: string, opts?: { name?: string; budget?: number; maxHypotheses?: number }) => Promise<SessionStartResult>;
-  onResumeSession: (sessionId: string) => Promise<SessionStartResult & { goal: string }>;
-  onStop: () => void;
-  onTogglePause: () => boolean;
-  onQuit: () => void;
-}
+export type AppProps = AppProviderProps;
 
 export function App(props: AppProps) {
+  return (
+    <AppProvider {...props}>
+      <NotificationProvider>
+        <AppInner />
+      </NotificationProvider>
+    </AppProvider>
+  );
+}
+
+function AppInner() {
+  const ctx = useAppContext();
   const {
-    memory, budgetTokens, onQuit,
-    onStartSession: externalOnStartSession,
-    onResumeSession: externalOnResumeSession,
-    onStop: externalOnStop,
-    onTogglePause: externalOnTogglePause,
-  } = props;
+    memory, sessionId, goal, supervisor, emitter, startTime, budgetTokens,
+    paused, completed, activeModal, modalData,
+    openModal, closeModal, setModalData, showToast,
+    startSession, resumeSession, togglePause, pushEntry,
+  } = ctx;
   const { exit } = useApp();
 
-  // ── Internal session state ─────────────────────────────────────────────
-  const [sessionId, setSessionId] = useState<string | null>(props.sessionId);
-  const [goal, setGoal] = useState<string | null>(props.goal);
-  const [supervisor, setSupervisor] = useState<SupervisorAgent | null>(props.supervisor);
-  const [emitter, setEmitter] = useState<EventEmitter | null>(props.emitter);
-  const [startTime, setStartTime] = useState<number | null>(props.startTime);
   const hasSession = sessionId !== null;
 
-  // ── Transcript (<Static> scrollback) ───────────────────────────────────
-  const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
-  const pushEntry = useCallback((entry: TranscriptEntry) => {
-    setTranscript((prev) => [...prev, entry]);
-  }, []);
-
-  // Pass memory + pushEntry into useSessionData so progress events push
-  // activity lines into the transcript and refresh the leaderboard.
-  const { stats, leaderboard, now } = useSessionData(
-    emitter ?? NOOP_EMITTER,
+  // ── Event-driven session data (replaces polling useSessionData) ─────────
+  const { stats, leaderboard, now } = useEventDrivenSessionData(
+    emitter,
     memory,
-    sessionId ?? "",
+    sessionId,
     pushEntry,
   );
 
-  const [activeModal, setActiveModal] = useState<ModalName>(null);
-  const [modalData, setModalData] = useState<unknown>(null);
+  // ── Transcript (read from transcriptStore) ──────────────────────────────
+  const transcript = useTranscript();
+
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [paused, setPaused] = useState(false);
-  const [completed, setCompleted] = useState(false);
   const [selected, setSelected] = useState(0);
-  const [toastMsg, setToastMsg] = useState("");
-  const [toastType, setToastType] = useState<"success" | "error" | "info">("info");
-  const [toastVisible, setToastVisible] = useState(false);
 
   const selectedHyp = leaderboard[selected];
 
-  // ── Session completion / error event handling ──────────────────────────
-  useEffect(() => {
-    if (!emitter || !sessionId) return;
-    const onCompleted = (_overview: string) => {
-      setCompleted(true);
-      // Push a results block into the transcript so the user sees the
-      // final rankings printed in scrollback.
-      pushEntry(formatResults(memory, sessionId));
-      pushEntry(formatSystemNotice("Session completed.", "success"));
-    };
-    const onError = (err: Error) => {
-      pushEntry(formatSystemNotice(`Session error: ${err.message}`, "error"));
-    };
-    emitter.on("completed", onCompleted);
-    emitter.on("error", onError);
-    return () => {
-      emitter.off("completed", onCompleted);
-      emitter.off("error", onError);
-    };
-  }, [emitter, sessionId, memory, pushEntry]);
+  // ── Layout (adaptive to terminal size) + virtual list ref ───────────────
+  const listRef = useRef<VirtualMessageListHandle>(null);
+  const layout = useLayout({
+    sessionActive: hasSession,
+    leaderboardRows: leaderboard.length,
+    compact: paletteOpen,
+  });
+
+  // ── Keyboard engine (schema-driven, context-aware) ─────────────────────
+  // `global` context when idle (ctrl+p pause), `modal` context when a modal
+  // is open (esc closes it). j/k transcript navigation is handled in InputBar
+  // (gated on empty input) so it never conflicts with text entry.
+  useKeyboardEngine({
+    context: activeModal ? "modal" : "global",
+    actions: {
+      togglePause: () => togglePause(),
+      closeOverlay: () => closeModal(),
+    },
+  });
 
   // Derived session state for LiveStatus.
   const sessionState: SessionState = !hasSession
@@ -149,64 +130,17 @@ export function App(props: AppProps) {
         ? "paused"
         : "running";
 
-  // ── Build AppContext ───────────────────────────────────────────────────
-  const appContext: AppContext = {
-    memory,
-    sessionId,
-    goal,
-    supervisor,
-    emitter,
-    openModal: (modal, data) => { setModalData(data ?? null); setActiveModal(modal); },
-    showToast: (message, type = "info") => {
-      setToastMsg(message);
-      setToastType(type);
-      setToastVisible(true);
-    },
-    startSession: async (goalText, opts) => {
-      // Echo the goal into the transcript
+  // ── Echo helper for direct startSession calls (RunModal / free text) ────
+  // The /run command path returns its own transcript entries via handleRoute,
+  // so it does not use this helper (avoids double-echoing).
+  const startSessionWithEcho = useCallback(
+    async (goalText: string, opts?: { name?: string; budget?: number; maxHypotheses?: number }) => {
       pushEntry(formatUserGoal(goalText));
-
-      const result = await externalOnStartSession(goalText, opts);
-      setSessionId(result.sessionId);
-      setGoal(goalText);
-      setSupervisor(result.supervisor);
-      setEmitter(result.emitter);
-      setStartTime(Date.now());
-      setPaused(false);
-      setCompleted(false);
-
+      await startSession(goalText, opts);
       pushEntry(formatSystemNotice("Session started.", "success"));
     },
-    resumeSession: async (id) => {
-      const result = await externalOnResumeSession(id);
-      setSessionId(result.sessionId);
-      setGoal(result.goal);
-      setSupervisor(result.supervisor);
-      setEmitter(result.emitter);
-      setStartTime(Date.now());
-      setPaused(false);
-      setCompleted(false);
-      pushEntry(formatSystemNotice(`Resuming session ${result.sessionId.slice(0, 8)}…`, "info"));
-    },
-    stopSession: () => {
-      externalOnStop();
-      setSessionId(null);
-      setGoal(null);
-      setSupervisor(null);
-      setEmitter(null);
-      setStartTime(null);
-      setPaused(false);
-      setCompleted(false);
-    },
-    togglePause: () => {
-      const np = externalOnTogglePause();
-      setPaused(np);
-      pushEntry(formatSystemNotice(np ? "Session paused." : "Session resumed.", "info"));
-      return np;
-    },
-    paused,
-    pushEntry,
-  };
+    [pushEntry, startSession],
+  );
 
   // ── Memoized lists for modals ──────────────────────────────────────────
   const allHypotheses = useMemo(
@@ -219,325 +153,300 @@ export function App(props: AppProps) {
     [memory],
   );
 
-  // ── Global Esc: dismiss modal ──────────────────────────────────────────
-  useInput((_input, key) => {
-    if (!key.escape) return;
-    if (activeModal) {
-      setActiveModal(null);
-    }
-  });
-
   // ── Route handler ──────────────────────────────────────────────────────
   const handleRoute = (result: RouteResult | { type: "session_start"; goal: string }) => {
     switch (result.type) {
       case "transcript":
-        // Push the formatted block(s) into scrollback
-        for (const entry of result.entries) {
-          pushEntry(entry);
-        }
-        if (result.message) {
-          setToastMsg(result.message);
-          setToastType("success");
-          setToastVisible(true);
-        }
+        for (const entry of result.entries) pushEntry(entry);
+        if (result.message) showToast(result.message, "success");
         break;
       case "modal":
-        setModalData(result.data ?? null);
-        setActiveModal(result.modal);
-        if (result.message) {
-          setToastMsg(result.message);
-          setToastType("info");
-          setToastVisible(true);
-        }
+        openModal(result.modal, result.data ?? null);
+        if (result.message) showToast(result.message, "info");
         break;
       case "session_start":
-        appContext.startSession(result.goal);
+        startSessionWithEcho(result.goal);
         break;
       case "exit":
-        onQuit();
         exit();
         break;
       // immediate / error toasts are shown by InputBar
     }
   };
 
-  // ── Render: REPL layout ────────────────────────────────────────────────
-  // Top → bottom:
-  //   1. <Static> WelcomeBox + transcript (scrollback, never re-renders)
-  //   2. LiveStatus (re-renders on progress, shows spinner + token gauge + leaderboard)
-  //   3. Modal overlay (renders above the live region, below it logically)
-  //   4. Toast + InputBar + Footer (fixed at bottom)
+  // ── Render: fullscreen layout ─────────────────────────────────────────
+  // The welcome banner is the only <Static> item (one-time scrollback).
+  // The transcript lives in the live frame via VirtualMessageList so it can
+  // no longer push the input bar off-screen (the viewport-jump bug). The
+  // virtual list renders only a bounded window of entries, keeping re-render
+  // cost bounded on every progress tick.
   return (
-    <Box flexDirection="column">
-      {/* ── Scrollback (Static: print-and-forget, no flicker) ────────── */}
+    <>
+      {/* ── Welcome banner (Static: print-and-forget) ─────────────────── */}
       <Static items={[
         <Box key="welcome_static" flexDirection="column">
           <WelcomeBox />
         </Box>,
-        ...transcript.map((entry) => (
-          <Box key={entry.id} flexDirection="column">
-            <TranscriptItem entry={entry} />
-          </Box>
-        )),
       ]}>
         {(item) => item}
       </Static>
 
-      {/* ── Live region (re-renders on every progress tick) ──────────── */}
-      <LiveStatus
-        sessionState={sessionState}
-        sessionId={sessionId}
-        goal={goal}
-        stats={stats}
-        startTime={startTime}
-        now={now}
-        budgetTokens={budgetTokens}
-        leaderboard={leaderboard}
-        selected={selected}
-        compact={paletteOpen}
-      />
-
-      {/* ── Modal overlay ────────────────────────────────────────────── */}
-      {activeModal === "kill" && selectedHyp && (
-        <KillModal
-          title={selectedHyp.title}
-          onConfirm={() => {
-            killHypothesis(memory, selectedHyp.id);
-            pushEntry(formatSystemNotice(`Killed: ${selectedHyp.title.slice(0, 40)}`));
-            setActiveModal(null);
-          }}
-          onCancel={() => setActiveModal(null)}
-        />
-      )}
-      {activeModal === "boost" && selectedHyp && (
-        <BoostModal
-          title={selectedHyp.title}
-          currentElo={selectedHyp.eloRating}
-          onConfirm={(newElo) => {
-            boostHypothesis(memory, selectedHyp.id, newElo);
-            pushEntry(formatSystemNotice(`Boosted ${selectedHyp.title.slice(0, 40)} to Elo ${newElo}`));
-            setActiveModal(null);
-          }}
-          onCancel={() => setActiveModal(null)}
-        />
-      )}
-      {activeModal === "inject" && (
-        <InjectModal
-          onConfirm={(title, content) => {
-            injectHypothesis(memory, {
-              sessionId: sessionId!,
-              title,
-              summary: "",
-              content,
-              generationRound: stats?.currentRound ?? 0,
-            });
-            pushEntry(formatSystemNotice(`Injected: ${title.slice(0, 40)}`));
-            setActiveModal(null);
-          }}
-          onCancel={() => setActiveModal(null)}
-        />
-      )}
-      {activeModal === "run" && (
-        <RunModal
-          onConfirm={async (goalText, name) => {
-            setActiveModal(null);
-            await appContext.startSession(goalText, name ? { name } : undefined);
-          }}
-          onCancel={() => setActiveModal(null)}
-        />
-      )}
-      {activeModal === "budget" && (
-        <BudgetModal
-          currentBudget={budgetTokens}
-          onConfirm={(newBudget) => {
-            process.env.COMPUTE_BUDGET_TOKENS = String(newBudget);
-            pushEntry(formatSystemNotice(
-              `Budget set to ${newBudget.toLocaleString()} tokens.`,
-              "success",
-            ));
-            setActiveModal(null);
-          }}
-          onCancel={() => setActiveModal(null)}
-        />
-      )}
-      {activeModal === "strategy" && (
-        <StrategyModal
-          weights={supervisor?.getCurrentWeights() ?? {
-            generation: 1, reflection: 0, ranking: 0,
-            evolution: 0, proximity: 0, meta_review: 0,
-          }}
-          onCancel={() => setActiveModal(null)}
-        />
-      )}
-
-      {/* Action modals */}
-      {activeModal === "export" && (
-        <ExportModal
-          onConfirm={(format, outputPath) => {
-            const targetId = (modalData as { sessionId?: string } | null)?.sessionId ?? sessionId!;
-            setActiveModal(null);
-            setModalData(null);
-            exportCommand(targetId, { format, output: outputPath }).then(() => {
-              pushEntry(formatSystemNotice(`Session exported as ${format}.`, "success"));
-            }).catch((err) => {
-              pushEntry(formatSystemNotice(`Export failed: ${(err as Error).message}`, "error"));
-            });
-          }}
-          onCancel={() => { setActiveModal(null); setModalData(null); }}
-        />
-      )}
-      {activeModal === "feedback" && (
-        <FeedbackModal
-          hypotheses={allHypotheses.map((h) => ({ id: h.id, title: h.title }))}
-          onConfirm={(data) => {
-            const reward = extractRewardFromFeedback(
-              data.feedbackText,
-              data.noveltyScore ?? undefined,
-              data.correctnessScore ?? undefined,
-              data.testabilityScore ?? undefined,
-            );
-            memory.saveExperimentalFeedback({
-              id: uuidv4(),
-              hypothesisId: data.hypothesisId,
-              sessionId: sessionId!,
-              feedbackText: data.feedbackText,
-              noveltyScore: data.noveltyScore,
-              correctnessScore: data.correctnessScore,
-              testabilityScore: data.testabilityScore,
-              metadata: {},
-              computedReward: reward,
-              recordedBy: "human",
-              createdAt: new Date(),
-            });
-            pushEntry(formatSystemNotice("Feedback saved.", "success"));
-            setActiveModal(null);
-          }}
-          onCancel={() => setActiveModal(null)}
-        />
-      )}
-      {activeModal === "design" && (
-        <DesignModal
-          sessionId={sessionId!}
-          hypotheses={allHypotheses}
-          onDone={(entry) => {
-            pushEntry({
-              id: uuidv4(),
-              kind: "block",
-              title: entry.title,
-              lines: [
-                entry.hypothesisTitle.slice(0, 80),
-                "",
-                ...entry.steps.slice(0, 20),
-              ],
-              color: "permission",
-            });
-          }}
-          onCancel={() => setActiveModal(null)}
-        />
-      )}
-      {activeModal === "sessions" && (
-        <SessionsModal
-          sessions={allSessions}
-          activeSessionId={sessionId}
-          onView={(id) => {
-            pushEntry(formatSessionResults(memory, id));
-            setActiveModal(null);
-          }}
-          onOverview={(id) => {
-            for (const entry of formatOverview(memory, id)) pushEntry(entry);
-            setActiveModal(null);
-          }}
-          onExport={(id) => {
-            setModalData({ sessionId: id });
-            setActiveModal("export");
-          }}
-          onResume={(id) => {
-            const target = memory.getSession(id);
-            if (!target) { setActiveModal(null); return; }
-            if (id === sessionId) {
-              if (paused) {
-                // Unpause the current in-memory session in place.
-                appContext.togglePause();
-              } else {
-                appContext.showToast("Already on this session.", "info");
-              }
-              setActiveModal(null);
-              return;
-            }
-            if (target.status === "completed") {
-              appContext.showToast("Session completed — press enter to view results.", "info");
-              setActiveModal(null);
-              return;
-            }
-            if (supervisor && !paused && !completed) {
-              appContext.showToast("Stop the current session first (/stop).", "error");
-              setActiveModal(null);
-              return;
-            }
-            setActiveModal(null);
-            appContext.resumeSession(id).catch((err) => {
-              pushEntry(formatSystemNotice(`Resume failed: ${(err as Error).message}`, "error"));
-            });
-          }}
-          onDelete={(ids) => {
-            const names = ids.map((id) => memory.getSession(id)?.name ?? id.slice(0, 8));
-            for (const id of ids) memory.deleteSession(id);
-            pushEntry({
-              id: uuidv4(),
-              kind: "block",
-              title: `Deleted ${ids.length} session(s)`,
-              lines: names.map((n) => `  ⨯ ${n}`),
-              color: "error",
-            });
-            setActiveModal(null);
-          }}
-          onCancel={() => setActiveModal(null)}
-        />
-      )}
-      {activeModal === "login" && (
-        <LoginModal
-          provider={
-            ((modalData as { provider?: "consensus" | "scite" | "all" } | null)?.provider) ?? "all"
-          }
-          onDone={(lines, success) => {
-            setActiveModal(null);
-            setModalData(null);
-            pushEntry({
-              id: uuidv4(),
-              kind: "block",
-              title: "Authentication",
-              lines,
-              color: success ? "success" : "error",
-            });
-          }}
-        />
-      )}
-
-      {/* ── Fixed bottom: toast + bordered input + footer ─────────────── */}
-      <Box flexShrink={0} flexDirection="column">
-        {/* App-level toast */}
-        {toastVisible && (
-          <Toast
-            message={toastMsg}
-            type={toastType}
-            visible={toastVisible}
-            onDismiss={() => setToastVisible(false)}
+      <FullscreenLayout
+        status={
+          <LiveStatus
+            sessionState={sessionState}
+            sessionId={sessionId}
+            goal={goal}
+            stats={stats}
+            startTime={startTime}
+            now={now}
+            budgetTokens={budgetTokens}
+            leaderboard={leaderboard}
+            selected={selected}
+            compact={paletteOpen}
           />
-        )}
+        }
+        scrollable={
+          <VirtualMessageList
+            ref={listRef}
+            entries={transcript}
+            maxRows={layout.transcriptMaxRows}
+          />
+        }
+        modal={
+          <>
+            {activeModal === "kill" && selectedHyp && (
+              <KillModal
+                title={selectedHyp.title}
+                onConfirm={() => {
+                  killHypothesis(memory, selectedHyp.id);
+                  pushEntry(formatSystemNotice(`Killed: ${selectedHyp.title.slice(0, 40)}`));
+                  closeModal();
+                }}
+                onCancel={closeModal}
+              />
+            )}
+            {activeModal === "boost" && selectedHyp && (
+              <BoostModal
+                title={selectedHyp.title}
+                currentElo={selectedHyp.eloRating}
+                onConfirm={(newElo) => {
+                  boostHypothesis(memory, selectedHyp.id, newElo);
+                  pushEntry(formatSystemNotice(`Boosted ${selectedHyp.title.slice(0, 40)} to Elo ${newElo}`));
+                  closeModal();
+                }}
+                onCancel={closeModal}
+              />
+            )}
+            {activeModal === "inject" && (
+              <InjectModal
+                onConfirm={(title, content) => {
+                  injectHypothesis(memory, {
+                    sessionId: sessionId!,
+                    title,
+                    summary: "",
+                    content,
+                    generationRound: stats?.currentRound ?? 0,
+                  });
+                  pushEntry(formatSystemNotice(`Injected: ${title.slice(0, 40)}`));
+                  closeModal();
+                }}
+                onCancel={closeModal}
+              />
+            )}
+            {activeModal === "run" && (
+              <RunModal
+                onConfirm={async (goalText, name) => {
+                  closeModal();
+                  await startSessionWithEcho(goalText, name ? { name } : undefined);
+                }}
+                onCancel={closeModal}
+              />
+            )}
+            {activeModal === "budget" && (
+              <BudgetModal
+                currentBudget={budgetTokens}
+                onConfirm={(newBudget) => {
+                  process.env.COMPUTE_BUDGET_TOKENS = String(newBudget);
+                  pushEntry(formatSystemNotice(
+                    `Budget set to ${newBudget.toLocaleString()} tokens.`,
+                    "success",
+                  ));
+                  closeModal();
+                }}
+                onCancel={closeModal}
+              />
+            )}
+            {activeModal === "strategy" && (
+              <StrategyModal
+                weights={supervisor?.getCurrentWeights() ?? {
+                  generation: 1, reflection: 0, ranking: 0,
+                  evolution: 0, proximity: 0, meta_review: 0,
+                }}
+                onCancel={closeModal}
+              />
+            )}
 
-        <InputBar
-          active={activeModal === null}
-          appContext={appContext}
-          onRoute={handleRoute}
-          onPaletteChange={setPaletteOpen}
-        />
-
-        <Footer
-          hasSession={hasSession}
-          paused={paused}
-          completed={completed}
-        />
-      </Box>
-    </Box>
+            {/* Action modals */}
+            {activeModal === "export" && (
+              <ExportModal
+                onConfirm={(format, outputPath) => {
+                  const targetId = (modalData as { sessionId?: string } | null)?.sessionId ?? sessionId!;
+                  closeModal();
+                  setModalData(null);
+                  exportCommand(targetId, { format, output: outputPath }).then(() => {
+                    pushEntry(formatSystemNotice(`Session exported as ${format}.`, "success"));
+                  }).catch((err) => {
+                    pushEntry(formatSystemNotice(`Export failed: ${(err as Error).message}`, "error"));
+                  });
+                }}
+                onCancel={() => { closeModal(); setModalData(null); }}
+              />
+            )}
+            {activeModal === "feedback" && (
+              <FeedbackModal
+                hypotheses={allHypotheses.map((h) => ({ id: h.id, title: h.title }))}
+                onConfirm={(data) => {
+                  const reward = extractRewardFromFeedback(
+                    data.feedbackText,
+                    data.noveltyScore ?? undefined,
+                    data.correctnessScore ?? undefined,
+                    data.testabilityScore ?? undefined,
+                  );
+                  memory.saveExperimentalFeedback({
+                    id: uuidv4(),
+                    hypothesisId: data.hypothesisId,
+                    sessionId: sessionId!,
+                    feedbackText: data.feedbackText,
+                    noveltyScore: data.noveltyScore,
+                    correctnessScore: data.correctnessScore,
+                    testabilityScore: data.testabilityScore,
+                    metadata: {},
+                    computedReward: reward,
+                    recordedBy: "human",
+                    createdAt: new Date(),
+                  });
+                  pushEntry(formatSystemNotice("Feedback saved.", "success"));
+                  closeModal();
+                }}
+                onCancel={closeModal}
+              />
+            )}
+            {activeModal === "design" && (
+              <DesignModal
+                sessionId={sessionId!}
+                hypotheses={allHypotheses}
+                onDone={(entry) => {
+                  pushEntry({
+                    id: uuidv4(),
+                    kind: "block",
+                    title: entry.title,
+                    lines: [
+                      entry.hypothesisTitle.slice(0, 80),
+                      "",
+                      ...entry.steps.slice(0, 20),
+                    ],
+                    color: "permission",
+                  });
+                }}
+                onCancel={closeModal}
+              />
+            )}
+            {activeModal === "sessions" && (
+              <SessionsModal
+                sessions={allSessions}
+                activeSessionId={sessionId}
+                onView={(id) => {
+                  pushEntry(formatSessionResults(memory, id));
+                  closeModal();
+                }}
+                onOverview={(id) => {
+                  for (const entry of formatOverview(memory, id)) pushEntry(entry);
+                  closeModal();
+                }}
+                onExport={(id) => {
+                  openModal("export", { sessionId: id });
+                }}
+                onResume={(id) => {
+                  const target = memory.getSession(id);
+                  if (!target) { closeModal(); return; }
+                  if (id === sessionId) {
+                    if (paused) {
+                      togglePause();
+                    } else {
+                      showToast("Already on this session.", "info");
+                    }
+                    closeModal();
+                    return;
+                  }
+                  if (target.status === "completed") {
+                    showToast("Session completed — press enter to view results.", "info");
+                    closeModal();
+                    return;
+                  }
+                  if (supervisor && !paused && !completed) {
+                    showToast("Stop the current session first (/stop).", "error");
+                    closeModal();
+                    return;
+                  }
+                  closeModal();
+                  resumeSession(id).catch((err) => {
+                    pushEntry(formatSystemNotice(`Resume failed: ${(err as Error).message}`, "error"));
+                  });
+                }}
+                onDelete={(ids) => {
+                  const names = ids.map((id) => memory.getSession(id)?.name ?? id.slice(0, 8));
+                  for (const id of ids) memory.deleteSession(id);
+                  pushEntry({
+                    id: uuidv4(),
+                    kind: "block",
+                    title: `Deleted ${ids.length} session(s)`,
+                    lines: names.map((n) => `  ⨯ ${n}`),
+                    color: "error",
+                  });
+                  closeModal();
+                }}
+                onCancel={closeModal}
+              />
+            )}
+            {activeModal === "login" && (
+              <LoginModal
+                provider={
+                  ((modalData as { provider?: "consensus" | "scite" | "all" } | null)?.provider) ?? "all"
+                }
+                onDone={(lines, success) => {
+                  closeModal();
+                  setModalData(null);
+                  pushEntry({
+                    id: uuidv4(),
+                    kind: "block",
+                    title: "Authentication",
+                    lines,
+                    color: success ? "success" : "error",
+                  });
+                }}
+              />
+            )}
+          </>
+        }
+        bottom={
+          <>
+            <NotificationBar />
+            <InputBar
+              active={activeModal === null}
+              onRoute={handleRoute}
+              onPaletteChange={setPaletteOpen}
+              onScrollUp={() => listRef.current?.scrollUp()}
+              onScrollDown={() => listRef.current?.scrollDown()}
+            />
+            <Footer
+              hasSession={hasSession}
+              paused={paused}
+              completed={completed}
+            />
+          </>
+        }
+      />
+    </>
   );
 }

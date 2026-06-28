@@ -53,7 +53,9 @@ function agentColor(agent?: string): string | undefined {
 
 // Each entry is rendered inside Ink's <Static>. It is printed exactly once
 // and never re-rendered — that's what keeps the REPL flicker-free.
-export function TranscriptItem({ entry }: { entry: TranscriptEntry }) {
+// `isSelected` is honoured when the entry is rendered by the
+// VirtualMessageList (live-frame windowed list); <Static> callers omit it.
+export function TranscriptItem({ entry, isSelected }: { entry: TranscriptEntry; isSelected?: boolean }) {
   switch (entry.kind) {
     case "welcome":
       // Rendered as its own <Static> item — handled by App.tsx which renders
@@ -64,7 +66,9 @@ export function TranscriptItem({ entry }: { entry: TranscriptEntry }) {
       const ac = agentColor(entry.agent);
       return (
         <Box paddingX={1}>
-          <Text dimColor>⏺ </Text>
+          {isSelected
+            ? <Text color="claude" bold>▶ </Text>
+            : <Text dimColor>⏺ </Text>}
           {entry.agent && <Text color={ac}>{entry.agent.padEnd(24)}</Text>}
           <Text color="text">{entry.text}</Text>
         </Box>

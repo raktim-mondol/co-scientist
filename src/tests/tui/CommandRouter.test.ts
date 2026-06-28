@@ -7,6 +7,7 @@ import {
   registerCommand,
   resetRegistry,
   getSuggestions,
+  fuzzySubsequenceMatch,
   type AppContext,
   type CommandHandler,
   type RouteResult,
@@ -22,7 +23,7 @@ function createMockContext(overrides?: Partial<AppContext>): AppContext {
     supervisor: null,
     emitter: null,
     openModal: () => {},
-    showToast: () => {},
+    showToast: () => {}, cycleTheme: () => {},
     startSession: async () => {},
     resumeSession: async () => {},
     stopSession: () => {},
@@ -215,5 +216,51 @@ describe("getSuggestions()", () => {
     const ctxWithSession = createMockContext({ sessionId: "s1" });
     const suggestionsActive = getSuggestions("/", ctxWithSession);
     expect(suggestionsActive[0].active).toBe(true);
+  });
+});
+
+describe("fuzzySubsequenceMatch", () => {
+  it("matches contiguous prefix", () => {
+    expect(fuzzySubsequenceMatch("help", "help")).toBe(true);
+  });
+
+  it("matches sequential non-contiguous chars", () => {
+    expect(fuzzySubsequenceMatch("gp", "graph")).toBe(true);
+    expect(fuzzySubsequenceMatch("st", "stop")).toBe(true);
+  });
+
+  it("rejects out-of-order chars", () => {
+    expect(fuzzySubsequenceMatch("pg", "graph")).toBe(false);
+  });
+
+  it("rejects chars not in name", () => {
+    expect(fuzzySubsequenceMatch("zx", "graph")).toBe(false);
+  });
+
+  it("empty query matches everything", () => {
+    expect(fuzzySubsequenceMatch("", "anything")).toBe(true);
+  });
+
+  it("query longer than name is rejected", () => {
+    expect(fuzzySubsequenceMatch("toolong", "short")).toBe(false);
+  });
+});
+
+describe("/theme command", () => {
+  it("is registered and calls cycleTheme", async () => {
+    // Side-effect import registers the command
+    await import("../../cli/tui/commands/theme.js");
+    const themeHandler = getSuggestions; // Not needed — check registration
+    const { getCommand } = await import("../../cli/tui/CommandRouter.js");
+    const cmd = getCommand("theme");
+    expect(cmd).toBeDefined();
+    expect(cmd!.name).toBe("theme");
+    expect(cmd!.category).toBe("System");
+    let cycled = false;
+    const result = await cmd!.execute([], createMockContext({
+      cycleTheme: () => { cycled = true; },
+    }));
+    expect(cycled).toBe(true);
+    expect(result.type).toBe("immediate");
   });
 });

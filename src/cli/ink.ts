@@ -30,7 +30,7 @@ export { default as Text } from "./design-system/ThemedText.js";
 export type { Props as TextProps } from "./design-system/ThemedText.js";
 
 // Re-export theme hooks and types
-export { ThemeProvider, useTheme, useThemeSetting } from "./design-system/ThemeProvider.js";
+export { ThemeProvider, useTheme, useThemeSetting, useCycleTheme } from "./design-system/ThemeProvider.js";
 export type { Theme, ThemeName, ThemeSetting } from "./design-system/theme.js";
 
 // Re-export color utility

@@ -1,25 +1,9 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions.js";
-import { getConfig, logger } from "../config.js";
-
-export interface LLMUsage {
-  promptTokens: number;
-  completionTokens: number;
-  totalTokens: number;
-}
-
-export interface LLMResponse {
-  content: string;
-  usage: LLMUsage;
-}
-
-interface DeepSeekChatParams {
-  messages: ChatCompletionMessageParam[];
-  maxTokens?: number;
-  temperature?: number;
-  /** When true, instructs the model to return valid JSON via response_format */
-  jsonMode?: boolean;
-}
+import { getConfig } from "../config.js";
+import { logger } from "../util/logger.js";
+import type { LLMProvider, ChatParams, LLMResponse } from "./provider.js";
+import { LocalEmbeddingClient } from "./embedding.js";
 
 /**
  * Build the DeepSeek request body. Pure and exported for testing.

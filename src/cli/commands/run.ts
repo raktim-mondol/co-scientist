@@ -24,8 +24,6 @@ interface RunOptions {
   maxRounds?: string;
   budget?: string;
   seed?: string;
-  tui?: boolean;
-  interactive?: boolean;
 }
 
 export async function runCommand(options: RunOptions): Promise<void> {
@@ -54,148 +52,8 @@ export async function runCommand(options: RunOptions): Promise<void> {
   // Get research goal
   let rawGoal = options.goal;
 
-  // ── Interactive / empty-state mode ─────────────────────────────────────
-  const useTui = options.tui !== false && Boolean(process.stdout.isTTY);
-  const interactive = options.interactive === true;
+  const useTui = Boolean(process.stdout.isTTY);
 
-  if (interactive && !rawGoal) {
-    // Initialize DB
-    const initSpinner = ora("Initializing database...").start();
-    await runMigrations();
-    initSpinner.succeed("Database ready");
-
-    // Initialize MCP tools
-    const acProvider = getMCPManager().providerPriority()[0];
-    const acLabel = acProvider.charAt(0).toUpperCase() + acProvider.slice(1);
-    const mcpSpinner = ora(`Connecting to ${acLabel} MCP (academic search)...`).start();
-    try {
-      await getMCPManager().initialize();
-      mcpSpinner.succeed(`${acLabel} MCP connected`);
-    } catch {
-      mcpSpinner.warn(`${acLabel} MCP connection degraded — academic search may be limited`);
-    }
-
-    const memory = getContextStore();
-    const budgetTokens = getConfig().compute.budgetTokens;
-
-    // Closure variables set by onStartSession, read by other callbacks
-    let currentSupervisor: SupervisorAgent | null = null;
-    let currentSessionId: string | null = null;
-
-    // The TUI now owns the screen: silence the logger and clear any init
-    // output (spinners, MCP logs) so only the TUI renders.
-    setLoggerSilenced(true);
-    process.stdout.write("\x1B[2J\x1B[H"); // clear screen + cursor home
-
-    const tui = renderTUI({
-      memory,
-      sessionId: null,
-      goal: null,
-      supervisor: null,
-      emitter: null,
-      startTime: null,
-      budgetTokens,
-      onStartSession: async (goalText, opts): Promise<SessionStartResult> => {
-        const goal: ResearchGoal = {
-          id: uuidv4(),
-          rawGoal: goalText.trim(),
-          constraints: {
-            noveltyRequired: true,
-            allowedMethodologies: [],
-            excludedMethodologies: [],
-            targetOrganisms: [],
-          },
-          evaluationCriteria: {
-            noveltyWeight: 0.35,
-            correctnessWeight: 0.35,
-            testabilityWeight: 0.20,
-            impactWeight: 0.10,
-            customCriteria: [],
-          },
-          outputFormat: "standard",
-          attachedDocuments: [],
-          expertHypotheses: [],
-          createdAt: new Date(),
-        };
-
-        const supervisor = new SupervisorAgent();
-        const emitter = new EventEmitter();
-        supervisor.setEmitter(emitter);
-
-        const name = opts?.name || `session-${new Date().toISOString().slice(0, 10)}`;
-        const sessionId = await supervisor.initSession(goal, name);
-
-        // Store for other callbacks
-        currentSupervisor = supervisor;
-        currentSessionId = sessionId;
-
-        // Don't write to the console here — the TUI owns the screen. The goal
-        // and progress are shown in the TUI; errors surface via emitter 'error'.
-        supervisor.run(sessionId).catch(() => {
-          // Error is surfaced via the emitter 'error' event (handled in App).
-        });
-
-        return { sessionId, supervisor, emitter };
-      },
-      onStop: () => {
-        currentSupervisor?.stop();
-      },
-      onTogglePause: () => {
-        if (!currentSupervisor) return false;
-        if (currentSupervisor.isPaused()) {
-          currentSupervisor.resume();
-          return false;
-        }
-        currentSupervisor.pause();
-        return true;
-      },
-      onQuit: () => {
-        currentSupervisor?.stop();
-        if (currentSessionId) {
-          memory.updateSessionStatus(currentSessionId, "paused");
-        }
-        closeDb();
-      },
-    });
-
-    // ── Graceful shutdown ──────────────────────────────────────────────────
-    let shuttingDown = false;
-    const gracefulShutdown = (signal: string) => {
-      if (shuttingDown) return;
-      shuttingDown = true;
-      tui.unmount();
-      setLoggerSilenced(false); // TUI is gone — restore console logging
-      console.log(color("warning")(`\n\n⏸  ${signal} received — shutting down...`));
-      currentSupervisor?.stop();
-      if (currentSessionId) {
-        try {
-          memory.updateSessionStatus(currentSessionId, "paused");
-        } catch { /* ignore */ }
-      }
-      try {
-        closeDb();
-        console.log(color("inactive")("  Database checkpointed and closed."));
-      } catch { /* ignore */ }
-      process.exit(0);
-    };
-
-    process.on("SIGINT", () => gracefulShutdown("SIGINT"));
-    process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
-    process.on("SIGHUP", () => gracefulShutdown("SIGHUP"));
-
-    await tui.waitUntilExit();
-    setLoggerSilenced(false); // TUI exited normally — restore console logging
-
-    // Clean up signal handlers after normal exit
-    process.removeAllListeners("SIGINT");
-    process.removeAllListeners("SIGTERM");
-    process.removeAllListeners("SIGHUP");
-
-    await getMCPManager().cleanup();
-    return;
-  }
-
-  // Get research goal (existing non-interactive flow continues below)
   if (!rawGoal) {
     const { goal } = await inquirer.prompt([
       {
@@ -306,7 +164,7 @@ export async function runCommand(options: RunOptions): Promise<void> {
       onStartSession: async (_goal, _opts): Promise<SessionStartResult> => {
         // Non-interactive path: session already exists. /run is inactive while
         // a session is running, but if the session is stopped, start a new one.
-        throw new Error("Starting a new session from within a non-interactive TUI is not supported. Please quit and use 'co-scientist run --interactive'.");
+        throw new Error("Starting a new session from within a running TUI is not supported. Please quit and run 'co-scientist' to start a new session.");
       },
       onStop: () => {
         supervisor.stop();
@@ -325,7 +183,7 @@ export async function runCommand(options: RunOptions): Promise<void> {
       },
     });
   } else {
-    // Plain-log path (no TTY / --no-interactive): print the banner and goal
+    // Plain-log path (no TTY): print the banner and goal
     // to the console since there is no TUI to host them.
     printBanner();
     console.log(color("warning")("\n📋 Research Goal:\n") + color("text")(rawGoal.trim()));

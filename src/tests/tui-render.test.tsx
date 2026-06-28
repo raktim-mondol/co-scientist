@@ -60,7 +60,7 @@ describe("TUI headless render", () => {
     // A completed session must stop animating, otherwise the Spinner's 80ms
     // interval re-renders the whole frame forever and the screen flickers.
     const f = wrap(liveStatus("completed")).lastFrame() ?? "";
-    expect(f).toContain("✓ complete");
+    expect(f).toContain("✓ COMPLETE");
     expect(SPINNER.some((c) => f.includes(c))).toBe(false);
   });
 
@@ -111,8 +111,8 @@ describe("CommandPalette windowing (flicker guard)", () => {
   it("caps the number of visible rows far below the full list", () => {
     const f = wrap(palette(makeSuggestions(26), 0)).lastFrame() ?? "";
     const shown = makeSuggestions(26).filter((s) => f.includes(s.name)).length;
-    // Windowed to at most MAX_ITEMS (8), nowhere near all 26.
-    expect(shown).toBeLessThanOrEqual(8);
+    // Windowed to at most paletteMaxVisible (12 at 24 rows), nowhere near all 26.
+    expect(shown).toBeLessThanOrEqual(12);
     expect(shown).toBeGreaterThan(0);
     // Count indicator tells the user there are more.
     expect(f).toContain("/26");

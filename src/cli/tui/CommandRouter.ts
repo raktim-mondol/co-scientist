@@ -1,7 +1,10 @@
-import type { ContextStore } from "../../memory/contextStore.js";
-import type { SupervisorAgent } from "../../agents/supervisor.js";
-import type { EventEmitter } from "events";
 import type { TranscriptEntry } from "./Transcript.js";
+
+// Re-export the command-facing context type from its new home in
+// contexts/AppContext.tsx (Phase 3). Existing imports of `AppContext` from
+// this module keep working.
+export type { AppContext } from "./contexts/AppContext.js";
+import type { AppContext } from "./contexts/AppContext.js";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -18,23 +21,6 @@ export type ModalName =
   | "strategy"
   | "login"
   | null;
-
-export interface AppContext {
-  memory: ContextStore;
-  sessionId: string | null;
-  goal: string | null;
-  supervisor: SupervisorAgent | null;
-  emitter: EventEmitter | null;
-  openModal: (modal: ModalName, data?: unknown) => void;
-  showToast: (message: string, type?: "success" | "error" | "info") => void;
-  startSession: (goal: string, opts?: { name?: string; budget?: number; maxHypotheses?: number }) => Promise<void>;
-  resumeSession: (sessionId: string) => Promise<void>;
-  stopSession: () => void;
-  togglePause: () => boolean;
-  paused: boolean;
-  /** Push an entry into the transcript (<Static> scrollback). App.tsx wires this. */
-  pushEntry: (entry: TranscriptEntry) => void;
-}
 
 export interface CommandSuggestion {
   name: string;
@@ -122,13 +108,44 @@ export async function route(
 
 // ─── Suggestions ───────────────────────────────────────────────────────────────
 
+/**
+ * Returns true when every character of `query` appears in `name` in order
+ * (subsequence match). E.g. "gp" is a fuzzy subsequence match for "graph"
+ * even though "graph".includes("gp") is false.
+ */
+export function fuzzySubsequenceMatch(query: string, name: string): boolean {
+  let qi = 0;
+  for (let ni = 0; ni < name.length && qi < query.length; ni++) {
+    if (name[ni] === query[qi]) qi++;
+  }
+  return qi === query.length;
+}
+
 export function getSuggestions(partial: string, ctx: AppContext): CommandSuggestion[] {
   if (!partial.startsWith("/")) return [];
   const query = partial.slice(1).toLowerCase();
   const all = getAllCommands();
-  const matching = query
-    ? all.filter((c) => c.name.startsWith(query) || c.name.includes(query))
-    : all;
+  if (!query) {
+    return all.map((c) => ({
+      name: `/${c.name}`,
+      description: c.description,
+      category: c.category,
+      active: c.activeWhen ? c.activeWhen(ctx) : true,
+    }));
+  }
+
+  // Tier 1: prefix or substring matches (existing behavior, preserved).
+  const tier1 = all.filter(
+    (c) => c.name.startsWith(query) || c.name.includes(query),
+  );
+
+  // Tier 2: fuzzy subsequence matches that aren't already in tier 1.
+  const tier1Names = new Set(tier1.map((c) => c.name));
+  const tier2 = all.filter(
+    (c) => !tier1Names.has(c.name) && fuzzySubsequenceMatch(query, c.name),
+  );
+
+  const matching = [...tier1, ...tier2];
   return matching.map((c) => ({
     name: `/${c.name}`,
     description: c.description,

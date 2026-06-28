@@ -1,27 +1,27 @@
 import React, { useState, useEffect } from "react";
 import { Box, Text, useInput } from "../ink.js";
-import { Toast } from "./Toast.js";
 import { CommandPalette } from "./CommandPalette.js";
-import type { AppContext, RouteResult } from "./CommandRouter.js";
+import type { RouteResult } from "./CommandRouter.js";
 import { getSuggestions, route } from "./CommandRouter.js";
+import { useAppContext } from "./contexts/AppContext.js";
 
 interface InputBarProps {
   active: boolean;
-  appContext: AppContext;
   onRoute: (result: RouteResult | { type: "session_start"; goal: string }) => void;
   /** Notifies the parent when the command palette opens/closes, so it can
    *  collapse the live status region and keep the frame within the viewport. */
   onPaletteChange?: (open: boolean) => void;
+  /** j (empty input) → scroll transcript down. */
+  onScrollDown?: () => void;
+  /** k (empty input) → scroll transcript up. */
+  onScrollUp?: () => void;
 }
 
-export function InputBar({ active, appContext, onRoute, onPaletteChange }: InputBarProps) {
+export function InputBar({ active, onRoute, onPaletteChange, onScrollDown, onScrollUp }: InputBarProps) {
+  const appContext = useAppContext();
   const [text, setText] = useState("");
   const [cursor, setCursor] = useState(0);
   const [cursorVisible, setCursorVisible] = useState(true);
-  const [toastMessage, setToastMessage] = useState("");
-  const [toastType, setToastType] = useState<"success" | "error" | "info">("info");
-  const [toastVisible, setToastVisible] = useState(false);
-  const [toastKey, setToastKey] = useState(0);
   const [paletteDismissed, setPaletteDismissed] = useState(false);
   const [paletteIndex, setPaletteIndex] = useState(0);
 
@@ -56,31 +56,25 @@ export function InputBar({ active, appContext, onRoute, onPaletteChange }: Input
     return () => clearInterval(id);
   }, []);
 
-  // Local toast helper
-  const showToast = (message: string, type: "success" | "error" | "info" = "info") => {
-    if (toastVisible) {
-      setToastVisible(false);
+  // Immediate / error route results go through the notification context
+  // (NotificationBar renders them above the prompt), replacing the old
+  // local Toast that rendered inline above the border box.
+  const showRouteToast = (result: RouteResult) => {
+    if (
+      (result.type === "immediate" || result.type === "error") &&
+      result.message
+    ) {
+      appContext.showToast(result.message, result.type === "error" ? "error" : "success");
     }
-    setTimeout(() => {
-      setToastMessage(message);
-      setToastType(type);
-      setToastKey((k) => k + 1);
-      setToastVisible(true);
-    }, 0);
   };
-
-  const dismissToast = () => setToastVisible(false);
 
   useInput(
     (input, key) => {
-      // Escape: close palette first, then dismiss toast, otherwise close modal
+      // Escape: close palette first, otherwise no-op (global keyboard
+      // engine handles modal close via `esc`).
       if (key.escape) {
         if (paletteVisible) {
           setPaletteDismissed(true);
-          return;
-        }
-        if (toastVisible) {
-          dismissToast();
           return;
         }
         return;
@@ -121,9 +115,7 @@ export function InputBar({ active, appContext, onRoute, onPaletteChange }: Input
         setText("");
         setCursor(0);
         route(cmd, appContext).then((result) => {
-          if ((result.type === "immediate" || result.type === "error") && result.message) {
-            showToast(result.message, result.type === "error" ? "error" : "success");
-          }
+          showRouteToast(result);
           onRoute(result);
         });
         return;
@@ -158,6 +150,11 @@ export function InputBar({ active, appContext, onRoute, onPaletteChange }: Input
         return;
       }
 
+      // j/k transcript navigation when the input is empty. As soon as the user
+      // types anything, j/k become text characters — no conflict with entry.
+      if (!text && input === "j" && !key.ctrl && !key.meta) { onScrollDown?.(); return; }
+      if (!text && input === "k" && !key.ctrl && !key.meta) { onScrollUp?.(); return; }
+
       // Printable characters: insert at cursor
       if (input && !key.ctrl && !key.meta && input.length === 1 && input >= " ") {
         setText((v) => v.slice(0, cursor) + input + v.slice(cursor));
@@ -169,18 +166,14 @@ export function InputBar({ active, appContext, onRoute, onPaletteChange }: Input
 
   return (
     <Box flexDirection="column">
-      {toastVisible && (
-        <Toast
-          key={toastKey}
-          message={toastMessage}
-          type={toastType}
-          visible={toastVisible}
-          onDismiss={dismissToast}
-        />
-      )}
-
-      {/* Rounded bordered prompt — x_code style */}
-      <Box borderStyle="round" borderColor="claude" paddingX={1}>
+      {/* Rounded bordered prompt — x_code style.
+          Uses borderFocus (brand) border when the palette is open or text is being
+          typed, and promptBorder (gray) otherwise — a subtle focus affordance. */}
+      <Box
+        borderStyle="round"
+        borderColor={paletteVisible || text.length > 0 ? "borderFocus" : "promptBorder"}
+        paddingX={1}
+      >
         <Text color="claude" bold>&gt; </Text>
         <Text color="text">{text.slice(0, cursor)}</Text>
         {cursor < text.length ? (

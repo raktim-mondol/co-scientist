@@ -2,7 +2,12 @@ import React from "react";
 import { Box, Text } from "../ink.js";
 import { Spinner } from "./Spinner.js";
 import { verbForTask } from "./spinnerVerbs.js";
-import type { ProgressStats } from "./useSessionData.js";
+import { StatusIcon } from "../design-system/StatusIcon.js";
+import type { StatusState } from "../design-system/StatusIcon.js";
+import { ProgressBar } from "../design-system/ProgressBar.js";
+import { Divider } from "../design-system/Divider.js";
+import { useLayout } from "./hooks/useLayout.js";
+import type { ProgressStats } from "./hooks/useEventDrivenSessionData.js";
 
 export type SessionState = "running" | "paused" | "completed" | null;
 
@@ -37,13 +42,8 @@ function formatTokens(n: number): string {
   return `${(n / 1_000_000).toFixed(2)}M`;
 }
 
-function gauge(pct: number, width = 10): string {
-  const filled = Math.max(0, Math.min(width, Math.round((pct / 100) * width)));
-  return "▓".repeat(filled) + "░".repeat(width - filled);
-}
-
 // Live region that re-renders on each progress event: spinner + verb,
-// token gauge + elapsed time, and the top-10 leaderboard.
+// token gauge + elapsed time, and the adaptive leaderboard.
 // Only renders while a session is running/paused/completed.
 export function LiveStatus({
   sessionState,
@@ -57,31 +57,38 @@ export function LiveStatus({
   selected,
   compact,
 }: LiveStatusProps) {
+  const { leaderboardMax } = useLayout({
+    sessionActive: true,
+    leaderboardRows: leaderboard.length,
+    compact: !!compact,
+  });
+
   if (!sessionState) return null;
 
   const elapsed = startTime != null ? Math.round((now - startTime) / 1000) : 0;
   const timeStr = `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`;
   const tokens = stats?.tokensUsed ?? 0;
-  const pct = budgetTokens > 0 ? Math.round((tokens / budgetTokens) * 100) : 0;
+  const pct = budgetTokens > 0 ? Math.min(100, Math.round((tokens / budgetTokens) * 100)) : 0;
 
   const phase = stats?.phase ?? "generation";
   const verb = verbForTask(phase);
 
-  const isPaused = sessionState === "paused";
-  const isCompleted = sessionState === "completed";
+  // ── Status → StatusIcon state mapping ───────────────────────────────────
+  const statusState: StatusState =
+    sessionState === "completed" ? "completed"
+    : sessionState === "paused" ? "paused"
+    : "running";
 
-  // ── Spinner + verb line ────────────────────────────────────────────────
+  // ── Spinner / status line ───────────────────────────────────────────────
   const statusLine = (
     <Box paddingX={1}>
-      {isCompleted ? (
-        <Text color="success">✓ complete</Text>
-      ) : isPaused ? (
-        <Text color="warning">⏸ PAUSED</Text>
-      ) : (
+      {sessionState === "running" ? (
         <Box>
           <Spinner />
-          <Text color="claude"> {verb}</Text>
+          <Text color="agentActive"> {verb}</Text>
         </Box>
+      ) : (
+        <StatusIcon state={statusState} />
       )}
       <Text dimColor> · {timeStr}</Text>
       <Text dimColor> · {formatTokens(tokens)}</Text>
@@ -104,23 +111,37 @@ export function LiveStatus({
     return <Box flexDirection="column">{statusLine}</Box>;
   }
 
+  // Gold / silver / bronze for the podium, then default text for the rest.
+  const medalColor = (rank: number): string | undefined => {
+    if (rank === 0) return "gold";
+    if (rank === 1) return "silver";
+    if (rank === 2) return "bronze";
+    return undefined;
+  };
+
+  const medalGlyph = (rank: number): string => {
+    if (rank === 0) return "🥇";
+    if (rank === 1) return "🥈";
+    if (rank === 2) return "🥉";
+    return " ";
+  };
+
   // ── Leaderboard pane ───────────────────────────────────────────────────
-  const topN = leaderboard.slice(0, 10);
+  const topN = leaderboard.slice(0, leaderboardMax);
 
   return (
     <Box flexDirection="column">
-      {/* Separator */}
-      <Box paddingX={1}>
-        <Text dimColor>───</Text>
-      </Box>
-
+      <Divider />
       {statusLine}
 
-      {/* Token gauge bar */}
+      {/* Token gauge — Phase 5 ProgressBar replacing inline gauge() */}
       <Box paddingX={1}>
-        <Text dimColor>
-          {gauge(pct)} Tokens
-        </Text>
+        <ProgressBar
+          value={budgetTokens > 0 ? tokens / budgetTokens : 0}
+          width={10}
+          tone={pct > 90 ? "error" : pct > 70 ? "warning" : "neutral"}
+          label="Tokens"
+        />
         {goal && (
           <Text dimColor>
             {"  "}{sessionId ? `sess:${sessionId.slice(0, 8)}` : ""}
@@ -128,7 +149,7 @@ export function LiveStatus({
         )}
       </Box>
 
-      {/* Leaderboard */}
+      {/* Leaderboard — adaptive height via leaderboardMax */}
       {topN.length > 0 && (
         <Box flexDirection="column" marginTop={1}>
           <Box paddingX={1}>
@@ -137,10 +158,12 @@ export function LiveStatus({
           {topN.map((h, i) => {
             const isSel = i === selected;
             const elo = Math.round(h.eloRating ?? 1200);
+            const color = isSel ? "success" : medalColor(i);
+            const prefix = isSel ? "▶" : medalGlyph(i);
             return (
               <Box key={h.id ?? i} paddingX={1}>
-                <Text color={isSel ? "success" : undefined} wrap="truncate">
-                  {isSel ? "▶" : " "} #{i + 1} {h.title}
+                <Text color={color} wrap="truncate">
+                  {prefix} #{i + 1} {h.title}
                   {"  "}
                   <Text dimColor>Elo: {elo}</Text>
                 </Text>
@@ -157,10 +180,7 @@ export function LiveStatus({
         </Box>
       )}
 
-      {/* Spacer */}
-      <Box paddingX={1}>
-        <Text dimColor>───</Text>
-      </Box>
+      <Divider />
     </Box>
   );
 }

@@ -211,19 +211,43 @@ export function withRetry<T>(fn: () => T, maxRetries = 3): T {
   throw lastError ?? new Error("Retry exhausted with no error captured");
 }
 
+// ── Close hooks ───────────────────────────────────────────────────────────────────
+//
+// Modules that need to reset state when the DB closes (e.g. ContextStore)
+// register callbacks here. This replaces the old deferred dynamic import of
+// contextStore.js inside closeDb(), which was the source of the only circular
+// dependency between db/ and memory/.
+
+const _closeHooks: Array<() => void> = [];
+
+/** Register a callback to run just before the DB connection closes. */
+export function registerDbCloseHook(fn: () => void): void {
+  _closeHooks.push(fn);
+}
+
+/** Remove a previously registered close hook. */
+export function unregisterDbCloseHook(fn: () => void): void {
+  const i = _closeHooks.indexOf(fn);
+  if (i !== -1) _closeHooks.splice(i, 1);
+}
+
+/** Exported for test isolation only — returns a copy of the current hooks. */
+export function _getDbCloseHooks(): Array<() => void> {
+  return [..._closeHooks];
+}
+
 export function closeDb() {
   if (_sqlite) {
     // Run a final WAL checkpoint to fold everything back into the main DB
     try { _sqlite.query("PRAGMA wal_checkpoint(TRUNCATE)").run(); } catch {}
+    // Notify registered hooks before closing (e.g. resetContextStore)
+    for (const hook of _closeHooks) {
+      try { hook(); } catch { /* best-effort */ }
+    }
     _sqlite.close();
     _sqlite = null;
     _db = null;
     _cleanupLockFile();
-    // Reset the ContextStore singleton so it doesn't retain a stale DB handle.
-    // Import is deferred to avoid circular dependency (contextStore imports from us).
-    import("../memory/contextStore.js")
-      .then(m => m.resetContextStore())
-      .catch(() => { /* best-effort */ });
   }
 }
 

@@ -1,6 +1,16 @@
-import { eq, desc, and, sql, asc } from "drizzle-orm";
+// ContextStore — facade over the domain stores.
+//
+// Phase 2 of the clean-architecture refactor split this once-monolithic data
+// access layer into focused domain stores (session, hypothesis, review,
+// tournament, embedding, knowledge-graph, provenance, evidence, safety,
+// activity, feedback). This class is now a thin composite that instantiates
+// them and delegates every public method — so the 400+ call sites that use
+// `getContextStore().*` keep working unchanged.
+//
+// All query logic lives in src/memory/stores/*.ts; this file only wires it up.
+
 import { v4 as uuidv4 } from "uuid";
-import { getDb, getSqlite, withRetry, schema } from "../db/index.js";
+import { registerDbCloseHook, getDb, getSqlite } from "../db/index.js";
 import type { Hypothesis } from "../models/hypothesis.js";
 import type { HypothesisReview } from "../models/hypothesis.js";
 import type { TournamentMatch } from "../models/tournament.js";
@@ -9,355 +19,106 @@ import type { ResearchGoal, ResearchPlanConfig } from "../models/researchGoal.js
 import type { AgentTask } from "../models/agentTask.js";
 import type { ExperimentalFeedback } from "../models/feedback.js";
 import type { EvidenceSource } from "../models/evidence.js";
-import { cosineSimilarity } from "../util/vector.js";
 
-export interface SafetyAssessmentRow {
-  severity: string;
-  category: string;
-  reasoning: string;
-  decision: "allowed" | "quarantined";
-  threshold: string;
-  overriddenBy: string | null;
-  overrideReason: string | null;
-  overriddenAt: Date | null;
-  createdAt: Date;
-}
+import { SessionStore } from "./stores/sessionStore.js";
+import { HypothesisStore } from "./stores/hypothesisStore.js";
+import { ReviewStore } from "./stores/reviewStore.js";
+import { TournamentStore } from "./stores/tournamentStore.js";
+import { EmbeddingStore } from "./stores/embeddingStore.js";
+import { KnowledgeGraphStore } from "./stores/knowledgeGraphStore.js";
+import { ProvenanceStore } from "./stores/provenanceStore.js";
+import { EvidenceStore } from "./stores/evidenceStore.js";
+import { SafetyStore, type SafetyAssessmentRow } from "./stores/safetyStore.js";
+import { ActivityStore } from "./stores/activityStore.js";
+import { FeedbackStore } from "./stores/feedbackStore.js";
+
+export type { SafetyAssessmentRow };
 
 export class ContextStore {
+  // Raw handles — retained for backwards compatibility in case any caller
+  // reaches for them, though the domain stores own their own handles.
   private db = getDb();
-  // Raw sqlite3 handle — used for vec0 virtual table (not supported by Drizzle ORM)
   private sqlite = getSqlite();
+
+  private sessionStore = new SessionStore();
+  private hypothesisStore = new HypothesisStore();
+  private reviewStore = new ReviewStore();
+  private tournamentStore = new TournamentStore();
+  private embeddingStore = new EmbeddingStore();
+  private knowledgeGraphStore = new KnowledgeGraphStore();
+  private provenanceStore = new ProvenanceStore();
+  private evidenceStore = new EvidenceStore();
+  private safetyStore = new SafetyStore(this.hypothesisStore);
+  private activityStore = new ActivityStore();
+  private feedbackStore = new FeedbackStore();
 
   // ─── Sessions ─────────────────────────────────────────────────────────────
 
   createSession(name: string, goal: ResearchGoal): string {
-    const id = uuidv4();
-    const now = new Date();
-    // Retry on transient "database is locked" — can happen when a previous
-    // session's WAL checkpoint hasn't fully released the write lock.
-    withRetry(() => {
-      this.db.insert(schema.sessions).values({
-        id,
-        name,
-        status: "initializing",
-        researchGoalJson: JSON.stringify(goal),
-        statsJson: JSON.stringify({}),
-        createdAt: now,
-        updatedAt: now,
-      }).run();
-    });
-    return id;
+    return this.sessionStore.createSession(name, goal);
   }
-
   getSession(id: string): CoScientistSession | null {
-    const row = this.db
-      .select()
-      .from(schema.sessions)
-      .where(eq(schema.sessions.id, id))
-      .get();
-    if (!row) return null;
-    return this._rowToSession(row);
+    return this.sessionStore.getSession(id);
   }
-
-  /**
-   * Resolve a session by UUID, partial UUID, or name. Returns the session or null.
-   * Tries: exact UUID → partial UUID prefix → case-insensitive name.
-   */
   resolveSession(identifier: string): CoScientistSession | null {
-    // Try exact UUID first
-    const byId = this.getSession(identifier);
-    if (byId) return byId;
-
-    // Try partial UUID prefix match (min 4 chars to avoid false positives)
-    if (identifier.length >= 4 && /^[\da-f-]+$/i.test(identifier)) {
-      const rows = this.db
-        .select()
-        .from(schema.sessions)
-        .where(sql`${schema.sessions.id} LIKE ${identifier + "%"}`)
-        .orderBy(desc(schema.sessions.createdAt))
-        .all();
-      if (rows.length === 1) return this._rowToSession(rows[0]);
-      // Multiple prefix matches — ambiguous, fall through to name match
-    }
-
-    // Try by name (case-insensitive, most recent first)
-    const rows = this.db
-      .select()
-      .from(schema.sessions)
-      .where(sql`lower(${schema.sessions.name}) = lower(${identifier})`)
-      .orderBy(desc(schema.sessions.createdAt))
-      .all();
-    if (rows.length === 0) return null;
-    return this._rowToSession(rows[0]);
+    return this.sessionStore.resolveSession(identifier);
   }
-
-  /**
-   * Mark sessions stuck in "running" or "initializing" for >24h as "interrupted".
-   * Returns the count of cleaned-up sessions.
-   */
   cleanupStaleSessions(): number {
-    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const stmt = this.sqlite.query(
-      `UPDATE sessions SET status = 'interrupted', updated_at = ?1
-       WHERE status IN ('running', 'initializing') AND updated_at < ?2`
-    );
-    const result = stmt.run(new Date().toISOString(), cutoff.toISOString()) as unknown as { changes: number };
-    return result.changes ?? 0;
+    return this.sessionStore.cleanupStaleSessions();
   }
-
   getResearchGoal(sessionId: string): ResearchGoal | null {
-    const row = this.db
-      .select({ researchGoalJson: schema.sessions.researchGoalJson })
-      .from(schema.sessions)
-      .where(eq(schema.sessions.id, sessionId))
-      .get();
-    if (!row) return null;
-    try { return JSON.parse(row.researchGoalJson) as ResearchGoal; } catch { return null; }
+    return this.sessionStore.getResearchGoal(sessionId);
   }
-
   listSessions(): CoScientistSession[] {
-    const rows = this.db
-      .select()
-      .from(schema.sessions)
-      .orderBy(desc(schema.sessions.createdAt))
-      .all();
-    return rows.map((r) => this._rowToSession(r));
+    return this.sessionStore.listSessions();
   }
-
   countTournamentMatches(sessionId: string): number {
-    const row = this.db
-      .select({ count: sql<number>`count(*)` })
-      .from(schema.tournamentMatches)
-      .where(eq(schema.tournamentMatches.sessionId, sessionId))
-      .get();
-    return Number(row?.count ?? 0);
+    return this.sessionStore.countTournamentMatches(sessionId);
   }
-
   deleteSession(id: string): void {
-    // All child tables are deleted by sessionId in dependency order:
-    // FKs to hypotheses first, then FKs to sessions, then hypotheses, then sessions.
-    // This is both simpler and more robust than per-hypothesis iteration — it can't
-    // miss orphan rows or hypotheses added between the SELECT and the DELETE.
-    this.sqlite.transaction(() => {
-      // ── Tables with FK to hypotheses (must be deleted before hypotheses) ──────
-      // Also have sessionId FK — delete by sessionId so we hit every row for this
-      // session regardless of hypothesis state.
-      this.db.delete(schema.reviews).where(eq(schema.reviews.sessionId, id)).run();
-      this.db.delete(schema.claimCitations).where(eq(schema.claimCitations.sessionId, id)).run();
-      this.db.delete(schema.experimentalFeedback).where(eq(schema.experimentalFeedback.sessionId, id)).run();
-      this.db.delete(schema.safetyAssessments).where(eq(schema.safetyAssessments.sessionId, id)).run();
-      this.db.delete(schema.citationVerifications).where(eq(schema.citationVerifications.sessionId, id)).run();
-      this.db.delete(schema.rewardMemory).where(eq(schema.rewardMemory.sessionId, id)).run();
-
-      // tournament_matches and proximity_edges have hypothesis_a_id / hypothesis_b_id
-      // FKs to hypotheses. Rows from OTHER sessions can reference hypotheses in THIS
-      // session, so a plain DELETE BY sessionId is insufficient — we must also purge
-      // cross-session references via hypothesis_id JOINs.
-      this.db.delete(schema.tournamentMatches).where(eq(schema.tournamentMatches.sessionId, id)).run();
-      this.sqlite.query(
-        `DELETE FROM tournament_matches WHERE hypothesis_a_id IN (SELECT id FROM hypotheses WHERE session_id = ?) OR hypothesis_b_id IN (SELECT id FROM hypotheses WHERE session_id = ?)`,
-      ).run(id, id);
-      this.db.delete(schema.proximityEdges).where(eq(schema.proximityEdges.sessionId, id)).run();
-      this.sqlite.query(
-        `DELETE FROM proximity_edges WHERE hypothesis_a_id IN (SELECT id FROM hypotheses WHERE session_id = ?) OR hypothesis_b_id IN (SELECT id FROM hypotheses WHERE session_id = ?)`,
-      ).run(id, id);
-
-      // Tables that have an FK to hypotheses but NO sessionId column — delete by
-      // hypothesis_id via a JOIN so we don't need to select individual IDs.
-      this.sqlite.query(
-        `DELETE FROM vec_embeddings WHERE hypothesis_id IN (SELECT id FROM hypotheses WHERE session_id = ?)`,
-      ).run(id);
-      this.sqlite.query(
-        `DELETE FROM embedding_cache WHERE hypothesis_id IN (SELECT id FROM hypotheses WHERE session_id = ?)`,
-      ).run(id);
-
-      // ── Tables with FK to sessions only (no hypothesis FK) ────────────────────
-      this.db.delete(schema.sessionActivity).where(eq(schema.sessionActivity.sessionId, id)).run();
-      this.db.delete(schema.kgEdges).where(eq(schema.kgEdges.sessionId, id)).run();
-      this.db.delete(schema.kgNodes).where(eq(schema.kgNodes.sessionId, id)).run();
-      this.db.delete(schema.evidenceSources).where(eq(schema.evidenceSources.sessionId, id)).run();
-      this.db.delete(schema.agentTasks).where(eq(schema.agentTasks.sessionId, id)).run();
-
-      // ── Parent tables ─────────────────────────────────────────────────────────
-      this.db.delete(schema.hypotheses).where(eq(schema.hypotheses.sessionId, id)).run();
-      this.db.delete(schema.sessions).where(eq(schema.sessions.id, id)).run();
-    })();
+    return this.sessionStore.deleteSession(id);
   }
-
   updateSessionStatus(id: string, status: string): void {
-    this.db
-      .update(schema.sessions)
-      .set({ status, updatedAt: new Date() })
-      .where(eq(schema.sessions.id, id))
-      .run();
+    return this.sessionStore.updateSessionStatus(id, status);
   }
-
   updateSessionStats(id: string, stats: SessionStats): void {
-    this.db
-      .update(schema.sessions)
-      .set({ statsJson: JSON.stringify(stats), updatedAt: new Date() })
-      .where(eq(schema.sessions.id, id))
-      .run();
+    return this.sessionStore.updateSessionStats(id, stats);
   }
-
   savePlanConfig(sessionId: string, config: ResearchPlanConfig): void {
-    this.db
-      .update(schema.sessions)
-      .set({ planConfigJson: JSON.stringify(config), updatedAt: new Date() })
-      .where(eq(schema.sessions.id, sessionId))
-      .run();
+    return this.sessionStore.savePlanConfig(sessionId, config);
   }
-
   saveMetaReviewCritique(sessionId: string, critique: string): void {
-    this.db
-      .update(schema.sessions)
-      .set({ metaReviewCritique: critique, updatedAt: new Date() })
-      .where(eq(schema.sessions.id, sessionId))
-      .run();
+    return this.sessionStore.saveMetaReviewCritique(sessionId, critique);
   }
-
   saveResearchOverview(sessionId: string, overview: string): void {
-    this.db
-      .update(schema.sessions)
-      .set({
-        researchOverview: overview.trim().replace(/\n{3,}/g, "\n\n"),
-        status: "completed",
-        completedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(schema.sessions.id, sessionId))
-      .run();
+    return this.sessionStore.saveResearchOverview(sessionId, overview);
   }
-
   getMetaReviewCritique(sessionId: string): string | null {
-    const row = this.db
-      .select({ critique: schema.sessions.metaReviewCritique })
-      .from(schema.sessions)
-      .where(eq(schema.sessions.id, sessionId))
-      .get();
-    return row?.critique ?? null;
+    return this.sessionStore.getMetaReviewCritique(sessionId);
   }
-
   getPlanConfig(sessionId: string): ResearchPlanConfig | null {
-    const row = this.db
-      .select({ config: schema.sessions.planConfigJson })
-      .from(schema.sessions)
-      .where(eq(schema.sessions.id, sessionId))
-      .get();
-    if (!row?.config) return null;
-    try { return JSON.parse(row.config) as ResearchPlanConfig; } catch { return null; }
+    return this.sessionStore.getPlanConfig(sessionId);
   }
 
   // ─── Hypotheses ───────────────────────────────────────────────────────────
 
   saveHypothesis(hyp: Omit<Hypothesis, "id" | "createdAt" | "updatedAt">): Hypothesis {
-    const id = uuidv4();
-    const now = new Date();
-    const fullHyp: Hypothesis = {
-      ...hyp,
-      id,
-      createdAt: now,
-      updatedAt: now,
-    } as Hypothesis;
-
-    withRetry(() => {
-      this.db.insert(schema.hypotheses).values({
-        id,
-        sessionId: fullHyp.sessionId,
-        title: fullHyp.title,
-        summary: fullHyp.summary,
-        content: fullHyp.content,
-        rationale: fullHyp.rationale,
-        experimentalPlan: fullHyp.experimentalPlan ?? null,
-        noveltyAssessment: fullHyp.noveltyAssessment ?? null,
-        keyAssumptionsJson: JSON.stringify(fullHyp.keyAssumptions),
-        citationsJson: JSON.stringify(fullHyp.citations),
-        generationStrategy: fullHyp.generationStrategy,
-        eloRating: fullHyp.eloRating,
-        ratingDeviation: fullHyp.ratingDeviation ?? 350,
-        volatility: fullHyp.volatility ?? 0.06,
-        matchesPlayed: fullHyp.matchesPlayed,
-        wins: fullHyp.wins,
-        losses: fullHyp.losses,
-        draws: fullHyp.draws ?? 0,
-        status: fullHyp.status,
-        parentIdsJson: JSON.stringify(fullHyp.parentIds),
-        generationRound: fullHyp.generationRound,
-        createdAt: now,
-        updatedAt: now,
-      }).run();
-    });
-
-    return fullHyp;
+    return this.hypothesisStore.saveHypothesis(hyp);
   }
-
-  /**
-   * Update a hypothesis's Glicko-2 rating state after a match.
-   */
   updateHypothesisRating(
-    id: string,
-    rating: number,
-    rd: number,
-    volatility: number,
-    wins: number,
-    losses: number,
-    matchesPlayed: number,
-    draws: number = 0
+    id: string, rating: number, rd: number, volatility: number,
+    wins: number, losses: number, matchesPlayed: number, draws: number = 0
   ): void {
-    this.db
-      .update(schema.hypotheses)
-      .set({
-        eloRating: rating,
-        ratingDeviation: rd,
-        volatility,
-        wins,
-        losses,
-        draws,
-        matchesPlayed,
-        updatedAt: new Date(),
-      })
-      .where(eq(schema.hypotheses.id, id))
-      .run();
+    return this.hypothesisStore.updateHypothesisRating(id, rating, rd, volatility, wins, losses, matchesPlayed, draws);
   }
-
-  /**
-   * Atomic read-compute-write for Glicko-2 rating updates.
-   * Reads fresh state inside a transaction, applies the compute function,
-   * and writes back — preventing concurrent matches from overwriting each other.
-   */
   atomicGlicko2Update(
     id: string,
     compute: (current: { rating: number; rd: number; volatility: number; wins: number; losses: number; draws: number; matchesPlayed: number }) => { rating: number; rd: number; volatility: number; wins: number; losses: number; draws: number; matchesPlayed: number }
   ): void {
-    this.sqlite.transaction(() => {
-      const hyp = this.getHypothesis(id);
-      if (!hyp) return;
-      const current = {
-        rating: hyp.eloRating,
-        rd: hyp.ratingDeviation ?? 350,
-        volatility: hyp.volatility ?? 0.06,
-        wins: hyp.wins,
-        losses: hyp.losses,
-        draws: hyp.draws ?? 0,
-        matchesPlayed: hyp.matchesPlayed,
-      };
-      const updated = compute(current);
-      this.updateHypothesisRating(
-        id, updated.rating, updated.rd, updated.volatility,
-        updated.wins, updated.losses, updated.matchesPlayed, updated.draws
-      );
-    })();
+    return this.hypothesisStore.atomicGlicko2Update(id, compute);
   }
-
-  /**
-   * Atomic dual Glicko-2 update for a match between two hypotheses.
-   * Reads BOTH hypotheses' pre-match state inside a single transaction,
-   * computes BOTH updates from the same snapshot, and writes both back.
-   * This ensures the zero-sum invariant: newA + newB ≈ oldA + oldB.
-   */
   atomicDualGlicko2Update(
-    idA: string,
-    idB: string,
+    idA: string, idB: string,
     compute: (
       stateA: { rating: number; rd: number; volatility: number; wins: number; losses: number; draws: number; matchesPlayed: number },
       stateB: { rating: number; rd: number; volatility: number; wins: number; losses: number; draws: number; matchesPlayed: number }
@@ -366,254 +127,61 @@ export class ContextStore {
       newB: { rating: number; rd: number; volatility: number; wins: number; losses: number; draws: number; matchesPlayed: number };
     }
   ): void {
-    this.sqlite.transaction(() => {
-      const hypA = this.getHypothesis(idA);
-      const hypB = this.getHypothesis(idB);
-      if (!hypA || !hypB) return;
-      const stateA = {
-        rating: hypA.eloRating, rd: hypA.ratingDeviation ?? 350, volatility: hypA.volatility ?? 0.06,
-        wins: hypA.wins, losses: hypA.losses, draws: hypA.draws ?? 0, matchesPlayed: hypA.matchesPlayed,
-      };
-      const stateB = {
-        rating: hypB.eloRating, rd: hypB.ratingDeviation ?? 350, volatility: hypB.volatility ?? 0.06,
-        wins: hypB.wins, losses: hypB.losses, draws: hypB.draws ?? 0, matchesPlayed: hypB.matchesPlayed,
-      };
-      const { newA, newB } = compute(stateA, stateB);
-      this.updateHypothesisRating(idA, newA.rating, newA.rd, newA.volatility, newA.wins, newA.losses, newA.matchesPlayed, newA.draws);
-      this.updateHypothesisRating(idB, newB.rating, newB.rd, newB.volatility, newB.wins, newB.losses, newB.matchesPlayed, newB.draws);
-    })();
+    return this.hypothesisStore.atomicDualGlicko2Update(idA, idB, compute);
   }
-
   updateHypothesisStatus(id: string, status: string): void {
-    this.db
-      .update(schema.hypotheses)
-      .set({ status, updatedAt: new Date() })
-      .where(eq(schema.hypotheses.id, id))
-      .run();
+    return this.hypothesisStore.updateHypothesisStatus(id, status);
   }
-
-  /** Reset hypotheses stuck in "reviewing" from a previous crash back to "pending_review". */
   resetStuckReviewingHypotheses(sessionId: string): void {
-    this.db
-      .update(schema.hypotheses)
-      .set({ status: "pending_review", updatedAt: new Date() })
-      .where(
-        and(
-          eq(schema.hypotheses.sessionId, sessionId),
-          eq(schema.hypotheses.status, "reviewing")
-        )
-      )
-      .run();
+    return this.hypothesisStore.resetStuckReviewingHypotheses(sessionId);
   }
-
   getHypothesis(id: string): Hypothesis | null {
-    const row = this.db
-      .select()
-      .from(schema.hypotheses)
-      .where(eq(schema.hypotheses.id, id))
-      .get();
-    if (!row) return null;
-    return this._rowToHypothesis(row);
+    return this.hypothesisStore.getHypothesis(id);
   }
-
-  /**
-   * Lightweight batch lookup — returns minimal hypothesis data without the
-   * N+1 feedback count subquery.  Used by the diversity gate in GenerationAgent
-   * where only status and eloRating are needed (up to 20 calls per generation).
-   */
   getHypothesisStatusAndElo(id: string): { sessionId: string; status: string; eloRating: number } | null {
-    const row = this.db
-      .select({ sessionId: schema.hypotheses.sessionId, status: schema.hypotheses.status, eloRating: schema.hypotheses.eloRating })
-      .from(schema.hypotheses)
-      .where(eq(schema.hypotheses.id, id))
-      .get();
-    if (!row) return null;
-    return { sessionId: row.sessionId, status: row.status, eloRating: row.eloRating };
+    return this.hypothesisStore.getHypothesisStatusAndElo(id);
   }
-
   getTopHypotheses(sessionId: string, n = 10): Hypothesis[] {
-    const rows = this.db
-      .select()
-      .from(schema.hypotheses)
-      .where(
-        and(
-          eq(schema.hypotheses.sessionId, sessionId),
-          eq(schema.hypotheses.status, "active")
-        )
-      )
-      .orderBy(desc(schema.hypotheses.eloRating))
-      .limit(n)
-      .all();
-    return this._rowsToHypotheses(rows);
+    return this.hypothesisStore.getTopHypotheses(sessionId, n);
   }
-
-  /** Lightweight: fetch only Elo ratings for the top N active hypotheses. */
   getTopEloRatings(sessionId: string, n = 10): number[] {
-    const rows = this.db
-      .select({ eloRating: schema.hypotheses.eloRating })
-      .from(schema.hypotheses)
-      .where(
-        and(
-          eq(schema.hypotheses.sessionId, sessionId),
-          eq(schema.hypotheses.status, "active")
-        )
-      )
-      .orderBy(desc(schema.hypotheses.eloRating))
-      .limit(n)
-      .all();
-    return rows.map((r) => r.eloRating);
+    return this.hypothesisStore.getTopEloRatings(sessionId, n);
   }
-
   getAllActiveHypotheses(sessionId: string): Hypothesis[] {
-    const rows = this.db
-      .select()
-      .from(schema.hypotheses)
-      .where(
-        and(
-          eq(schema.hypotheses.sessionId, sessionId),
-          eq(schema.hypotheses.status, "active")
-        )
-      )
-      .orderBy(desc(schema.hypotheses.eloRating))
-      .all();
-    return this._rowsToHypotheses(rows);
+    return this.hypothesisStore.getAllActiveHypotheses(sessionId);
   }
-
   getPendingReviewHypotheses(sessionId: string, limit = 5): Hypothesis[] {
-    const rows = this.db
-      .select()
-      .from(schema.hypotheses)
-      .where(
-        and(
-          eq(schema.hypotheses.sessionId, sessionId),
-          eq(schema.hypotheses.status, "pending_review")
-        )
-      )
-      .orderBy(asc(schema.hypotheses.createdAt))
-      .limit(limit)
-      .all();
-    return this._rowsToHypotheses(rows);
+    return this.hypothesisStore.getPendingReviewHypotheses(sessionId, limit);
   }
-
   countHypotheses(sessionId: string): { total: number; active: number; pending: number } {
-    const rows = this.db
-      .select({
-        status: schema.hypotheses.status,
-        count: sql<number>`count(*)`,
-      })
-      .from(schema.hypotheses)
-      .where(eq(schema.hypotheses.sessionId, sessionId))
-      .groupBy(schema.hypotheses.status)
-      .all();
-
-    const counts = { total: 0, active: 0, pending: 0 };
-    for (const r of rows) {
-      counts.total += Number(r.count);
-      if (r.status === "active") counts.active = Number(r.count);
-      if (r.status === "pending_review") counts.pending = Number(r.count);
-    }
-    return counts;
+    return this.hypothesisStore.countHypotheses(sessionId);
+  }
+  saveExperimentProtocol(hypothesisId: string, protocol: Record<string, unknown>): void {
+    return this.hypothesisStore.saveExperimentProtocol(hypothesisId, protocol);
+  }
+  getExperimentProtocol(hypothesisId: string): Record<string, unknown> | null {
+    return this.hypothesisStore.getExperimentProtocol(hypothesisId);
   }
 
   // ─── Reviews ──────────────────────────────────────────────────────────────
 
   saveReview(review: Omit<HypothesisReview, "id" | "createdAt">): void {
-    const id = uuidv4();
-    this.db.insert(schema.reviews).values({
-      id,
-      hypothesisId: review.hypothesisId,
-      sessionId: review.sessionId,
-      type: review.type,
-      verdict: review.verdict,
-      noveltyScore: review.noveltyScore ?? null,
-      correctnessScore: review.correctnessScore ?? null,
-      testabilityScore: review.testabilityScore ?? null,
-      safetyFlag: review.safetyFlag,
-      summary: review.summary ?? "No summary provided",
-      critique: review.critique ?? "",
-      supportingEvidenceJson: JSON.stringify(review.supportingEvidence),
-      createdAt: new Date(),
-    }).run();
+    return this.reviewStore.saveReview(review);
   }
-
-  /**
-   * Returns avg novelty/correctness/testability scores per hypothesis for a session.
-   * Single query — use this for leaderboard rendering to avoid N+1.
-   */
   getAvgScoresForSession(sessionId: string): Record<string, { novelty: number | null; correctness: number | null; testability: number | null }> {
-    const rows = this.db
-      .select({
-        hypothesisId: schema.reviews.hypothesisId,
-        novelty:      sql<number | null>`avg(${schema.reviews.noveltyScore})`,
-        correctness:  sql<number | null>`avg(${schema.reviews.correctnessScore})`,
-        testability:  sql<number | null>`avg(${schema.reviews.testabilityScore})`,
-      })
-      .from(schema.reviews)
-      .where(eq(schema.reviews.sessionId, sessionId))
-      .groupBy(schema.reviews.hypothesisId)
-      .all();
-    return Object.fromEntries(
-      rows.map((r) => [r.hypothesisId, { novelty: r.novelty, correctness: r.correctness, testability: r.testability }])
-    );
+    return this.reviewStore.getAvgScoresForSession(sessionId);
   }
-
   getReviews(hypothesisId: string): HypothesisReview[] {
-    const rows = this.db
-      .select()
-      .from(schema.reviews)
-      .where(eq(schema.reviews.hypothesisId, hypothesisId))
-      .orderBy(desc(schema.reviews.createdAt))
-      .all();
-    return rows.map((r) => ({
-      id: r.id,
-      hypothesisId: r.hypothesisId,
-      sessionId: r.sessionId,
-      type: r.type as HypothesisReview["type"],
-      verdict: r.verdict as HypothesisReview["verdict"],
-      noveltyScore: r.noveltyScore ?? undefined,
-      correctnessScore: r.correctnessScore ?? undefined,
-      testabilityScore: r.testabilityScore ?? undefined,
-      safetyFlag: r.safetyFlag ?? false,
-      summary: r.summary,
-      critique: r.critique,
-      supportingEvidence: (() => { try { return JSON.parse(r.supportingEvidenceJson) as string[]; } catch { return []; } })(),
-      createdAt: r.createdAt,
-    }));
+    return this.reviewStore.getReviews(hypothesisId);
   }
 
   // ─── Tournament ───────────────────────────────────────────────────────────
 
   saveTournamentMatch(match: Omit<TournamentMatch, "id" | "createdAt">): void {
-    this.db.insert(schema.tournamentMatches).values({
-      id: uuidv4(),
-      ...match,
-      debateTranscript: match.debateTranscript ?? null,
-      createdAt: new Date(),
-    }).run();
+    return this.tournamentStore.saveTournamentMatch(match);
   }
-
   getRecentMatches(sessionId: string, limit = 50): TournamentMatch[] {
-    const rows = this.db
-      .select()
-      .from(schema.tournamentMatches)
-      .where(eq(schema.tournamentMatches.sessionId, sessionId))
-      .orderBy(desc(schema.tournamentMatches.createdAt))
-      .limit(limit)
-      .all();
-    return rows.map((r) => ({
-      id: r.id,
-      sessionId: r.sessionId,
-      hypothesisAId: r.hypothesisAId,
-      hypothesisBId: r.hypothesisBId,
-      matchType: r.matchType as TournamentMatch["matchType"],
-      result: r.result as TournamentMatch["result"],
-      winnerEloAfter: r.winnerEloAfter,
-      loserEloAfter: r.loserEloAfter,
-      debateTranscript: r.debateTranscript ?? null,
-      rationale: r.rationale,
-      round: r.round,
-      createdAt: r.createdAt,
-    }));
+    return this.tournamentStore.getRecentMatches(sessionId, limit);
   }
 
   // ─── Proximity ────────────────────────────────────────────────────────────
@@ -624,199 +192,43 @@ export class ContextStore {
     hypBId: string,
     score: number
   ): void {
-    // Use raw SQL INSERT OR REPLACE to avoid duplicate edges for the same pair.
-    // Pairs are stored in canonical (sorted) order so (A,B) and (B,A) are treated identically.
-    const [aId, bId] = [hypAId, hypBId].sort();
-    this.sqlite.transaction(() => {
-      // INSERT OR IGNORE so new pairs are inserted; existing pairs are silently skipped.
-      this.sqlite
-        .query(
-          `INSERT OR IGNORE INTO proximity_edges (id, session_id, hypothesis_a_id, hypothesis_b_id, similarity_score, created_at)
-           VALUES (?, ?, ?, ?, ?, ?)`
-        )
-        .run(uuidv4(), sessionId, aId, bId, score, Math.floor(Date.now() / 1000));
-      // UPDATE the score for the pair that already existed (no-op for the just-inserted row
-      // since it matches, but SQLite guarantees the INSERT above ran first).
-      this.sqlite
-        .query(
-          `UPDATE proximity_edges SET similarity_score = ? WHERE hypothesis_a_id = ? AND hypothesis_b_id = ?`
-        )
-        .run(score, aId, bId);
-    })();
+    return this.tournamentStore.saveProximityEdge(sessionId, hypAId, hypBId, score);
   }
-
   getSimilarHypotheses(hypothesisId: string, k = 5): string[] {
-    const rowsA = this.db
-      .select({
-        otherId: schema.proximityEdges.hypothesisBId,
-        score: schema.proximityEdges.similarityScore,
-      })
-      .from(schema.proximityEdges)
-      .where(eq(schema.proximityEdges.hypothesisAId, hypothesisId))
-      .orderBy(desc(schema.proximityEdges.similarityScore))
-      .limit(k)
-      .all();
-
-    const rowsB = this.db
-      .select({
-        otherId: schema.proximityEdges.hypothesisAId,
-        score: schema.proximityEdges.similarityScore,
-      })
-      .from(schema.proximityEdges)
-      .where(eq(schema.proximityEdges.hypothesisBId, hypothesisId))
-      .orderBy(desc(schema.proximityEdges.similarityScore))
-      .limit(k)
-      .all();
-
-    const combined = [...rowsA, ...rowsB]
-      .sort((a, b) => b.score - a.score)
-      .slice(0, k)
-      .map((r) => r.otherId);
-
-    return [...new Set(combined)];
+    return this.tournamentStore.getSimilarHypotheses(hypothesisId, k);
   }
+
+  // ─── Embeddings ────────────────────────────────────────────────────────────
 
   saveEmbedding(hypothesisId: string, embedding: number[]): void {
-    const buf = Buffer.from(new Float32Array(embedding).buffer);
-
-    // 1. Save raw blob to embedding_cache for direct retrieval (no inference needed)
-    this.db.insert(schema.embeddingCache).values({
-      hypothesisId,
-      embeddingBlob: buf,
-      createdAt: new Date(),
-    }).onConflictDoUpdate({
-      target: schema.embeddingCache.hypothesisId,
-      set: { embeddingBlob: buf, createdAt: new Date() },
-    }).run();
-
-    // 2. Upsert into vec_embeddings (sqlite-vec vec0 virtual table) for ANN search.
-    //    sqlite-vec virtual tables do not support ON CONFLICT / INSERT OR REPLACE,
-    //    so we use an explicit DELETE + INSERT inside a transaction instead.
-    this.sqlite.transaction(() => {
-      this.sqlite.query(`DELETE FROM vec_embeddings WHERE hypothesis_id = ?`).run(hypothesisId);
-      this.sqlite.query(`INSERT INTO vec_embeddings(hypothesis_id, embedding) VALUES (?, ?)`).run(hypothesisId, buf);
-    })();
+    return this.embeddingStore.saveEmbedding(hypothesisId, embedding);
   }
-
   getEmbedding(hypothesisId: string): number[] | null {
-    const row = this.db
-      .select()
-      .from(schema.embeddingCache)
-      .where(eq(schema.embeddingCache.hypothesisId, hypothesisId))
-      .get();
-    if (!row) return null;
-    // Reinterpret the raw bytes as float32 (NOT new Float32Array(buffer), which
-    // would copy each byte as a separate element). Respect byteOffset/length so
-    // a pooled Buffer slice decodes correctly.
-    const buf = row.embeddingBlob as Buffer;
-    return Array.from(new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4));
+    return this.embeddingStore.getEmbedding(hypothesisId);
   }
-
-  /** Remove a hypothesis's embedding from both cache and ANN index. */
   deleteEmbedding(hypothesisId: string): void {
-    this.db.delete(schema.embeddingCache).where(eq(schema.embeddingCache.hypothesisId, hypothesisId)).run();
-    this.sqlite.query(`DELETE FROM vec_embeddings WHERE hypothesis_id = ?`).run(hypothesisId);
+    return this.embeddingStore.deleteEmbedding(hypothesisId);
   }
-
-  /**
-   * ANN search via sqlite-vec's vec0 KNN index.
-   * Returns up to `limit` hypothesis IDs nearest to `queryEmbedding`,
-   * along with their cosine distance (lower = more similar).
-   *
-   * This replaces the O(n²) pairwise loop in ProximityAgent for neighbour lookup.
-   * For full pairwise similarity (deduplication), ProximityAgent still iterates all
-   * active hypotheses but skips pairs that already have a proximity_edge row.
-   */
   findSimilarByVector(
     queryEmbedding: number[],
     limit = 20
   ): Array<{ hypothesisId: string; distance: number }> {
-    const buf = Buffer.from(new Float32Array(queryEmbedding).buffer);
-    const rows = this.sqlite
-      .query(
-        `SELECT hypothesis_id, distance
-         FROM vec_embeddings
-         WHERE embedding MATCH ?
-         ORDER BY distance
-         LIMIT ?`
-      )
-      .all(buf, limit) as Array<{ hypothesis_id: string; distance: number }>;
-    return rows.map((r) => ({ hypothesisId: r.hypothesis_id, distance: r.distance }));
+    return this.embeddingStore.findSimilarByVector(queryEmbedding, limit);
   }
 
   // ─── Knowledge Graph ─────────────────────────────────────────────────────
 
   upsertKgNode(id: string, sessionId: string, type: string, label: string, hypothesisId?: string): void {
-    this.db.insert(schema.kgNodes).values({
-      id,
-      sessionId,
-      type,
-      label,
-      hypothesisId: hypothesisId ?? null,
-      createdAt: new Date(),
-    }).onConflictDoNothing().run();
+    return this.knowledgeGraphStore.upsertKgNode(id, sessionId, type, label, hypothesisId);
   }
-
   upsertKgEdge(id: string, sessionId: string, fromNodeId: string, toNodeId: string, relation: string): void {
-    this.db.insert(schema.kgEdges).values({
-      id,
-      sessionId,
-      fromNodeId,
-      toNodeId,
-      relation,
-      createdAt: new Date(),
-    }).onConflictDoNothing().run();
+    return this.knowledgeGraphStore.upsertKgEdge(id, sessionId, fromNodeId, toNodeId, relation);
   }
-
-  getKgNodes(sessionId: string): Array<typeof schema.kgNodes.$inferSelect> {
-    return this.db.select().from(schema.kgNodes).where(eq(schema.kgNodes.sessionId, sessionId)).all();
+  getKgNodes(sessionId: string): Array<typeof import("../db/schema.js").kgNodes.$inferSelect> {
+    return this.knowledgeGraphStore.getKgNodes(sessionId);
   }
-
-  getKgEdges(sessionId: string): Array<typeof schema.kgEdges.$inferSelect> {
-    return this.db.select().from(schema.kgEdges).where(eq(schema.kgEdges.sessionId, sessionId)).all();
-  }
-
-  // ─── Experiment Protocol ─────────────────────────────────────────────────
-
-  saveExperimentProtocol(hypothesisId: string, protocol: Record<string, unknown>): void {
-    this.db
-      .update(schema.hypotheses)
-      .set({ experimentProtocolJson: JSON.stringify(protocol), updatedAt: new Date() })
-      .where(eq(schema.hypotheses.id, hypothesisId))
-      .run();
-  }
-
-  getExperimentProtocol(hypothesisId: string): Record<string, unknown> | null {
-    const row = this.db
-      .select({ proto: schema.hypotheses.experimentProtocolJson })
-      .from(schema.hypotheses)
-      .where(eq(schema.hypotheses.id, hypothesisId))
-      .get();
-    if (!row?.proto) return null;
-    let parsed: Record<string, unknown>;
-    try { parsed = JSON.parse(row.proto) as Record<string, unknown>; } catch { return null; }
-    const hasContent = parsed.overview || (Array.isArray(parsed.steps) && (parsed.steps as unknown[]).length > 0);
-    if (!hasContent) return null;
-    return parsed;
-  }
-
-  // ─── Agent Tasks ─────────────────────────────────────────────────────────
-
-  logTask(task: Omit<AgentTask, "id" | "createdAt">): void {
-    this.db.insert(schema.agentTasks).values({
-      id: uuidv4(),
-      sessionId: task.sessionId,
-      type: task.type,
-      status: task.status ?? "pending",
-      priority: task.priority ?? 5,
-      payloadJson: JSON.stringify(task.payload ?? {}),
-      resultJson: task.result ? JSON.stringify(task.result) : null,
-      error: task.error ?? null,
-      tokensUsed: task.tokensUsed ?? 0,
-      startedAt: task.startedAt ?? null,
-      completedAt: task.completedAt ?? null,
-      createdAt: new Date(),
-    }).run();
+  getKgEdges(sessionId: string): Array<typeof import("../db/schema.js").kgEdges.$inferSelect> {
+    return this.knowledgeGraphStore.getKgEdges(sessionId);
   }
 
   // ─── Provenance ───────────────────────────────────────────────────────────
@@ -835,140 +247,14 @@ export class ContextStore {
       confidence: number;
     }>
   ): void {
-    const now = new Date();
-    this.sqlite.transaction(() => {
-      for (const c of claims) {
-        this.db.insert(schema.claimCitations).values({
-          id: uuidv4(),
-          hypothesisId,
-          sessionId,
-          claimText: c.claimText,
-          paperTitle: c.paperTitle,
-          paperUrl: c.paperUrl,
-          paperAuthors: c.paperAuthors,
-          paperYear: c.paperYear ?? null,
-          paperAbstract: c.paperAbstract,
-          support: c.support,
-          confidence: c.confidence,
-          createdAt: now,
-        }).run();
-      }
-    })();
+    return this.provenanceStore.saveClaimCitations(hypothesisId, sessionId, claims);
   }
-
-  getClaimCitations(hypothesisId: string): Array<typeof schema.claimCitations.$inferSelect> {
-    return this.db
-      .select()
-      .from(schema.claimCitations)
-      .where(eq(schema.claimCitations.hypothesisId, hypothesisId))
-      .all();
+  getClaimCitations(hypothesisId: string): Array<typeof import("../db/schema.js").claimCitations.$inferSelect> {
+    return this.provenanceStore.getClaimCitations(hypothesisId);
   }
-
-  /** True if the hypothesis has ≥1 contradicted or unaddressed claim. */
   hasProvenanceFlag(hypothesisId: string): boolean {
-    const row = this.db
-      .select({ count: sql<number>`count(*)` })
-      .from(schema.claimCitations)
-      .where(
-        and(
-          eq(schema.claimCitations.hypothesisId, hypothesisId),
-          sql`${schema.claimCitations.support} IN ('contradicts', 'unaddressed')`
-        )
-      )
-      .get();
-    return Number(row?.count ?? 0) > 0;
+    return this.provenanceStore.hasProvenanceFlag(hypothesisId);
   }
-
-  // ─── Evidence Bank (Deep Evidence Pipeline) ──────────────────────────────────
-
-  /** Upsert by (sessionId, url). Optionally stores the summary embedding. */
-  saveEvidence(
-    ev: Omit<EvidenceSource, "id" | "createdAt">,
-    embedding?: number[]
-  ): EvidenceSource {
-    const id = uuidv4();
-    const now = new Date();
-    const embeddingBlob = embedding
-      ? Buffer.from(new Float32Array(embedding).buffer)
-      : null;
-
-    this.db.insert(schema.evidenceSources).values({
-      id,
-      sessionId: ev.sessionId,
-      url: ev.url,
-      title: ev.title,
-      doi: ev.doi ?? null,
-      publishedDate: ev.publishedDate ?? null,
-      goal: ev.goal,
-      rationale: ev.rationale,
-      evidence: ev.evidence,
-      summary: ev.summary,
-      round: ev.round,
-      embeddingBlob,
-      createdAt: now,
-    }).onConflictDoUpdate({
-      target: [schema.evidenceSources.sessionId, schema.evidenceSources.url],
-      set: {
-        title: ev.title,
-        doi: ev.doi ?? null,
-        publishedDate: ev.publishedDate ?? null,
-        goal: ev.goal,
-        rationale: ev.rationale,
-        evidence: ev.evidence,
-        summary: ev.summary,
-        round: ev.round,
-        embeddingBlob,
-        createdAt: now,
-      },
-    }).run();
-
-    // Re-read so upserts return the surviving row's id
-    const row = this.db.select().from(schema.evidenceSources)
-      .where(and(
-        eq(schema.evidenceSources.sessionId, ev.sessionId),
-        eq(schema.evidenceSources.url, ev.url),
-      )).get();
-    if (!row) throw new Error(`saveEvidence: upsert failed for ${ev.url}`);
-    return this._rowToEvidence(row);
-  }
-
-  getEvidenceBySession(sessionId: string): EvidenceSource[] {
-    const rows = this.db.select().from(schema.evidenceSources)
-      .where(eq(schema.evidenceSources.sessionId, sessionId))
-      .orderBy(desc(schema.evidenceSources.createdAt))
-      .all();
-    return rows.map((r) => this._rowToEvidence(r));
-  }
-
-  hasVisitedUrl(sessionId: string, url: string): boolean {
-    const row = this.db.select({ id: schema.evidenceSources.id })
-      .from(schema.evidenceSources)
-      .where(and(
-        eq(schema.evidenceSources.sessionId, sessionId),
-        eq(schema.evidenceSources.url, url),
-      )).get();
-    return !!row;
-  }
-
-  /** Top-k evidence rows by cosine similarity of stored embeddings (TS-side; row counts are small). */
-  getRelevantEvidence(sessionId: string, embedding: number[], k: number): EvidenceSource[] {
-    const rows = this.db.select().from(schema.evidenceSources)
-      .where(eq(schema.evidenceSources.sessionId, sessionId))
-      .all();
-    return rows
-      .filter((r) => r.embeddingBlob != null)
-      .map((r) => {
-        const buf = r.embeddingBlob as Buffer;
-        const vec = Array.from(new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4));
-        return { row: r, score: cosineSimilarity(embedding, vec) };
-      })
-      .sort((a, b) => b.score - a.score)
-      .slice(0, k)
-      .map(({ row }) => this._rowToEvidence(row));
-  }
-
-  // ─── Citation Verifications (Citation-Integrity) ──────────────────────────
-
   saveCitationVerifications(
     hypothesisId: string,
     sessionId: string,
@@ -982,28 +268,8 @@ export class ContextStore {
       matchScore: number;
     }>
   ): void {
-    const now = Math.floor(Date.now() / 1000);
-    this.sqlite.transaction(() => {
-      this.sqlite
-        .query(`DELETE FROM citation_verifications WHERE hypothesis_id = ?`)
-        .run(hypothesisId);
-      for (const r of rows) {
-        this.sqlite
-          .query(
-            `INSERT INTO citation_verifications
-               (id, hypothesis_id, session_id, raw_citation, status,
-                canonical_title, doi, authors, year, match_score, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-          )
-          .run(
-            uuidv4(), hypothesisId, sessionId, r.rawCitation, r.status,
-            r.canonicalTitle ?? null, r.doi ?? null, r.authors ?? null,
-            r.year ?? null, r.matchScore, now
-          );
-      }
-    })();
+    return this.provenanceStore.saveCitationVerifications(hypothesisId, sessionId, rows);
   }
-
   getCitationVerifications(
     hypothesisId: string
   ): Array<{
@@ -1015,44 +281,30 @@ export class ContextStore {
     year: number | null;
     matchScore: number;
   }> {
-    const rows = this.sqlite
-      .query(
-        `SELECT raw_citation, status, canonical_title, doi, authors, year, match_score
-         FROM citation_verifications WHERE hypothesis_id = ? ORDER BY created_at ASC`
-      )
-      .all(hypothesisId) as Array<Record<string, unknown>>;
-    return rows.map((r) => ({
-      rawCitation: r.raw_citation as string,
-      status: r.status as "verified" | "unverified" | "fabricated",
-      canonicalTitle: (r.canonical_title as string | null) ?? null,
-      doi: (r.doi as string | null) ?? null,
-      authors: (r.authors as string | null) ?? null,
-      year: (r.year as number | null) ?? null,
-      matchScore: r.match_score as number,
-    }));
+    return this.provenanceStore.getCitationVerifications(hypothesisId);
   }
-
   getCitationIntegrity(hypothesisId: string): {
     total: number; verified: number; unverified: number; fabricated: number; fabricationRate: number;
   } {
-    const rows = this.sqlite
-      .query(
-        `SELECT status, count(*) as n FROM citation_verifications
-         WHERE hypothesis_id = ? GROUP BY status`
-      )
-      .all(hypothesisId) as Array<{ status: string; n: number }>;
-    const counts = { total: 0, verified: 0, unverified: 0, fabricated: 0 };
-    for (const r of rows) {
-      const n = Number(r.n);
-      counts.total += n;
-      if (r.status === "verified") counts.verified = n;
-      else if (r.status === "unverified") counts.unverified = n;
-      else if (r.status === "fabricated") counts.fabricated = n;
-    }
-    return {
-      ...counts,
-      fabricationRate: counts.total > 0 ? counts.fabricated / counts.total : 0,
-    };
+    return this.provenanceStore.getCitationIntegrity(hypothesisId);
+  }
+
+  // ─── Evidence Bank (Deep Evidence Pipeline) ──────────────────────────────────
+
+  saveEvidence(
+    ev: Omit<EvidenceSource, "id" | "createdAt">,
+    embedding?: number[]
+  ): EvidenceSource {
+    return this.evidenceStore.saveEvidence(ev, embedding);
+  }
+  getEvidenceBySession(sessionId: string): EvidenceSource[] {
+    return this.evidenceStore.getEvidenceBySession(sessionId);
+  }
+  hasVisitedUrl(sessionId: string, url: string): boolean {
+    return this.evidenceStore.hasVisitedUrl(sessionId, url);
+  }
+  getRelevantEvidence(sessionId: string, embedding: number[], k: number): EvidenceSource[] {
+    return this.evidenceStore.getRelevantEvidence(sessionId, embedding, k);
   }
 
   // ─── Safety Assessments (Safety Gate) ─────────────────────────────────────
@@ -1062,190 +314,47 @@ export class ContextStore {
     sessionId: string,
     a: { severity: string; category: string; reasoning: string; decision: string; threshold: string }
   ): void {
-    this.db.insert(schema.safetyAssessments).values({
-      id: uuidv4(),
-      hypothesisId,
-      sessionId,
-      severity: a.severity,
-      category: a.category,
-      reasoning: a.reasoning,
-      decision: a.decision,
-      threshold: a.threshold,
-      overriddenBy: null,
-      overrideReason: null,
-      overriddenAt: null,
-      createdAt: new Date(),
-    }).run();
+    return this.safetyStore.saveSafetyAssessment(hypothesisId, sessionId, a);
   }
-
-  /** Most recent safety assessment for a hypothesis, or null if never screened. */
   getLatestSafetyAssessment(hypothesisId: string): SafetyAssessmentRow | null {
-    const row = this.db
-      .select()
-      .from(schema.safetyAssessments)
-      .where(eq(schema.safetyAssessments.hypothesisId, hypothesisId))
-      .orderBy(desc(schema.safetyAssessments.createdAt))
-      .get();
-    return row ? this._rowToSafetyAssessment(row) : null;
+    return this.safetyStore.getLatestSafetyAssessment(hypothesisId);
   }
-
-  /** Hypotheses currently withheld by the safety gate, newest first. */
   getQuarantinedHypotheses(sessionId: string): Hypothesis[] {
-    const rows = this.db
-      .select()
-      .from(schema.hypotheses)
-      .where(
-        and(
-          eq(schema.hypotheses.sessionId, sessionId),
-          eq(schema.hypotheses.status, "quarantined")
-        )
-      )
-      .orderBy(desc(schema.hypotheses.createdAt))
-      .all();
-    return this._rowsToHypotheses(rows);
+    return this.safetyStore.getQuarantinedHypotheses(sessionId);
   }
-
-  /**
-   * Release a quarantined hypothesis into the active pool (operator override).
-   * Records who released it and why on its latest assessment row. Returns false
-   * if the hypothesis is not currently quarantined.
-   */
   releaseQuarantine(hypothesisId: string, overriddenBy: string, reason: string): boolean {
-    const now = new Date();
-    let released = false;
-    this.sqlite.transaction(() => {
-      // Check status inside the transaction to prevent TOCTOU race conditions
-      const hyp = this.getHypothesis(hypothesisId);
-      if (!hyp || hyp.status !== "quarantined") return;
-      this.db
-        .update(schema.hypotheses)
-        .set({ status: "active", updatedAt: now })
-        .where(eq(schema.hypotheses.id, hypothesisId))
-        .run();
-      const latest = this.db
-        .select({ id: schema.safetyAssessments.id })
-        .from(schema.safetyAssessments)
-        .where(eq(schema.safetyAssessments.hypothesisId, hypothesisId))
-        .orderBy(desc(schema.safetyAssessments.createdAt))
-        .get();
-      if (latest) {
-        this.db
-          .update(schema.safetyAssessments)
-          .set({ overriddenBy, overrideReason: reason, overriddenAt: now })
-          .where(eq(schema.safetyAssessments.id, latest.id))
-          .run();
-      }
-      released = true;
-    })();
-    return released;
+    return this.safetyStore.releaseQuarantine(hypothesisId, overriddenBy, reason);
   }
 
-  private _rowToSafetyAssessment(r: typeof schema.safetyAssessments.$inferSelect): SafetyAssessmentRow {
-    return {
-      severity: r.severity,
-      category: r.category,
-      reasoning: r.reasoning,
-      decision: r.decision as "allowed" | "quarantined",
-      threshold: r.threshold,
-      overriddenBy: r.overriddenBy ?? null,
-      overrideReason: r.overrideReason ?? null,
-      overriddenAt: r.overriddenAt ?? null,
-      createdAt: r.createdAt,
-    };
-  }
+  // ─── Agent Tasks ─────────────────────────────────────────────────────────
 
+  logTask(task: Omit<AgentTask, "id" | "createdAt">): void {
+    return this.activityStore.logTask(task);
+  }
   getTokensByAgent(sessionId: string): Record<string, number> {
-    const rows = this.db
-      .select({
-        type: schema.agentTasks.type,
-        total: sql<number>`sum(${schema.agentTasks.tokensUsed})`,
-      })
-      .from(schema.agentTasks)
-      .where(eq(schema.agentTasks.sessionId, sessionId))
-      .groupBy(schema.agentTasks.type)
-      .all();
-    return Object.fromEntries(rows.map((r) => [r.type, Number(r.total ?? 0)]));
+    return this.activityStore.getTokensByAgent(sessionId);
   }
-
   countCompletedTasksByType(sessionId: string, type: string): number {
-    const row = this.db
-      .select({ count: sql<number>`count(*)` })
-      .from(schema.agentTasks)
-      .where(
-        and(
-          eq(schema.agentTasks.sessionId, sessionId),
-          eq(schema.agentTasks.type, type),
-          eq(schema.agentTasks.status, "completed")
-        )
-      )
-      .get();
-    return Number(row?.count ?? 0);
+    return this.activityStore.countCompletedTasksByType(sessionId, type);
   }
-
-  /** Single query: count all completed tasks grouped by type. */
   countAllCompletedTasksByType(sessionId: string): Record<string, number> {
-    const rows = this.db
-      .select({
-        type: schema.agentTasks.type,
-        count: sql<number>`count(*)`,
-      })
-      .from(schema.agentTasks)
-      .where(
-        and(
-          eq(schema.agentTasks.sessionId, sessionId),
-          eq(schema.agentTasks.status, "completed")
-        )
-      )
-      .groupBy(schema.agentTasks.type)
-      .all();
-    return Object.fromEntries(rows.map((r) => [r.type, Number(r.count ?? 0)]));
+    return this.activityStore.countAllCompletedTasksByType(sessionId);
   }
 
   // ─── Experimental Feedback (RLEF) ────────────────────────────────────────
 
   saveExperimentalFeedback(feedback: ExperimentalFeedback): void {
-    this.sqlite.query(`
-      INSERT INTO experimental_feedback
-        (id, hypothesis_id, session_id, feedback_text,
-         novelty_score, correctness_score, testability_score,
-         metadata_json, computed_reward, recorded_by, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      feedback.id,
-      feedback.hypothesisId,
-      feedback.sessionId,
-      feedback.feedbackText,
-      feedback.noveltyScore      ?? null,
-      feedback.correctnessScore  ?? null,
-      feedback.testabilityScore  ?? null,
-      JSON.stringify(feedback.metadata ?? {}),
-      feedback.computedReward,
-      feedback.recordedBy,
-      feedback.createdAt.getTime() / 1000,
-    );
+    return this.feedbackStore.saveExperimentalFeedback(feedback);
   }
-
   getExperimentalFeedback(hypothesisId: string): ExperimentalFeedback[] {
-    const rows = this.sqlite.query(`
-      SELECT * FROM experimental_feedback
-      WHERE hypothesis_id = ?
-      ORDER BY created_at DESC
-    `).all(hypothesisId) as Array<Record<string, unknown>>;
-    return rows.map(this._rowToFeedback);
+    return this.feedbackStore.getExperimentalFeedback(hypothesisId);
   }
-
   getAllFeedbackForSession(sessionId: string): ExperimentalFeedback[] {
-    const rows = this.sqlite.query(`
-      SELECT * FROM experimental_feedback
-      WHERE session_id = ?
-      ORDER BY created_at DESC
-    `).all(sessionId) as Array<Record<string, unknown>>;
-    return rows.map(this._rowToFeedback);
+    return this.feedbackStore.getAllFeedbackForSession(sessionId);
   }
 
   // ─── Session Activity Log ─────────────────────────────────────────────────
 
-  /** Log a session activity entry. */
   logActivity(params: {
     id: string;
     sessionId: string;
@@ -1256,20 +365,8 @@ export class ContextStore {
     tokensIn?: number;
     tokensOut?: number;
   }): void {
-    this.db.insert(schema.sessionActivity).values({
-      id: params.id,
-      sessionId: params.sessionId,
-      agent: params.agent,
-      type: params.type,
-      message: params.message,
-      detailJson: params.detailJson ?? null,
-      tokensIn: params.tokensIn ?? null,
-      tokensOut: params.tokensOut ?? null,
-      createdAt: new Date(),
-    }).run();
+    return this.activityStore.logActivity(params);
   }
-
-  /** Get all activity entries for a session, ordered chronologically. */
   getSessionActivity(sessionId: string): Array<{
     id: string;
     agent: string;
@@ -1280,160 +377,24 @@ export class ContextStore {
     tokensOut: number | null;
     createdAt: Date;
   }> {
-    return (this.sqlite.query(`
-      SELECT id, agent, type, message, detail_json AS detailJson,
-             tokens_in AS tokensIn, tokens_out AS tokensOut, created_at AS createdAt
-      FROM session_activity
-      WHERE session_id = ?
-      ORDER BY created_at ASC
-    `).all(sessionId) as Array<{
-      id: string; agent: string; type: string; message: string;
-      detailJson: string | null; tokensIn: number | null; tokensOut: number | null;
-      createdAt: number;
-    }>).map((r) => ({ ...r, createdAt: new Date(r.createdAt * 1000) }));
-  }
-
-  // ─── Private helpers ──────────────────────────────────────────────────────
-
-  private _rowToEvidence(r: typeof schema.evidenceSources.$inferSelect): EvidenceSource {
-    return {
-      id: r.id,
-      sessionId: r.sessionId,
-      url: r.url,
-      title: r.title,
-      doi: r.doi ?? undefined,
-      publishedDate: r.publishedDate ?? undefined,
-      goal: r.goal,
-      rationale: r.rationale,
-      evidence: r.evidence,
-      summary: r.summary,
-      round: r.round,
-      createdAt: r.createdAt,
-    };
-  }
-
-  private _rowToSession(row: typeof schema.sessions.$inferSelect): CoScientistSession {
-    return {
-      id: row.id,
-      name: row.name,
-      researchGoalId: (() => { try { return JSON.parse(row.researchGoalJson).id; } catch { return ""; } })(),
-      status: row.status as CoScientistSession["status"],
-      stats: (() => { try { return JSON.parse(row.statsJson); } catch { return {}; } })(),
-      metaReviewCritique: row.metaReviewCritique ?? null,
-      researchOverview: row.researchOverview ?? null,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-      completedAt: row.completedAt ?? null,
-    };
-  }
-
-  private _rowToFeedback(row: Record<string, unknown>): ExperimentalFeedback {
-    return {
-      id:               row.id as string,
-      hypothesisId:     row.hypothesis_id as string,
-      sessionId:        row.session_id as string,
-      feedbackText:     row.feedback_text as string,
-      noveltyScore:     row.novelty_score != null ? (row.novelty_score as number) : undefined,
-      correctnessScore: row.correctness_score != null ? (row.correctness_score as number) : undefined,
-      testabilityScore: row.testability_score != null ? (row.testability_score as number) : undefined,
-      metadata:         (() => { try { return JSON.parse((row.metadata_json as string) ?? "{}"); } catch { return {}; } })(),
-      computedReward:   row.computed_reward as number,
-      recordedBy:       (row.recorded_by as "human" | "automated") ?? "human",
-      createdAt:        new Date((row.created_at as number) * 1000),
-    };
-  }
-
-  private _rowToHypothesis(row: typeof schema.hypotheses.$inferSelect): Hypothesis {
-    const countRow = this.sqlite
-      .query(`SELECT count(*) as n FROM experimental_feedback WHERE hypothesis_id = ?`)
-      .get(row.id) as { n: number } | undefined;
-    return {
-      id: row.id,
-      sessionId: row.sessionId,
-      title: row.title,
-      summary: row.summary,
-      content: row.content,
-      rationale: row.rationale,
-      experimentalPlan: row.experimentalPlan ?? undefined,
-      noveltyAssessment: row.noveltyAssessment ?? undefined,
-      keyAssumptions: (() => { try { return JSON.parse(row.keyAssumptionsJson); } catch { return []; } })(),
-      citations: (() => { try { return JSON.parse(row.citationsJson); } catch { return []; } })(),
-      generationStrategy: row.generationStrategy,
-      eloRating: row.eloRating,
-      ratingDeviation: row.ratingDeviation ?? 350,
-      volatility:      row.volatility      ?? 0.06,
-      matchesPlayed: row.matchesPlayed,
-      wins: row.wins,
-      losses: row.losses,
-      draws: row.draws ?? 0,
-      status: row.status as Hypothesis["status"],
-      parentIds: (() => { try { return JSON.parse(row.parentIdsJson); } catch { return []; } })(),
-      generationRound: row.generationRound,
-      feedbackCount: Number(countRow?.n ?? 0),
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    };
-  }
-
-  /**
-   * Batch feedback count — avoids N+1 when converting multiple hypothesis rows.
-   */
-  private _getFeedbackCounts(hypothesisIds: string[]): Map<string, number> {
-    if (hypothesisIds.length === 0) return new Map();
-    const placeholders = hypothesisIds.map(() => "?").join(",");
-    const rows = this.sqlite
-      .query(
-        `SELECT hypothesis_id, count(*) as n FROM experimental_feedback WHERE hypothesis_id IN (${placeholders}) GROUP BY hypothesis_id`
-      )
-      .all(...hypothesisIds) as Array<{ hypothesis_id: string; n: number }>;
-    const map = new Map<string, number>();
-    for (const r of rows) map.set(r.hypothesis_id, Number(r.n));
-    return map;
-  }
-
-  /**
-   * Batch convert hypothesis rows with pre-fetched feedback counts (avoids N+1).
-   */
-  private _rowsToHypotheses(rows: Array<typeof schema.hypotheses.$inferSelect>): Hypothesis[] {
-    const ids = rows.map((r) => r.id);
-    const counts = this._getFeedbackCounts(ids);
-    return rows.map((row) => ({
-      id: row.id,
-      sessionId: row.sessionId,
-      title: row.title,
-      summary: row.summary,
-      content: row.content,
-      rationale: row.rationale,
-      experimentalPlan: row.experimentalPlan ?? undefined,
-      noveltyAssessment: row.noveltyAssessment ?? undefined,
-      keyAssumptions: (() => { try { return JSON.parse(row.keyAssumptionsJson); } catch { return []; } })(),
-      citations: (() => { try { return JSON.parse(row.citationsJson); } catch { return []; } })(),
-      generationStrategy: row.generationStrategy,
-      eloRating: row.eloRating,
-      ratingDeviation: row.ratingDeviation ?? 350,
-      volatility:      row.volatility      ?? 0.06,
-      matchesPlayed: row.matchesPlayed,
-      wins: row.wins,
-      losses: row.losses,
-      draws: row.draws ?? 0,
-      status: row.status as Hypothesis["status"],
-      parentIds: (() => { try { return JSON.parse(row.parentIdsJson); } catch { return []; } })(),
-      generationRound: row.generationRound,
-      feedbackCount: counts.get(row.id) ?? 0,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    }));
+    return this.activityStore.getSessionActivity(sessionId);
   }
 }
 
 // Singleton
 let _store: ContextStore | null = null;
+
 export function getContextStore(): ContextStore {
   if (!_store) _store = new ContextStore();
   return _store;
 }
 
-/** Reset singleton (for test isolation). */
 export function resetContextStore(): void {
   _store = null;
 }
+
+// Register cleanup on DB close — replaces the old deferred import in closeDb().
+registerDbCloseHook(resetContextStore);
+
+// Re-export uuidv4 for any legacy callers that imported it from this module.
+export { uuidv4 };
