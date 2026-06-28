@@ -59,7 +59,6 @@ import "./commands/login.js";
 import "./commands/logout.js";
 import "./commands/help.js";
 import "./commands/quit.js";
-import "./commands/theme.js";
 
 export type AppProps = AppProviderProps;
 
@@ -157,6 +156,8 @@ function AppInner() {
   const handleRoute = (result: RouteResult | { type: "session_start"; goal: string }) => {
     switch (result.type) {
       case "transcript":
+        // Entries are the persistent verbose output.  `message` (when set) is
+        // a brief toast-only confirmation — don't push a duplicate entry.
         for (const entry of result.entries) pushEntry(entry);
         if (result.message) showToast(result.message, "success");
         break;
@@ -170,7 +171,21 @@ function AppInner() {
       case "exit":
         exit();
         break;
-      // immediate / error toasts are shown by InputBar
+      case "error":
+        // Error messages were toast-only (no transcript entry), so they
+        // vanished after the 3s notification TTL.  Persist them so the user
+        // can read the error while correcting their input.
+        if (result.message) {
+          pushEntry(formatSystemNotice(result.message, "error"));
+        }
+        break;
+      case "immediate":
+        // Same as error — immediate feedback with a message should persist
+        // so it doesn't disappear before the user can act on it.
+        if (result.message) {
+          pushEntry(formatSystemNotice(result.message, "success"));
+        }
+        break;
     }
   };
 

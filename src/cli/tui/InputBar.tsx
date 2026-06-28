@@ -49,24 +49,23 @@ export function InputBar({ active, onRoute, onPaletteChange, onScrollDown, onScr
     if (cursor > text.length) setCursor(text.length);
   }, [text, cursor]);
 
-  // Blink the caret on a ~530ms cadence. InputBar lives outside <Static>,
-  // so this re-render is contained to the input region.
+  // Blink the caret on a ~530ms cadence ONLY when the TUI is truly idle
+  // (no session, no palette).  During any session state the blink re-render
+  // would interact with Spinner ticks, progress events, and leaderboard
+  // refreshes to produce visible flicker in the transcript and menus.
+  //
+  // When the palette is open the user is browsing suggestions so the blink
+  // is unnecessary and would re-render CommandPalette on every tick.
+  const idle = !appContext.sessionId;
   useEffect(() => {
+    if (paletteVisible || !idle) {
+      setCursorVisible(true);
+      return;
+    }
+    setCursorVisible(true);
     const id = setInterval(() => setCursorVisible((v) => !v), 530);
     return () => clearInterval(id);
-  }, []);
-
-  // Immediate / error route results go through the notification context
-  // (NotificationBar renders them above the prompt), replacing the old
-  // local Toast that rendered inline above the border box.
-  const showRouteToast = (result: RouteResult) => {
-    if (
-      (result.type === "immediate" || result.type === "error") &&
-      result.message
-    ) {
-      appContext.showToast(result.message, result.type === "error" ? "error" : "success");
-    }
-  };
+  }, [paletteVisible, idle]);
 
   useInput(
     (input, key) => {
@@ -114,10 +113,9 @@ export function InputBar({ active, onRoute, onPaletteChange, onScrollDown, onScr
         if (!cmd.trim()) return;
         setText("");
         setCursor(0);
-        route(cmd, appContext).then((result) => {
-          showRouteToast(result);
-          onRoute(result);
-        });
+        // All output (transcript entries, errors, toasts) is now handled
+        // centrally in App's handleRoute so nothing disappears or duplicates.
+        route(cmd, appContext).then(onRoute);
         return;
       }
 
@@ -165,27 +163,28 @@ export function InputBar({ active, onRoute, onPaletteChange, onScrollDown, onScr
   );
 
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" backgroundColor="bg">
       {/* Rounded bordered prompt — x_code style.
           Uses borderFocus (brand) border when the palette is open or text is being
           typed, and promptBorder (gray) otherwise — a subtle focus affordance. */}
       <Box
         borderStyle="round"
         borderColor={paletteVisible || text.length > 0 ? "borderFocus" : "promptBorder"}
+        backgroundColor="bg"
         paddingX={1}
       >
-        <Text color="claude" bold>&gt; </Text>
-        <Text color="text">{text.slice(0, cursor)}</Text>
+        <Text color="claude" bold backgroundColor="bg">&gt; </Text>
+        <Text color="text" backgroundColor="bg">{text.slice(0, cursor)}</Text>
         {cursor < text.length ? (
           cursorVisible ? (
             <Text color="inverseText" backgroundColor="text">{text[cursor]}</Text>
           ) : (
-            <Text color="text">{text[cursor]}</Text>
+            <Text color="text" backgroundColor="bg">{text[cursor]}</Text>
           )
         ) : (
-          <Text color="text">{cursorVisible ? "▌" : " "}</Text>
+          <Text color="text" backgroundColor="bg">{cursorVisible ? "▌" : " "}</Text>
         )}
-        <Text color="text">{text.slice(cursor + 1)}</Text>
+        <Text color="text" backgroundColor="bg">{text.slice(cursor + 1)}</Text>
       </Box>
 
       {paletteVisible && (

@@ -117,13 +117,18 @@ class MCPServerClient {
     return /rate.limit|too many requests|rate exceeded/i.test(message);
   }
 
-  /** Refresh the auth token by calling the provider-specific token function. */
+  /** Refresh the auth token by calling the provider-specific token function.
+   *  NEVER triggers interactive browser auth — during a running session that
+   *  would block the supervisor loop for up to 5 minutes and corrupt the TUI
+   *  frame.  If the refresh fails, the caller (e.g. _retryAfterAuthRefresh)
+   *  marks the provider as unavailable so subsequent calls skip it and fall
+   *  through to Parallel AI. */
   private async _refreshAuth(): Promise<void> {
     if (this.serverName === "Scite") {
-      const token = await getSciteAccessToken();
+      const token = await getSciteAccessToken({ allowInteractive: false });
       this.setAuthHeader(token);
     } else if (this.serverName === "Consensus") {
-      const token = await getConsensusAccessToken();
+      const token = await getConsensusAccessToken({ allowInteractive: false });
       this.setAuthHeader(token);
     } else {
       throw new Error(`No auth refresh provider for ${this.serverName}`);
@@ -160,9 +165,19 @@ class MCPServerClient {
       logger.info(`${this.serverName}: token refresh succeeded — call retry successful.`);
       return result;
     } catch (err) {
-      logger.error(
-        `${this.serverName} tool call failed after token refresh (${toolName}): ${(err as Error).message}`
+      const msg = (err as Error).message;
+      logger.warn(
+        `${this.serverName}: token refresh failed — ${msg}. ` +
+        `Use /login to sign in, or set PARALLEL_AI_API_KEY for web search fallback.`
       );
+      // Mark the provider dead so subsequent calls skip it instead of
+      // repeating the same failing auth-refresh cycle on every search.
+      this.permanentlyFailed = true;
+      this.failedAt = Date.now();
+      // Clear the broken connection so the next attempt (if any) starts fresh.
+      this.client = null;
+      this.transport = null;
+      this.connected = false;
       throw err;
     } finally {
       this._isRetryingAuth = false;
@@ -408,6 +423,7 @@ export class MCPClientManager {
     const isFirstInit = !this.initialized;
 
     // ── Consensus auth ──────────────────────────────────────────────────────
+    let consensusAuthed = false;
     if (wantConsensus && (isFirstInit || !this.consensus.isAvailable() || needConsensusReconnect)) {
       try {
         let consensusToken: string;
@@ -418,16 +434,21 @@ export class MCPClientManager {
         } else {
           if (hasValidConsensusTokens()) {
             logger.info("Consensus: loading cached OAuth tokens.");
+            consensusToken = await getConsensusAccessToken({ allowInteractive: false });
           } else {
+            // Not signed in — skip silently. The user can run `co-scientist login` to authenticate.
             logger.info(
-              "Consensus: no cached tokens found — starting OAuth 2.1 PKCE browser flow.\n" +
-              "  Tokens will be saved to ~/.co-scientist/consensus-oauth.json for future runs."
+              "Consensus: not signed in. Use `co-scientist login` to authenticate for academic search."
             );
+            // Don't set auth header — skip this provider
+            consensusToken = "";
           }
-          consensusToken = await getConsensusAccessToken();
         }
 
-        this.consensus.setAuthHeader(consensusToken);
+        if (consensusToken) {
+          this.consensus.setAuthHeader(consensusToken);
+          consensusAuthed = true;
+        }
       } catch (err) {
         logger.warn(
           `Consensus auth failed: ${(err as Error).message}.`
@@ -436,6 +457,7 @@ export class MCPClientManager {
     }
 
     // ── Scite auth ──────────────────────────────────────────────────────────
+    let sciteAuthed = false;
     if (wantScite && (isFirstInit || !this.scite.isAvailable() || needSciteReconnect)) {
       try {
         let sciteToken: string;
@@ -446,16 +468,21 @@ export class MCPClientManager {
         } else {
           if (hasValidSciteTokens()) {
             logger.info("Scite: loading cached OAuth tokens.");
+            sciteToken = await getSciteAccessToken({ allowInteractive: false });
           } else {
+            // Not signed in — skip silently. The user can run `co-scientist login` to authenticate.
             logger.info(
-              "Scite: no cached tokens found — starting OAuth 2.0 PKCE browser flow.\n" +
-              "  Tokens will be saved to ~/.co-scientist/scite-oauth.json for future runs."
+              "Scite: not signed in. Use `co-scientist login` to authenticate for academic search."
             );
+            // Don't set auth header — skip this provider
+            sciteToken = "";
           }
-          sciteToken = await getSciteAccessToken();
         }
 
-        this.scite.setAuthHeader(sciteToken);
+        if (sciteToken) {
+          this.scite.setAuthHeader(sciteToken);
+          sciteAuthed = true;
+        }
       } catch (err) {
         logger.warn(
           `Scite auth failed: ${(err as Error).message}.`
@@ -464,10 +491,14 @@ export class MCPClientManager {
     }
 
     // Connect whichever need connecting. connect() is a no-op if already connected,
-    // but throws if permanently failed. Only attempt on configured providers.
+    // but throws if permanently failed. Only attempt on configured providers that
+    // have auth credentials — skip unauthenticated ones to avoid noisy
+    // "unauthorized" errors on startup.
     const connectPromises: Array<Promise<void>> = [];
     for (const name of priority) {
       const client = this.clientFor(name);
+      const hasAuth = name === "consensus" ? consensusAuthed : sciteAuthed;
+      if (!hasAuth) continue;
       if (client.isAvailable()) {
         connectPromises.push(client.connect().catch((err) => {
           logger.warn(`${name} MCP server unavailable: ${(err as Error).message}.`);
@@ -477,8 +508,10 @@ export class MCPClientManager {
     if (connectPromises.length > 0) {
       await Promise.all(connectPromises);
     }
-    const allConfiguredDead = priority.every((name) => !this.clientFor(name).isConnected());
-    if (allConfiguredDead && priority.length > 0) {
+    const allConfiguredDead = priority
+      .filter((name) => (name === "consensus" ? consensusAuthed : sciteAuthed))
+      .every((name) => !this.clientFor(name).isConnected());
+    if (allConfiguredDead && connectPromises.length > 0) {
       logger.warn(`Academic search unavailable — all configured providers (${priority.join(", ")}) are down.`);
     }
 

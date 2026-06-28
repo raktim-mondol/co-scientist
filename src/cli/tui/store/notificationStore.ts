@@ -130,12 +130,17 @@ function createNotificationStore() {
     store.setState({ active: [] });
   }
 
-  /** Remove expired notifications (call periodically). */
+  /** Remove expired notifications (call periodically). No-ops when
+   *  the active list is empty so callers can fire this on a blind tick
+   *  without triggering an unnecessary store update + re-render. */
   function prune(): void {
+    const prev = store.getState();
+    if (prev.active.length === 0) return;
     const now = Date.now();
-    store.setState((s) => ({
-      active: s.active.filter((n) => now - n.timestamp < n.ttl),
-    }));
+    const filtered = prev.active.filter((n) => now - n.timestamp < n.ttl);
+    // Avoid setState (and thus subscriber cascades) when nothing was pruned.
+    if (filtered.length === prev.active.length) return;
+    store.setState({ active: filtered });
   }
 
   return {

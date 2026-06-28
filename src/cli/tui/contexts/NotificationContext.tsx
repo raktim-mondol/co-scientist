@@ -36,10 +36,15 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   }, [store]);
 
   // Prune expired notifications on a 500ms tick.
+  // Only run the prune tick when there ARE active notifications — otherwise
+  // the interval triggers a full AppInner re-render every 500ms just to
+  // filter an empty array, which causes visible terminal flicker after the
+  // session spinner stops (the fast 12.5 Hz spinner masked it while running).
   useEffect(() => {
+    if (notifications.length === 0) return;
     const id = setInterval(() => store.prune(), 500);
     return () => clearInterval(id);
-  }, [store]);
+  }, [store, notifications.length]);
 
   const addNotification = useCallback(
     (message: string, opts?: Parameters<NotificationContextValue["addNotification"]>[1]) =>
