@@ -295,10 +295,25 @@ describe("RewardStore", () => {
   });
 
   it("getRelevantPriors returns entries with |reward| > 0.3", async () => {
-    const priors = await rewardStore.getRelevantPriors("cancer therapy targeting apoptosis", 5);
-    expect(Array.isArray(priors)).toBe(true);
-    for (const p of priors) {
-      expect(Math.abs(p.computedReward)).toBeGreaterThan(0.3);
+    // Stub embed() to return a zero-filled vector matching the pre-seeded
+    // embedding (see beforeAll line ~108). The real embed() loads a local
+    // HuggingFace model (~80 MB download on first run, 5-10 s cached), which
+    // blows past Bun's default 5000 ms timeout in CI / fresh environments.
+    // A zero vector pairs with the pre-seeded zero embedding so the ANN
+    // lookup finds our hypothesis (cosine distance ≈ 0).
+    const realLlm = (rewardStore as unknown as { llm: { embed: (texts: string[]) => Promise<number[][]> } }).llm;
+    const originalEmbed = realLlm.embed;
+    realLlm.embed = async (_texts: string[]) => [new Array(384).fill(0)];
+
+    try {
+      const priors = await rewardStore.getRelevantPriors("cancer therapy targeting apoptosis", 5);
+      expect(Array.isArray(priors)).toBe(true);
+      for (const p of priors) {
+        expect(Math.abs(p.computedReward)).toBeGreaterThan(0.3);
+      }
+    } finally {
+      // Restore the real embed function so other tests (if any) are unaffected.
+      realLlm.embed = originalEmbed;
     }
   });
 });
