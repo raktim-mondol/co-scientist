@@ -203,9 +203,9 @@ export function withRetry<T>(fn: () => T, maxRetries = 3): T {
       }
       // Exponential backoff: 100ms, 200ms, 400ms
       const delay = 100 * Math.pow(2, attempt);
-      // Busy-wait since we're in a synchronous context (Bun SQLite ops are sync).
-      const end = Date.now() + delay;
-      while (Date.now() < end) { /* spin */ }
+      // Bun.sleepSync suspends the thread without CPU spinning, unlike a busy-loop.
+      // Bun SQLite ops are synchronous, so we must block — but not burn CPU.
+      Bun.sleepSync(delay);
     }
   }
   throw lastError ?? new Error("Retry exhausted with no error captured");

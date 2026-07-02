@@ -38,8 +38,8 @@ Agents:
 ### BaseAgent
 
 All agents extend `BaseAgent` (`src/agents/base.ts`), which provides:
-- `loadPrompt(category, name, vars)` — loads a Handlebars YAML template from `src/prompts/{category}/{name}.yaml`, compiles it, and returns `{ system, userPrompt, mode, maxTokens }`
-- `callLLM(system, prompt, opts)` — wraps DeepSeek; `mode: "chat"` for fast generation, `mode: "reason"` for ranking/reflection
+- `loadPrompt(category, name, vars)` — loads a Handlebars YAML template from `src/prompts/{category}/{name}.yaml`, compiles it, and returns `{ system, userPrompt, maxTokens }`
+- `callLLM(system, prompt, opts)` — wraps DeepSeek; supports `maxTokens`, `temperature`, and `jsonMode` options
 - `callLLMForJSON<T>(...)` — calls LLM with `jsonMode: true` and retries if JSON extraction fails
 - `extractJSON<T>(text)` — multi-strategy JSON extraction (direct parse → code block → balanced-brace scan → jsonrepair)
 - `memory` — singleton `ContextStore` for all DB reads/writes
@@ -80,7 +80,7 @@ Two storage mechanisms for embeddings:
 ### RLEF Pipeline
 
 Reinforcement Learning from Experimental Feedback lives in `src/rlef/`:
-- `reward-signal.ts` — `extractRewardFromFeedback()` derives a reward in `[-1, +1]` from free-text sentiment + N/C/T scores; `applyFeedbackAsGlicko2Match()` updates Elo with K=48
+- `reward-signal.ts` — `extractRewardFromFeedback()` derives a reward in `[-1, +1]` from free-text sentiment + N/C/T scores; `applyFeedbackAsGlicko2Match()` updates the hypothesis's Glicko-2 rating against a virtual opponent
 - `reward-store.ts` — persists strong-signal feedback to `reward_memory` table; `getRelevantPriors()` does semantic KNN lookup to prime new sessions
 - `prompt-injection.ts` — injects validated/refuted hypotheses into generation, reflection, and evolution prompts
 
