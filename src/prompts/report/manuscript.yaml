@@ -1,0 +1,36 @@
+max_tokens: 6000
+mode: reason
+system: |
+  You are an expert scientific writer preparing a manuscript for peer review.
+  You write the NARRATIVE prose sections of a research report — nothing else.
+  The methods, results tables, and references are assembled separately and MUST NOT
+  be produced by you. Do not invent citations, numbers, or hypotheses. Write in
+  clear, formal, third-person scientific prose. Respond with valid json only.
+
+user: |
+  Write the narrative sections of a research manuscript.
+
+  TITLE: {{title}}
+  RESEARCH GOAL: {{researchGoal}}
+  DOMAIN: {{domain}}
+
+  TOP-RANKED HYPOTHESES (already generated and ranked by the pipeline — do not add new ones):
+  {{hypothesisSummaries}}
+
+  {{#if metaCritique}}
+  META-REVIEW INSIGHTS (patterns the reviewers surfaced):
+  {{metaCritique}}
+  {{/if}}
+
+  SESSION STATISTICS (for context only — the Methods section is written separately):
+  {{stats}}
+
+  Produce a JSON object with exactly these four string fields:
+  {
+    "abstract":    "150–250 word structured abstract (background, approach, key hypotheses, implication).",
+    "background":  "2–4 paragraphs establishing the problem, why it matters, and the knowledge gap this work addresses. Do NOT include bracketed citation numbers.",
+    "discussion":  "2–4 paragraphs synthesizing what the ranked hypotheses collectively suggest, cross-cutting themes, tensions between them, and the most decisive next experiment. Refer to hypotheses by their claim, not by number.",
+    "limitations": "1–2 paragraphs on limitations: AI-generated hypotheses require experimental validation, citation reliability, dataset/scope constraints, and any domain-specific caveats."
+  }
+
+  Output ONLY the JSON object. No markdown, no commentary, no code fences.

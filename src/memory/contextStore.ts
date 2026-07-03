@@ -31,6 +31,8 @@ import { EvidenceStore } from "./stores/evidenceStore.js";
 import { SafetyStore, type SafetyAssessmentRow } from "./stores/safetyStore.js";
 import { ActivityStore } from "./stores/activityStore.js";
 import { FeedbackStore } from "./stores/feedbackStore.js";
+import { ManuscriptStore } from "./stores/manuscriptStore.js";
+import type { Manuscript } from "../models/manuscript.js";
 
 export type { SafetyAssessmentRow };
 
@@ -51,6 +53,7 @@ export class ContextStore {
   private safetyStore = new SafetyStore(this.hypothesisStore);
   private activityStore = new ActivityStore();
   private feedbackStore = new FeedbackStore();
+  private manuscriptStore = new ManuscriptStore();
 
   // ─── Sessions ─────────────────────────────────────────────────────────────
 
@@ -98,6 +101,12 @@ export class ContextStore {
   }
   getPlanConfig(sessionId: string): ResearchPlanConfig | null {
     return this.sessionStore.getPlanConfig(sessionId);
+  }
+  saveManuscript(sessionId: string, manuscript: Manuscript): void {
+    return this.manuscriptStore.saveManuscript(sessionId, manuscript);
+  }
+  getManuscript(sessionId: string): Manuscript | null {
+    return this.manuscriptStore.getManuscript(sessionId);
   }
 
   // ─── Hypotheses ───────────────────────────────────────────────────────────

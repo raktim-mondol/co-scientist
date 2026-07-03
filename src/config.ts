@@ -70,6 +70,13 @@ const ConfigSchema = z.object({
     quarantineThreshold: z.enum(["low", "moderate", "high"]).default("high"),
   }),
 
+  // Publishable report generator
+  report: z.object({
+    defaultFormat: z.enum(["markdown", "latex", "docx", "pdf"]).default("markdown"),
+    topN: z.number().int().positive().default(15),   // hypotheses included in the manuscript
+    pandocPath: z.string().default("pandoc"),         // used for docx/pdf export
+  }),
+
   // Reproducibility
   seed: z.number().int().optional(),         // seeds all scheduling/sampling RNG
 
@@ -151,6 +158,14 @@ function loadConfig(): AppConfig {
         const v = process.env.SAFETY_QUARANTINE_THRESHOLD?.trim().toLowerCase();
         return v === "low" || v === "moderate" || v === "high" ? v : undefined;
       })(),
+    },
+    report: {
+      defaultFormat: (() => {
+        const v = process.env.REPORT_DEFAULT_FORMAT?.trim().toLowerCase();
+        return v === "markdown" || v === "latex" || v === "docx" || v === "pdf" ? v : undefined;
+      })(),
+      topN: process.env.REPORT_TOP_N ? parseInt(process.env.REPORT_TOP_N, 10) : undefined,
+      pandocPath: process.env.PANDOC_PATH,
     },
     seed,
     logLevel: process.env.LOG_LEVEL,

@@ -51,6 +51,7 @@ import "./commands/overview.js";
 import "./commands/activity.js";
 // Task 11 — Action commands
 import "./commands/exportCmd.js";
+import "./commands/reportCmd.js";
 import "./commands/feedbackCmd.js";
 import "./commands/designCmd.js";
 // Task 12 — Navigation & system commands

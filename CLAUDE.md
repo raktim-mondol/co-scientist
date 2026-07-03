@@ -34,6 +34,7 @@ Agents:
 - **KnowledgeGraphAgent** — builds a concept/citation/hypothesis graph from session data
 - **MetaReviewAgent** — periodic critique synthesis + final research overview
 - **ExperimentDesignAgent** — generates a step-by-step experimental protocol for the top-ranked hypothesis after session completes
+- **ReportAgent** (`src/agents/report.ts`) — builds a publication-style manuscript from a completed session for the `report` command. Narrative sections (abstract/background/discussion/limitations) are one LLM call (`src/prompts/report/manuscript.yaml`); Methods, Results and the global numbered bibliography are assembled deterministically from the DB. The de-duplicated bibliography is built by `reportBibliography.ts` (reusing the CrossRef resolver in `src/tools/citationResolver.ts`); Markdown/LaTeX are pure string builders in `reportRenderers.ts`, and DOCX/PDF shell out to `pandoc`. The result is cached in the `manuscripts` table (`ManuscriptStore`) so re-exports skip the LLM unless `--regenerate` is passed.
 
 ### BaseAgent
 
