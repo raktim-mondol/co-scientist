@@ -358,6 +358,15 @@ export async function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_session_activity_type
     ON session_activity(session_id, type)
   `);
+
+  // Add manuscripts table for the publishable report generator (cached report JSON)
+  db.run(sql`
+    CREATE TABLE IF NOT EXISTS manuscripts (
+      session_id TEXT PRIMARY KEY REFERENCES sessions(id),
+      json TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    )
+  `);
 }
 
 // Run migrations when executed directly: `bun run src/db/migrate.ts`

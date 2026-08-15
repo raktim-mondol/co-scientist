@@ -16,6 +16,7 @@ import { resultsCommand } from "./commands/results.js";
 import { overviewCommand } from "./commands/overview.js";
 import { feedbackCommand } from "./commands/feedback.js";
 import { exportCommand } from "./commands/export.js";
+import { reportCommand } from "./commands/report.js";
 import { listCommand } from "./commands/list.js";
 import { deleteCommand } from "./commands/delete.js";
 import { designCommand } from "./commands/design.js";
@@ -101,6 +102,21 @@ program
   .option("-o, --output <path>", "Output file path")
   .option("--all", "Export all active hypotheses (default: top 20)")
   .action((sessionId, opts) => withDb(() => exportCommand(sessionId, opts)));
+
+program
+  .command("report <sessionId>")
+  .description(
+    "Generate a publication-style manuscript from a completed session\n" +
+    "  --format md|latex|docx|pdf   Output format (default: md; docx/pdf need pandoc)\n" +
+    "  --output <path>              Write to a specific file path\n" +
+    "  --top <n>                    Number of hypotheses to include (default: config report.topN)\n" +
+    "  --regenerate                 Rebuild the manuscript (re-calls the LLM) instead of using the cached one"
+  )
+  .option("-f, --format <fmt>", "Output format: md | latex | docx | pdf", "md")
+  .option("-o, --output <path>", "Output file path")
+  .option("--top <n>", "Number of hypotheses to include")
+  .option("--regenerate", "Rebuild the manuscript instead of reusing the cached one")
+  .action((sessionId, opts) => withDb(() => reportCommand(sessionId, opts)));
 
 program
   .command("delete [sessionId]")

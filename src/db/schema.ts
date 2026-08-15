@@ -275,3 +275,13 @@ export const sessionActivity = sqliteTable("session_activity", {
   tokensOut: integer("tokens_out"),                   // completion tokens produced (if applicable)
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
+
+// ─── Manuscripts (Publishable Report Generator) ──────────────────────────────
+// One cached, publication-style manuscript per session (JSON blob). Re-exporting
+// a report reuses this row instead of re-calling the LLM; `report --regenerate`
+// overwrites it.
+export const manuscripts = sqliteTable("manuscripts", {
+  sessionId: text("session_id").primaryKey().references(() => sessions.id),
+  json: text("json").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});

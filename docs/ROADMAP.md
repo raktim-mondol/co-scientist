@@ -4,6 +4,20 @@ Features identified from codebase analysis (2026-05-31). Clusters 1 (#1, #5) and
 
 ---
 
+## Shipped
+
+### Publishable Report Generator (2026-07-03)
+
+`co-scientist report <sessionId>` (+ `/report` in the TUI) turns a completed session
+into a publication-style manuscript (Abstract → Background → Methods → Results →
+Discussion → Limitations → References) with a global, de-duplicated numbered
+bibliography and inline `[n]` markers. Exports Markdown and LaTeX out of the box;
+DOCX/PDF via pandoc when installed. Cached in the `manuscripts` table so re-exports
+skip the LLM unless `--regenerate`. See
+`docs/superpowers/specs/2026-07-03-publishable-report-generator-design.md`.
+
+---
+
 ## Chosen — Not Yet Implemented
 
 ### #4 Diversity-Aware Generation (MMR)
